@@ -1,0 +1,104 @@
+name: Releases
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    name: Build & Release
+    runs-on: macos-14
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Select Xcode
+        run: sudo xcode-select -switch /Applications/Xcode_16.2.app/Contents/Developer
+
+      - name: Install Tools
+        run: |
+          brew install create-dmg
+
+      - name: Generate Icon
+        run: |
+          chmod +x generate_icon.sh
+          ./generate_icon.sh
+
+      - name: Build Universal Binary
+        run: |
+          # Build for x86_64
+          swift build -c release --arch x86_64
+          # Build for arm64
+          swift build -c release --arch arm64
+          
+          # Create directory for universal binary
+          mkdir -p .build/universal
+          
+          # Merge binaries using lipo
+          lipo -create -output .build/universal/XPlaneLauncher \
+            .build/x86_64-apple-macosx/release/XPlaneLauncher \
+            .build/arm64-apple-macosx/release/XPlaneLauncher
+            
+          # Verify architecture
+          lipo -info .build/universal/XPlaneLauncher
+
+      - name: Create App Bundle
+        run: |
+          chmod +x package.sh
+          # Run package script to create structure (will build for host arch, but we overwrite later)
+          ./package.sh
+          
+          # Overwrite with universal binary
+          cp .build/universal/XPlaneLauncher XLauncher.app/Contents/MacOS/XLauncher
+          
+          # Update Version in Info.plist
+          VERSION=${GITHUB_REF_NAME#v}
+          plutil -replace CFBundleShortVersionString -string "$VERSION" XLauncher.app/Contents/Info.plist
+          plutil -replace CFBundleVersion -string "$VERSION" XLauncher.app/Contents/Info.plist
+          
+          # Resign the app after modification
+          codesign -f -s - XLauncher.app
+
+      - name: Create DMG
+        run: |
+          # Create DMG using create-dmg
+          create-dmg \
+            --volname "XLauncher Installer" \
+            --volicon "XLauncher.app/Contents/Resources/AppIcon.icns" \
+            --window-pos 200 120 \
+            --window-size 800 400 \
+            --icon-size 100 \
+            --icon "XLauncher.app" 200 190 \
+            --hide-extension "XLauncher.app" \
+            --app-drop-link 600 185 \
+            "XLauncher.dmg" \
+            "XLauncher.app"
+
+      - name: Generate Changelog
+        run: |
+          VERSION=${GITHUB_REF_NAME}
+          # Get previous tag
+          PREVIOUS_TAG=$(git tag --sort=-version:refname | grep -v "^${VERSION}$" | head -n 1 || true)
+          
+          if [ -z "$PREVIOUS_TAG" ]; then
+            echo "No previous tag found, using initial commit"
+            PREVIOUS_TAG=$(git rev-list --max-parents=0 HEAD)
+          fi
+          
+          echo "Generating changelog from $PREVIOUS_TAG to ${VERSION}"
+          
+          echo "# Changes in ${VERSION}" > RELEASE_CHANGELOG.md
+          echo "" >> RELEASE_CHANGELOG.md
+          git log --pretty=format:"- %s (%h)" $PREVIOUS_TAG..${VERSION} >> RELEASE_CHANGELOG.md
+
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: XLauncher.dmg
+          body_path: RELEASE_CHANGELOG.md
