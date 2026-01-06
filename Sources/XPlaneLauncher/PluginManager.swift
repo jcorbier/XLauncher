@@ -144,6 +144,9 @@ class PluginManager {
                     print("Failed to launch: \(error)")
                 } else {
                     print("Launched X-Plane")
+                    DispatchQueue.main.async {
+                        NSApp.terminate(nil)
+                    }
                 }
             }
         } else {
