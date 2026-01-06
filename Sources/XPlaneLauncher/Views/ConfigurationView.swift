@@ -63,6 +63,17 @@ struct ConfigurationView: View {
                 .disabled(pluginManager.selectedProfileId == nil)
                 
                 Button(action: {
+                    if let selectedId = pluginManager.selectedProfileId,
+                       let profile = pluginManager.profiles.first(where: { $0.id == selectedId }) {
+                        pluginManager.deleteProfile(profile)
+                    }
+                }) {
+                    Image(systemName: "trash")
+                }
+                .help("Delete selected profile")
+                .disabled(pluginManager.selectedProfileId == nil)
+                
+                Button(action: {
                     newProfileName = ""
                     showingSaveProfileAlert = true
                 }) {
