@@ -19,13 +19,7 @@ class PluginManager {
     }
     
     var profiles: [PluginProfile] = []
-    var selectedProfileId: UUID? {
-        didSet {
-            if let id = selectedProfileId, let profile = profiles.first(where: { $0.id == id }) {
-                applyProfile(profile)
-            }
-        }
-    }
+
     
     struct Plugin: Identifiable, Equatable {
         let id = UUID()
@@ -37,7 +31,11 @@ class PluginManager {
     private let fileManager = FileManager.default
     private let defaults = UserDefaults.standard
     private let pathKey = "XPlanePath"
+
     private let profilesKey = "PluginProfiles"
+    private let selectedProfileIdKey = "SelectedProfileId"
+    
+    private var isApplyingProfile = false
     
     init() {
         // Load profiles
@@ -53,10 +51,40 @@ class PluginManager {
             if fileManager.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
                 self.xPlanePath = url
                 scanPlugins()
+                
+                // Validate preserved profile selection
+                if let savedIdString = defaults.string(forKey: selectedProfileIdKey),
+                   let savedId = UUID(uuidString: savedIdString),
+                   let profile = profiles.first(where: { $0.id == savedId }) {
+                    
+                    let currentEnabled = Set(plugins.filter { $0.isEnabled }.map { $0.folderName })
+                    let profileEnabled = Set(profile.pluginFolderNames)
+                    
+                    if currentEnabled == profileEnabled {
+                        self.selectedProfileId = savedId
+                    } else {
+                        // Mismatch, clear persistence
+                        defaults.removeObject(forKey: selectedProfileIdKey)
+                    }
+                }
             }
         }
     }
     
+    var selectedProfileId: UUID? {
+        didSet {
+            if let id = selectedProfileId {
+                defaults.set(id.uuidString, forKey: selectedProfileIdKey)
+                if let profile = profiles.first(where: { $0.id == id }) {
+                    isApplyingProfile = true
+                    applyProfile(profile)
+                    isApplyingProfile = false
+                }
+            } else {
+                defaults.removeObject(forKey: selectedProfileIdKey)
+            }
+        }
+    }
     func savePath() {
         if let path = xPlanePath {
             defaults.set(path.path, forKey: pathKey)
@@ -142,6 +170,10 @@ class PluginManager {
             // Update model
             if let index = plugins.firstIndex(where: { $0.id == plugin.id }) {
                 plugins[index].isEnabled.toggle()
+            }
+            
+            if !isApplyingProfile {
+                selectedProfileId = nil
             }
             
         } catch {
