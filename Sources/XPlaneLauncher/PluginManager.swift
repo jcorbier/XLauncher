@@ -16,6 +16,7 @@ class PluginManager {
         var id = UUID()
         var name: String
         var pluginFolderNames: [String]
+        var shellScriptPath: String?
     }
     
     var profiles: [PluginProfile] = []
@@ -225,7 +226,9 @@ class PluginManager {
     func updateProfile(_ profile: PluginProfile) {
         let enabledPlugins = plugins.filter { $0.isEnabled }.map { $0.folderName }
         if let index = profiles.firstIndex(where: { $0.id == profile.id }) {
+            profiles[index] = profile
             profiles[index].pluginFolderNames = enabledPlugins
+            
             saveProfilesToDisk()
         }
     }
@@ -256,13 +259,26 @@ class PluginManager {
                 togglePlugin(plugin)
             }
         }
-        // Force refresh of model happens inside togglePlugin but we are iterating.
-        // togglePlugin modifies 'plugins' array.
-        // Swift array iteration issues?
-        // Let's re-scan at the end or handle index safely.
-        // togglePlugin updates by index finding ID. It should be safe.
-        // Optimization: Batch updates?
-        // Current togglePlugin does FS op + array update. 
-        // It's acceptable for now.
+        
+        // Execute Shell Script if present
+        if let scriptPath = profile.shellScriptPath, !scriptPath.isEmpty {
+            executeShellScript(at: scriptPath, profileName: profile.name)
+        }
+    }
+    
+    private func executeShellScript(at path: String, profileName: String) {
+        print("Executing shell script at: \(path) for profile: \(profileName)")
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: path)
+        
+        var env = ProcessInfo.processInfo.environment
+        env["XLAUNCHER_PROFILE"] = profileName
+        process.environment = env
+        
+        do {
+            try process.run()
+        } catch {
+            print("Failed to run shell script: \(error)")
+        }
     }
 }
