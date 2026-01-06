@@ -190,6 +190,14 @@ class PluginManager {
         selectedProfileId = newProfile.id // Select it
     }
     
+    func updateProfile(_ profile: PluginProfile) {
+        let enabledPlugins = plugins.filter { $0.isEnabled }.map { $0.folderName }
+        if let index = profiles.firstIndex(where: { $0.id == profile.id }) {
+            profiles[index].pluginFolderNames = enabledPlugins
+            saveProfilesToDisk()
+        }
+    }
+    
     func deleteProfile(_ profile: PluginProfile) {
         profiles.removeAll { $0.id == profile.id }
         saveProfilesToDisk()

@@ -52,6 +52,17 @@ struct ConfigurationView: View {
                 .frame(width: 200)
                 
                 Button(action: {
+                    if let selectedId = pluginManager.selectedProfileId,
+                       let profile = pluginManager.profiles.first(where: { $0.id == selectedId }) {
+                        pluginManager.updateProfile(profile)
+                    }
+                }) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                }
+                .help("Update current profile with selected plugins")
+                .disabled(pluginManager.selectedProfileId == nil)
+                
+                Button(action: {
                     newProfileName = ""
                     showingSaveProfileAlert = true
                 }) {
