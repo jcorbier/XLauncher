@@ -79,18 +79,10 @@ class PluginManager {
                 
                 // Validate preserved profile selection
                 if let savedIdString = defaults.string(forKey: selectedProfileIdKey),
-                   let savedId = UUID(uuidString: savedIdString),
-                   let profile = profiles.first(where: { $0.id == savedId }) {
-                    
-                    let currentEnabled = Set(plugins.filter { $0.isEnabled }.map { $0.folderName })
-                    let profileEnabled = Set(profile.pluginFolderNames)
-                    
-                    if currentEnabled == profileEnabled {
-                        self.selectedProfileId = savedId
-                    } else {
-                        // Mismatch, clear persistence
-                        defaults.removeObject(forKey: selectedProfileIdKey)
-                    }
+                   let savedId = UUID(uuidString: savedIdString) {
+                     isRestoringState = true
+                     self.selectedProfileId = savedId
+                     isRestoringState = false
                 }
             }
         }
@@ -101,14 +93,30 @@ class PluginManager {
             if let id = selectedProfileId {
                 defaults.set(id.uuidString, forKey: selectedProfileIdKey)
                 if let profile = profiles.first(where: { $0.id == id }) {
-                    isApplyingProfile = true
-                    applyProfile(profile)
-                    isApplyingProfile = false
+                    if !isRestoringState {
+                         isApplyingProfile = true
+                         applyProfile(profile)
+                         isApplyingProfile = false
+                    }
                 }
             } else {
                 defaults.removeObject(forKey: selectedProfileIdKey)
             }
         }
+    }
+    
+    private var isRestoringState = false
+    
+    var isCurrentProfileModified: Bool {
+        guard let selectedProfileId = selectedProfileId,
+              let profile = profiles.first(where: { $0.id == selectedProfileId }) else {
+            return false
+        }
+        
+        let currentEnabled = Set(plugins.filter { $0.isEnabled }.map { $0.folderName })
+        let profileEnabled = Set(profile.pluginFolderNames)
+        
+        return currentEnabled != profileEnabled
     }
     func savePath() {
         if let path = xPlanePath {
@@ -196,11 +204,6 @@ class PluginManager {
             if let index = plugins.firstIndex(where: { $0.id == plugin.id }) {
                 plugins[index].isEnabled.toggle()
             }
-            
-            if !isApplyingProfile {
-                selectedProfileId = nil
-            }
-            
         } catch {
             print("Error toggling plugin: \(error)")
         }

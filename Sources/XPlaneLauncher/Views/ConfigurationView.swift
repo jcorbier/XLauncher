@@ -70,7 +70,8 @@ struct ConfigurationView: View {
                     Text("None / Custom").tag(UUID?.none)
                     Divider()
                     ForEach(pluginManager.profiles) { profile in
-                        Text(profile.name).tag(Optional(profile.id))
+                        let name = (pluginManager.selectedProfileId == profile.id && pluginManager.isCurrentProfileModified) ? "\(profile.name) *" : profile.name
+                        Text(name).tag(Optional(profile.id))
                     }
                 }
                 .frame(width: 200)
@@ -84,7 +85,7 @@ struct ConfigurationView: View {
                     Image(systemName: "arrow.triangle.2.circlepath")
                 }
                 .help("Update current profile with selected plugins")
-                .disabled(pluginManager.selectedProfileId == nil)
+                .disabled(pluginManager.selectedProfileId == nil || !pluginManager.isCurrentProfileModified)
                 
                 Button(action: {
                     if let selectedId = pluginManager.selectedProfileId,
