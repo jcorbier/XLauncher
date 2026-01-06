@@ -32,12 +32,19 @@ cat <<EOF > "$APP_BUNDLE/Contents/Info.plist"
     <string>1</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
 </dict>
 </plist>
 EOF
 
 echo "Copying binary..."
 cp "$BUILD_DIR/$SOURCE_NAME" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
+
+echo "Copying resources..."
+if [ -f "XLauncher.icns" ]; then
+    cp "XLauncher.icns" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
+fi
 
 echo "Signing app..."
 codesign -f -s - "$APP_BUNDLE"
