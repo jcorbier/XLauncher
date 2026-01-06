@@ -11,6 +11,22 @@ class PluginManager {
     }
     var plugins: [Plugin] = []
     
+    // Profiles
+    struct PluginProfile: Identifiable, Codable, Hashable {
+        var id = UUID()
+        var name: String
+        var pluginFolderNames: [String]
+    }
+    
+    var profiles: [PluginProfile] = []
+    var selectedProfileId: UUID? {
+        didSet {
+            if let id = selectedProfileId, let profile = profiles.first(where: { $0.id == id }) {
+                applyProfile(profile)
+            }
+        }
+    }
+    
     struct Plugin: Identifiable, Equatable {
         let id = UUID()
         let name: String
@@ -21,8 +37,15 @@ class PluginManager {
     private let fileManager = FileManager.default
     private let defaults = UserDefaults.standard
     private let pathKey = "XPlanePath"
+    private let profilesKey = "PluginProfiles"
     
     init() {
+        // Load profiles
+        if let data = defaults.data(forKey: profilesKey),
+           let savedProfiles = try? JSONDecoder().decode([PluginProfile].self, from: data) {
+            self.profiles = savedProfiles
+        }
+        
         if let savedPath = defaults.string(forKey: pathKey) {
             // Verify it exists
             let url = URL(fileURLWithPath: savedPath)
@@ -149,10 +172,57 @@ class PluginManager {
                     }
                 }
             }
+
         } else {
             // Maybe it's not a .app bundle in the root?
             // User selected the "X-Plane 12 folder". usually contains 'X-Plane.app'
              print("X-Plane.app not found in \(xPlanePath.path)")
         }
+    }
+    
+    // MARK: - Profile Management
+    
+    func saveProfile(name: String) {
+        let enabledPlugins = plugins.filter { $0.isEnabled }.map { $0.folderName }
+        let newProfile = PluginProfile(name: name, pluginFolderNames: enabledPlugins)
+        profiles.append(newProfile)
+        saveProfilesToDisk()
+        selectedProfileId = newProfile.id // Select it
+    }
+    
+    func deleteProfile(_ profile: PluginProfile) {
+        profiles.removeAll { $0.id == profile.id }
+        saveProfilesToDisk()
+        if selectedProfileId == profile.id {
+            selectedProfileId = nil
+        }
+    }
+    
+    private func saveProfilesToDisk() {
+        if let data = try? JSONEncoder().encode(profiles) {
+            defaults.set(data, forKey: profilesKey)
+        }
+    }
+    
+    private func applyProfile(_ profile: PluginProfile) {
+        // We need to iterate over all plugins and enable/disable them to match the profile
+        // Note: scanPlugins() must have run first to populate 'plugins'
+        
+        for plugin in plugins {
+            let shouldBeEnabled = profile.pluginFolderNames.contains(plugin.folderName)
+            
+            if plugin.isEnabled != shouldBeEnabled {
+                // Change state
+                togglePlugin(plugin)
+            }
+        }
+        // Force refresh of model happens inside togglePlugin but we are iterating.
+        // togglePlugin modifies 'plugins' array.
+        // Swift array iteration issues?
+        // Let's re-scan at the end or handle index safely.
+        // togglePlugin updates by index finding ID. It should be safe.
+        // Optimization: Batch updates?
+        // Current togglePlugin does FS op + array update. 
+        // It's acceptable for now.
     }
 }
