@@ -30,7 +30,7 @@ struct ContentView: View {
     var body: some View {
         VStack(spacing: 0) {
             // Header / Config
-            ConfigurationView()
+            ProfileSelectorView()
                 .padding()
             
             Divider()

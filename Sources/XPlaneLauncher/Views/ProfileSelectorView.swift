@@ -24,7 +24,7 @@
 
 import SwiftUI
 
-struct ConfigurationView: View {
+struct ProfileSelectorView: View {
     @Environment(PluginManager.self) var pluginManager
     @State private var showingSaveProfileAlert = false
     @State private var newProfileName = ""
@@ -33,34 +33,6 @@ struct ConfigurationView: View {
         @Bindable var pluginManager = pluginManager
         
         VStack(spacing: 12) {
-            // Path Selection Row
-            HStack {
-                if let path = pluginManager.xPlanePath {
-                    VStack(alignment: .leading) {
-                        Text("X-Plane Location:")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Text(path.path)
-                            .font(.subheadline)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-                } else {
-                    Text("Please select your X-Plane 12 folder")
-                        .foregroundStyle(.secondary)
-                }
-                
-                Spacer()
-                
-                Button("Change...") {
-                    selectFolder()
-                }
-                .buttonStyle(.bordered)
-            }
-            .padding()
-            .background(Material.bar)
-            .cornerRadius(10)
-            
             // Profile Selection Row
             HStack {
                 Text("Profile:")
@@ -166,18 +138,6 @@ struct ConfigurationView: View {
             Button("Cancel", role: .cancel) { }
         } message: {
             Text("Enter a name for this configuration.")
-        }
-    }
-    
-    private func selectFolder() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.prompt = "Select X-Plane Folder"
-        
-        if panel.runModal() == .OK {
-            pluginManager.xPlanePath = panel.url
         }
     }
 }

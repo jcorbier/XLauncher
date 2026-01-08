@@ -34,6 +34,17 @@ class PluginManager {
         }
     }
     var plugins: [Plugin] = []
+    struct ScriptEnvVar: Identifiable, Codable, Hashable {
+        var id = UUID()
+        var key: String
+        var value: String
+    }
+    
+    var scriptEnvironment: [ScriptEnvVar] = [] {
+        didSet {
+            saveScriptEnvironment()
+        }
+    }
     
     // Profiles
     struct PluginProfile: Identifiable, Codable, Hashable {
@@ -59,6 +70,7 @@ class PluginManager {
 
     private let profilesKey = "PluginProfiles"
     private let selectedProfileIdKey = "SelectedProfileId"
+    private let scriptEnvironmentKey = "ScriptEnvVars"
     
     private var isApplyingProfile = false
     
@@ -85,6 +97,11 @@ class PluginManager {
                      isRestoringState = false
                 }
             }
+        }
+        
+        if let data = defaults.data(forKey: scriptEnvironmentKey),
+           let envData = try? JSONDecoder().decode([ScriptEnvVar].self, from: data) {
+            self.scriptEnvironment = envData
         }
     }
     
@@ -121,6 +138,12 @@ class PluginManager {
     func savePath() {
         if let path = xPlanePath {
             defaults.set(path.path, forKey: pathKey)
+        }
+    }
+    
+    func saveScriptEnvironment() {
+        if let data = try? JSONEncoder().encode(scriptEnvironment) {
+            defaults.set(data, forKey: scriptEnvironmentKey)
         }
     }
     
@@ -300,6 +323,14 @@ class PluginManager {
         
         var env = ProcessInfo.processInfo.environment
         env["XLAUNCHER_PROFILE"] = profileName
+        
+        // Merge user defined environment
+        for envVar in scriptEnvironment {
+            if !envVar.key.isEmpty {
+                env[envVar.key] = envVar.value
+            }
+        }
+        
         process.environment = env
         
         do {

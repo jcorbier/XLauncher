@@ -37,6 +37,17 @@ struct XPlaneLauncherApp: App {
         }
         .windowResizability(.contentSize)
         .windowStyle(.hiddenTitleBar) // Modern look
+        .commands {
+            CommandGroup(replacing: .newItem) { }
+            CommandGroup(replacing: .saveItem) { }
+            CommandGroup(replacing: .printItem) { }
+            CommandGroup(replacing: .importExport) { }
+        }
+        
+        Settings {
+            SettingsView()
+                .environment(pluginManager)
+        }
     }
 }
 
