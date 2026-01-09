@@ -54,7 +54,9 @@ For X-Plane Launcher to work, you need to slightly reorganize your X-Plane `Reso
 ## Usage
 
 1. **Open XLauncher**.
-2. **Select X-Plane Location**: On first launch, select your X-Plane 12 installation folder (the root folder containing `X-Plane.app`).
+2. **Configure Settings**: Go to `XLauncher` > `Settings...` (or `Cmd+,`) to open the Settings dialog.
+   - **X-Plane Location**: Select your X-Plane 12 installation folder (the root folder containing `X-Plane.app`).
+   - **Script Environment**: Define global environment variables that will be passed to your profile scripts (e.g., API keys, user credentials).
 3. **Manage Profiles**:
    - Use the "Save Current as Profile" button to save your current selection of enabled plugins as a new profile.
    - Select a profile from the dropdown to instantly apply it.
@@ -65,6 +67,7 @@ For X-Plane Launcher to work, you need to slightly reorganize your X-Plane `Reso
 
 You can associate a shell script with a profile. When the profile is applied, the script is executed.
 The environment variable `XLAUNCHER_PROFILE` is set to the name of the active profile.
+Any custom variables defined in **Settings > Script Environment** are also injected into the script's environment.
 
 **Example Use Case**: Configuring Hoppie ACARS network based on profile.
 
