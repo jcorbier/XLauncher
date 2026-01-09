@@ -86,6 +86,20 @@ Any custom variables defined in **Settings > Script Environment** are also injec
 
 See `examples/hoppie.sh` for a sample script.
 
+### Scenery Management
+
+X-Plane Launcher provides advanced control over your custom scenery:
+
+1.  **Load Order (scenery_packs.ini)**:
+    - The scenery list reflects the exact load order defined in `Custom Scenery/scenery_packs.ini`.
+    - **Reorder**: Drag and drop items in the list to change their priority. The INI file is updated immediately.
+
+2.  **Toggle**:
+    - Toggling a scenery item OFF sets it to `SCENERY_PACK_DISABLED` in the INI file. The symlink remains, keeping the scenery physically present but disabled in X-Plane.
+
+3.  **New Scenery**:
+    - Any new scenery folders manually added to `Custom Scenery` (not yet in the INI) are detected and placed at the top of the list, matching X-Plane's default behavior.
+
 ## License
 
 MIT License. See [LICENSE](LICENSE) for details.
