@@ -92,6 +92,9 @@ class PluginManager {
         var isManaged: Bool // true if a symlink exists/can be created (managed content), false if just a folder
         var isInIni: Bool // true if found in scenery_packs.ini (and thus installed/linked)
         var iniLine: String // Store the exact line from INI to preserve formatting if needed
+        var isToggleable: Bool {
+            !folderName.hasPrefix("*")
+        }
     }
     
     private let fileManager = FileManager.default
@@ -379,10 +382,16 @@ class PluginManager {
         for item in iniItems {
             // Verify it still exists in Custom Scenery
             let path = customSceneryURL.appendingPathComponent(item.folderName)
-            if fileManager.fileExists(atPath: path.path) {
+            // Special handling for meta-packages like *GLOBAL_AIRPORTS*
+            let isSpecialIdx = item.folderName.hasPrefix("*")
+            
+            if isSpecialIdx || fileManager.fileExists(atPath: path.path) {
                 // Check if managed (symlink)
-                let attributes = try? fileManager.attributesOfItem(atPath: path.path)
-                let isSymlink = (attributes?[.type] as? String) == FileAttributeType.typeSymbolicLink.rawValue
+                var isSymlink = false
+                if !isSpecialIdx {
+                    let attributes = try? fileManager.attributesOfItem(atPath: path.path)
+                    isSymlink = (attributes?[.type] as? String) == FileAttributeType.typeSymbolicLink.rawValue
+                }
 
                 finalScenery.append(Scenery(name: item.folderName,
                                             isEnabled: item.enabled,
@@ -391,13 +400,8 @@ class PluginManager {
                                             isInIni: true,
                                             iniLine: item.line))
             } else {
-                 // Item in INI but missing from disk. Keep it? Remove it?
-                 // Usually X-Plane cleans it up. We can show it as missing or hide it.
-                 // For now, let's include it but maybe mark it? Or skip it.
-                 // If we skip it, we destructively modify the ini on next save.
-                 // Let's keep it but arguably it's "broken".
-                 // For simplicity in this logic, I'll Skip it to avoid ghost entries,
-                 // assuming the user wants to see what's actually there.
+                 // Item in INI but missing from disk.
+                 print("Skipping missing scenery: \(item.folderName)")
             }
         }
         
@@ -458,14 +462,19 @@ class PluginManager {
             }
             
             let line: String
-            if item.isEnabled {
-                line = "SCENERY_PACK Custom Scenery/\(item.folderName)/"
+            let isSpecialIdx = item.folderName.hasPrefix("*")
+            let prefix = item.isEnabled ? "SCENERY_PACK " : "SCENERY_PACK_DISABLED "
+            
+            if isSpecialIdx {
+                line = "\(prefix)\(item.folderName)"
             } else {
-                line = "SCENERY_PACK_DISABLED Custom Scenery/\(item.folderName)/"
+                line = "\(prefix)Custom Scenery/\(item.folderName)/"
             }
             
-            // Only write if physically present
-            if let xPlanePath = xPlanePath {
+            // Only write if physically present OR is special
+            if isSpecialIdx {
+                content += line + "\n"
+            } else if let xPlanePath = xPlanePath {
                  let path = xPlanePath.appendingPathComponent("Custom Scenery").appendingPathComponent(item.folderName)
                  if fileManager.fileExists(atPath: path.path) {
                       content += line + "\n"
@@ -519,6 +528,7 @@ class PluginManager {
     func toggleScenery(_ item: Scenery) {
         // Find index
         guard let index = scenery.firstIndex(where: { $0.id == item.id }) else { return }
+        guard item.isToggleable else { return }
         
         // Logic:
         // 1. If currently Enabled -> Disable

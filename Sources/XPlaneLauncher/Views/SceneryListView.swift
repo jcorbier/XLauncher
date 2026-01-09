@@ -73,6 +73,7 @@ struct SceneryRow: View {
                     set: { _ in pluginManager.toggleScenery(item) }
                 ))
                 .toggleStyle(.switch)
+                .disabled(!item.isToggleable)
             } else {
                 // Install button for uninstalled items
                 Button("Install") {
