@@ -4,8 +4,8 @@ X-Plane Launcher is a macOS application designed to simplify the management of y
 
 ## Features
 
-- **Profile Management**: Create named profiles (e.g., "VATSIM", "Offline", "Default") to quickly switch between different sets of plugins.
-- **Smart Plugin Toggling**: Keep your X-Plane `plugins` folder clean. The launcher manages plugins using symlinks, keeping your actual plugin files in a separate "available plugins" directory.
+- **Profile Management**: Create named profiles (e.g., "VATSIM", "Offline", "Default") to quickly switch between different sets of plugins and scenery.
+- **Smart Plugin & Scenery Management**: Keep your X-Plane `plugins` and `Custom Scenery` folders clean. The launcher manages content using symlinks, keeping your actual files in separate "available" source directories.
 - **Script Execution**: Automatically run shell scripts when applying a profile (useful for configuring external tools like Hoppie ACARS based on your active profile).
 - **One-Click Launch**: Launch X-Plane directly from the app after selecting your profile.
 
@@ -34,20 +34,31 @@ To build the application, ensure you have Xcode installed (or the Swift command 
 
 ## Setup
 
-For X-Plane Launcher to work, you need to slightly reorganize your X-Plane `Resources` directory.
+### Organizing Resources
+
+For X-Plane Launcher to work, you need to store your plugins and scenery in "source" folders. By default, the app looks for:
+
+- `X-Plane 12/Resources/available plugins` (for plugins)
+- `X-Plane 12/Resources/available scenery` (for scenery packs)
+
+You can configure these paths to be anywhere on your system in the App Settings.
+
+#### Default Setup Example
 
 1. Navigate to your X-Plane 12 folder (e.g., `/X-Plane 12/Resources/`).
-2. Create a new folder named `available plugins`.
-3. Move all your non-default plugins from the existing `plugins` folder into `available plugins`.
-   - **Note**: Leave default plugins (like `PluginAdmin`) in the `plugins` folder if you wish, or move them too. The launcher only manages what's in `available plugins`.
+2. Create `available plugins` and `available scenery` folders.
+3. Move your non-default plugins into `available plugins` and your custom scenery packs into `available scenery`.
 4. The structure should look like this:
    ```text
    X-Plane 12/
+   ├── Custom Scenery/    <-- Managed by Launcher (contains symlinks)
    └── Resources/
        ├── plugins/           <-- Managed by Launcher (contains symlinks)
-       └── available plugins/ <-- Where you keep your actual plugins
-           ├── BetterPushback
-           ├── xPilot
+       ├── available plugins/ <-- Source for plugins
+       │   ├── BetterPushback
+       │   └── ...
+       └── available scenery/ <-- Source for scenery
+           ├── KLAX - Los Angeles
            └── ...
    ```
 
@@ -56,11 +67,13 @@ For X-Plane Launcher to work, you need to slightly reorganize your X-Plane `Reso
 1. **Open XLauncher**.
 2. **Configure Settings**: Go to `XLauncher` > `Settings...` (or `Cmd+,`) to open the Settings dialog.
    - **X-Plane Location**: Select your X-Plane 12 installation folder (the root folder containing `X-Plane.app`).
+   - **Plugins/Scenery Sources**: (Optional) If you don't use the default folder structure, specify the paths to your available plugins and scenery sources here.
    - **Script Environment**: Define global environment variables that will be passed to your profile scripts (e.g., API keys, user credentials).
 3. **Manage Profiles**:
-   - Use the "Save Current as Profile" button to save your current selection of enabled plugins as a new profile.
+   - Use the **Plugins** and **Scenery** tabs to toggle content on/off.
+   - Use the "Save Current as Profile" button to save your current configuration as a new profile.
    - Select a profile from the dropdown to instantly apply it.
-   - Managing a profile will automatically update the `plugins` folder with symlinks to the plugins in `available plugins`.
+   - Managing a profile will automatically update the `plugins` and `Custom Scenery` folders with symlinks.
 4. **Launch**: Click the "Launch X-Plane" button.
 
 ### Scripting

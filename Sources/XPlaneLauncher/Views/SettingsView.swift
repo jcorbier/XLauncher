@@ -34,26 +34,42 @@ struct SettingsView: View {
         
         VStack(spacing: 20) {
             GroupBox("General") {
-                HStack {
-                    if let path = pluginManager.xPlanePath {
-                        VStack(alignment: .leading) {
-                            Text("X-Plane Location:")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            Text(path.path)
-                                .font(.subheadline)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
+                VStack(spacing: 8) {
+                    FolderSelectorRow(label: "X-Plane Location:", path: pluginManager.xPlanePath, placeholder: "Select X-Plane 12 folder") {
+                        let panel = NSOpenPanel()
+                        panel.canChooseFiles = false
+                        panel.canChooseDirectories = true
+                        panel.allowsMultipleSelection = false
+                        panel.prompt = "Select X-Plane Folder"
+                        if panel.runModal() == .OK {
+                            pluginManager.xPlanePath = panel.url
                         }
-                    } else {
-                        Text("Please select your X-Plane 12 folder")
-                            .foregroundStyle(.secondary)
                     }
                     
-                    Spacer()
+                    Divider()
                     
-                    Button("Change...") {
-                        selectFolder()
+                    FolderSelectorRow(label: "Plugins Source:", path: pluginManager.availablePluginsPath, placeholder: "Default (Resources/available plugins)") {
+                        let panel = NSOpenPanel()
+                        panel.canChooseFiles = false
+                        panel.canChooseDirectories = true
+                        panel.allowsMultipleSelection = false
+                        panel.prompt = "Select Plugins Source Folder"
+                        if panel.runModal() == .OK {
+                            pluginManager.availablePluginsPath = panel.url
+                        }
+                    }
+                    
+                    Divider()
+                    
+                    FolderSelectorRow(label: "Scenery Source:", path: pluginManager.availableSceneryPath, placeholder: "Default (Resources/available scenery)") {
+                        let panel = NSOpenPanel()
+                        panel.canChooseFiles = false
+                        panel.canChooseDirectories = true
+                        panel.allowsMultipleSelection = false
+                        panel.prompt = "Select Scenery Source Folder"
+                        if panel.runModal() == .OK {
+                            pluginManager.availableSceneryPath = panel.url
+                        }
                     }
                 }
                 .padding(8)

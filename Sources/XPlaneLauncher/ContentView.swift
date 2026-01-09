@@ -36,8 +36,18 @@ struct ContentView: View {
             Divider()
             
             // Main List
-            PluginListView()
-                .background(Color(NSColor.controlBackgroundColor))
+            TabView {
+                PluginListView()
+                    .tabItem {
+                        Label("Plugins", systemImage: "puzzlepiece.extension")
+                    }
+                
+                SceneryListView()
+                    .tabItem {
+                        Label("Scenery", systemImage: "map")
+                    }
+            }
+            .background(Color(NSColor.controlBackgroundColor))
             
             Divider()
             

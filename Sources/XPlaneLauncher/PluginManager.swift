@@ -27,13 +27,32 @@ import SwiftUI
 
 @Observable
 class PluginManager {
+    private var isLoading = true
+
     var xPlanePath: URL? {
         didSet {
+            guard !isLoading else { return }
+            savePath()
+            scanPlugins()
+            scanScenery()
+        }
+    }
+    var availablePluginsPath: URL? {
+        didSet {
+            guard !isLoading else { return }
             savePath()
             scanPlugins()
         }
     }
+    var availableSceneryPath: URL? {
+        didSet {
+            guard !isLoading else { return }
+            savePath()
+            scanScenery()
+        }
+    }
     var plugins: [Plugin] = []
+    var scenery: [Scenery] = []
     struct ScriptEnvVar: Identifiable, Codable, Hashable {
         var id = UUID()
         var key: String
@@ -51,6 +70,7 @@ class PluginManager {
         var id = UUID()
         var name: String
         var pluginFolderNames: [String]
+        var sceneryFolderNames: [String] = []
         var shellScriptPath: String?
     }
     
@@ -64,9 +84,18 @@ class PluginManager {
         let folderName: String // The actual folder name in "available plugins"
     }
     
+    struct Scenery: Identifiable, Equatable {
+        let id = UUID()
+        let name: String
+        var isEnabled: Bool
+        let folderName: String
+    }
+    
     private let fileManager = FileManager.default
     private let defaults = UserDefaults.standard
     private let pathKey = "XPlanePath"
+    private let availablePluginsPathKey = "AvailablePluginsPath"
+    private let availableSceneryPathKey = "AvailableSceneryPath"
 
     private let profilesKey = "PluginProfiles"
     private let selectedProfileIdKey = "SelectedProfileId"
@@ -87,7 +116,6 @@ class PluginManager {
             var isDir: ObjCBool = false
             if fileManager.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
                 self.xPlanePath = url
-                scanPlugins()
                 
                 // Validate preserved profile selection
                 if let savedIdString = defaults.string(forKey: selectedProfileIdKey),
@@ -99,11 +127,34 @@ class PluginManager {
             }
         }
         
+        if let savedPluginPath = defaults.string(forKey: availablePluginsPathKey) {
+            let url = URL(fileURLWithPath: savedPluginPath)
+            var isDir: ObjCBool = false
+            if fileManager.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
+                self.availablePluginsPath = url
+            }
+        }
+        
+        if let savedSceneryPath = defaults.string(forKey: availableSceneryPathKey) {
+            let url = URL(fileURLWithPath: savedSceneryPath)
+            var isDir: ObjCBool = false
+            if fileManager.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
+                self.availableSceneryPath = url
+            }
+        }
+        
+        // Initial scan if paths are ready (xPlanePath is set above)
+        scanPlugins()
+        scanScenery()
+        
         if let data = defaults.data(forKey: scriptEnvironmentKey),
            let envData = try? JSONDecoder().decode([ScriptEnvVar].self, from: data) {
             self.scriptEnvironment = envData
         }
+        
+        isLoading = false
     }
+    
     
     var selectedProfileId: UUID? {
         didSet {
@@ -130,14 +181,27 @@ class PluginManager {
             return false
         }
         
-        let currentEnabled = Set(plugins.filter { $0.isEnabled }.map { $0.folderName })
-        let profileEnabled = Set(profile.pluginFolderNames)
+        let currentEnabledPlugins = Set(plugins.filter { $0.isEnabled }.map { $0.folderName })
+        let profileEnabledPlugins = Set(profile.pluginFolderNames)
         
-        return currentEnabled != profileEnabled
+        let currentEnabledScenery = Set(scenery.filter { $0.isEnabled }.map { $0.folderName })
+        let profileEnabledScenery = Set(profile.sceneryFolderNames)
+        
+        return currentEnabledPlugins != profileEnabledPlugins || currentEnabledScenery != profileEnabledScenery
     }
     func savePath() {
         if let path = xPlanePath {
             defaults.set(path.path, forKey: pathKey)
+        }
+        if let path = availablePluginsPath {
+             defaults.set(path.path, forKey: availablePluginsPathKey)
+        } else {
+            defaults.removeObject(forKey: availablePluginsPathKey)
+        }
+        if let path = availableSceneryPath {
+            defaults.set(path.path, forKey: availableSceneryPathKey)
+        } else {
+            defaults.removeObject(forKey: availableSceneryPathKey)
         }
     }
     
@@ -155,18 +219,18 @@ class PluginManager {
         
         // Define paths
         let resourcesURL = xPlanePath.appendingPathComponent("Resources")
-        let availablePluginsURL = resourcesURL.appendingPathComponent("available plugins")
+        // Use custom path if set, otherwise default
+        let availablePluginsURL = availablePluginsPath ?? resourcesURL.appendingPathComponent("available plugins")
         let pluginsURL = resourcesURL.appendingPathComponent("plugins")
         
         // Check if directories exist
         var isDir: ObjCBool = false
         guard fileManager.fileExists(atPath: availablePluginsURL.path, isDirectory: &isDir), isDir.boolValue else {
-            print("Resources/available plugins not found")
+            // Only print if we are actually expecting it (i.e. xPlanePath is valid)
+            print("available plugins not found at \(availablePluginsURL.path)")
             plugins = []
             return
         }
-        
-        // Ensure plugins directory exists (it should, but good to check)
         
         do {
             let availableContents = try fileManager.contentsOfDirectory(at: availablePluginsURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
@@ -194,33 +258,65 @@ class PluginManager {
         }
     }
     
+    func scanScenery() {
+        guard let xPlanePath = xPlanePath else {
+            scenery = []
+            return
+        }
+        
+        let customSceneryURL = xPlanePath.appendingPathComponent("Custom Scenery")
+        let resourcesURL = xPlanePath.appendingPathComponent("Resources")
+        let availableSceneryURL = availableSceneryPath ?? resourcesURL.appendingPathComponent("available scenery")
+
+        var isDir: ObjCBool = false
+        guard fileManager.fileExists(atPath: availableSceneryURL.path, isDirectory: &isDir), isDir.boolValue else {
+            print("available scenery not found at \(availableSceneryURL.path)")
+            scenery = []
+            return
+        }
+        
+        do {
+            let availableContents = try fileManager.contentsOfDirectory(at: availableSceneryURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
+            
+            var newScenery: [Scenery] = []
+            
+            for folder in availableContents {
+                var isFolder: ObjCBool = false
+                // Accept directory or symbolic link (sometimes users symlink drives)
+                if fileManager.fileExists(atPath: folder.path, isDirectory: &isFolder), isFolder.boolValue {
+                    let folderName = folder.lastPathComponent
+                    
+                    let targetLink = customSceneryURL.appendingPathComponent(folderName)
+                    let isEnabled = fileManager.fileExists(atPath: targetLink.path)
+                    
+                    newScenery.append(Scenery(name: folderName, isEnabled: isEnabled, folderName: folderName))
+                }
+            }
+            self.scenery = newScenery.sorted { $0.name < $1.name }
+        } catch {
+            print("Error scanning scenery: \(error)")
+        }
+    }
+    
     func togglePlugin(_ plugin: Plugin) {
         guard let xPlanePath = xPlanePath else { return }
         
         let pluginsURL = xPlanePath.appendingPathComponent("Resources").appendingPathComponent("plugins")
-        let availablePluginURL = xPlanePath.appendingPathComponent("Resources").appendingPathComponent("available plugins").appendingPathComponent(plugin.folderName)
+        
+        let sourceURL = (availablePluginsPath ?? xPlanePath.appendingPathComponent("Resources").appendingPathComponent("available plugins")).appendingPathComponent(plugin.folderName)
         let linkURL = pluginsURL.appendingPathComponent(plugin.folderName)
         
         print("Toggling \(plugin.name). Current state: \(plugin.isEnabled)")
         
         do {
             if plugin.isEnabled {
-                // Was enabled, now disabling -> Remove symlink
+                // Remove symlink
                 if fileManager.fileExists(atPath: linkURL.path) {
                     try fileManager.removeItem(at: linkURL)
                 }
             } else {
-                // Was disabled, now enabling -> Create symlink
-                // Note: Symlinks need absolute path to target if we want them to be robust, 
-                // but usually relative path is better if the whole X-Plane folder moves.
-                // However, 'available plugins' is a sibling of 'plugins'. 
-                // Target: ../available plugins/PluginName
-                
-                // Let's rely on absolute paths for simplicity first, or relative if standard.
-                // Standard ln -s command usually takes target then name.
-                // FileManager createSymbolicLink(at:withDestinationURL:)
-                
-                try fileManager.createSymbolicLink(at: linkURL, withDestinationURL: availablePluginURL)
+                // Create symlink
+                try fileManager.createSymbolicLink(at: linkURL, withDestinationURL: sourceURL)
             }
             
             // Update model
@@ -229,6 +325,32 @@ class PluginManager {
             }
         } catch {
             print("Error toggling plugin: \(error)")
+        }
+    }
+    
+    func toggleScenery(_ item: Scenery) {
+        guard let xPlanePath = xPlanePath else { return }
+        
+        let customSceneryURL = xPlanePath.appendingPathComponent("Custom Scenery")
+        let sourceURL = (availableSceneryPath ?? xPlanePath.appendingPathComponent("Resources").appendingPathComponent("available scenery")).appendingPathComponent(item.folderName)
+        let linkURL = customSceneryURL.appendingPathComponent(item.folderName)
+        
+        print("Toggling Scenery \(item.name). Current state: \(item.isEnabled)")
+        
+        do {
+             if item.isEnabled {
+                 if fileManager.fileExists(atPath: linkURL.path) {
+                     try fileManager.removeItem(at: linkURL)
+                 }
+             } else {
+                 try fileManager.createSymbolicLink(at: linkURL, withDestinationURL: sourceURL)
+             }
+            
+            if let index = scenery.firstIndex(where: { $0.id == item.id }) {
+                scenery[index].isEnabled.toggle()
+            }
+        } catch {
+            print("Error toggling scenery: \(error)")
         }
     }
     
@@ -267,7 +389,8 @@ class PluginManager {
     
     func saveProfile(name: String) {
         let enabledPlugins = plugins.filter { $0.isEnabled }.map { $0.folderName }
-        let newProfile = PluginProfile(name: name, pluginFolderNames: enabledPlugins)
+        let enabledScenery = scenery.filter { $0.isEnabled }.map { $0.folderName }
+        let newProfile = PluginProfile(name: name, pluginFolderNames: enabledPlugins, sceneryFolderNames: enabledScenery)
         profiles.append(newProfile)
         saveProfilesToDisk()
         selectedProfileId = newProfile.id // Select it
@@ -275,9 +398,11 @@ class PluginManager {
     
     func updateProfile(_ profile: PluginProfile) {
         let enabledPlugins = plugins.filter { $0.isEnabled }.map { $0.folderName }
+        let enabledScenery = scenery.filter { $0.isEnabled }.map { $0.folderName }
         if let index = profiles.firstIndex(where: { $0.id == profile.id }) {
             profiles[index] = profile
             profiles[index].pluginFolderNames = enabledPlugins
+            profiles[index].sceneryFolderNames = enabledScenery
             
             saveProfilesToDisk()
         }
@@ -307,6 +432,13 @@ class PluginManager {
             if plugin.isEnabled != shouldBeEnabled {
                 // Change state
                 togglePlugin(plugin)
+            }
+        }
+        
+        for item in scenery {
+            let shouldBeEnabled = profile.sceneryFolderNames.contains(item.folderName)
+            if item.isEnabled != shouldBeEnabled {
+                toggleScenery(item)
             }
         }
         
