@@ -13,6 +13,15 @@ struct SceneryListView: View {
             ForEach(pluginManager.scenery) { item in
                 SceneryRow(item: item)
             }
+            .onMove { source, destination in
+                pluginManager.moveScenery(from: source, to: destination)
+            }
+            .onDelete { offsets in
+                for index in offsets {
+                    let item = pluginManager.scenery[index]
+                    pluginManager.unlinkScenery(item)
+                }
+            }
             
             if pluginManager.scenery.isEmpty {
                 ContentUnavailableView {
@@ -33,20 +42,55 @@ struct SceneryRow: View {
     
     var body: some View {
         HStack {
-            Image(systemName: "map.fill")
-                .foregroundStyle(item.isEnabled ? .green : .secondary)
+            Image(systemName: item.isEnabled ? "map.fill" : "map")
+                .foregroundStyle(statusColor)
             
-            Text(item.name)
-                .font(.body)
+            VStack(alignment: .leading) {
+                Text(item.name)
+                    .font(.body)
+                if !item.isManaged && !item.isInIni {
+                     // New manual folder
+                     Text("New (Unmanaged)")
+                        .font(.caption)
+                        .foregroundStyle(.blue)
+                } else if !item.isInIni && item.isEnabled {
+                    // Just added
+                    Text("New")
+                       .font(.caption)
+                       .foregroundStyle(.blue)
+                } else if !item.isEnabled && !item.isInIni {
+                    Text("Not Installed")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
             
             Spacer()
             
-            Toggle("", isOn: Binding(
-                get: { item.isEnabled },
-                set: { _ in pluginManager.toggleScenery(item) }
-            ))
-            .toggleStyle(.switch)
+            if item.isEnabled || item.isInIni {
+                Toggle("", isOn: Binding(
+                    get: { item.isEnabled },
+                    set: { _ in pluginManager.toggleScenery(item) }
+                ))
+                .toggleStyle(.switch)
+            } else {
+                // Install button for uninstalled items
+                Button("Install") {
+                    pluginManager.toggleScenery(item)
+                }
+                .buttonStyle(.bordered)
+            }
         }
         .padding(.vertical, 4)
+        // Disable swipe to delete for unmanaged real folders to prevent accidents? 
+        // PluginManager.unlinkScenery already guards isManaged.
+        // We can hide the action UI using check:
+        .deleteDisabled(!item.isManaged)
+    }
+    
+    var statusColor: Color {
+        if item.isEnabled { return .green }
+        if item.isInIni { return .orange } // Disabled in INI
+        return .secondary // Not installed
     }
 }
