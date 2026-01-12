@@ -107,8 +107,22 @@ class PluginManager {
     private let profilesKey = "PluginProfiles"
     private let selectedProfileIdKey = "SelectedProfileId"
     private let scriptEnvironmentKey = "ScriptEnvVars"
+    private let sceneryGroupsKey = "SceneryGroups"
     
     private var isApplyingProfile = false
+    
+    struct SceneryGroup: Identifiable, Codable, Hashable {
+        var id = UUID()
+        var name: String
+        var childFolderNames: [String] = []
+        var isExpanded: Bool = true // UI state
+    }
+    
+    var sceneryGroups: [SceneryGroup] = [] {
+        didSet {
+            saveSceneryGroups()
+        }
+    }
     
     init() {
         // Load profiles
@@ -157,6 +171,11 @@ class PluginManager {
         if let data = defaults.data(forKey: scriptEnvironmentKey),
            let envData = try? JSONDecoder().decode([ScriptEnvVar].self, from: data) {
             self.scriptEnvironment = envData
+        }
+        
+        if let data = defaults.data(forKey: sceneryGroupsKey),
+           let groups = try? JSONDecoder().decode([SceneryGroup].self, from: data) {
+            self.sceneryGroups = groups
         }
         
         isLoading = false
@@ -215,6 +234,12 @@ class PluginManager {
     func saveScriptEnvironment() {
         if let data = try? JSONEncoder().encode(scriptEnvironment) {
             defaults.set(data, forKey: scriptEnvironmentKey)
+        }
+    }
+
+    func saveSceneryGroups() {
+        if let data = try? JSONEncoder().encode(sceneryGroups) {
+            defaults.set(data, forKey: sceneryGroupsKey)
         }
     }
     
@@ -417,50 +442,6 @@ class PluginManager {
         var content = "I\n1000 Version\nSCENERY\n\n"
         
         for item in scenery {
-            // Only write items that are "installed" (in INI or symlinked)
-            // If it's uninstalled (isManaged=true, isInIni=false), we don't write it unless we just installed it.
-            // Actually, if it's in `scenery`, we should decide if it belongs in INI.
-            // Items that are "Unlinked" (uninstalled) shouldn't be in INI at all.
-            
-            // Check if it exists in Custom Scenery
-            // But wait, `scenery` array contains EVERYTHING including unlinked.
-            
-            if item.isInIni || item.isEnabled { 
-                 // If it was in INI, we keep it (updating enabled state).
-                 // If it is enabled, we definitely put it in.
-                 
-                 // What if it is disabled and NOT in INI (aka Uninstalled)?
-                 // Then we don't write it.
-                 
-                 // So we verify presence on disk in Custom Scenery effectively?
-                 // No, we leverage our source of truth.
-                 
-                 // If `item.isInIni` is true, it means it WAS in the file.
-                 // If we moved it to "Uninstalled", we should have updated `isInIni` to false?
-                 // The `scenery` array is our view model.
-                 
-                 // Let's rely on the definition:
-                 // "Installed" items are those that have a corresponding folder/link in Custom Scenery.
-                 // We should probably check the file system or track "isInstalled".
-                 // BUT, for performance, let's assume if it is in the list and `isInIni` is true, or `isEnabled` is true, it's relevant.
-                 
-                 // Wait. Simpler check:
-                 // The scan sets `isInIni` and `isManaged`.
-                 // If the user drags an uninstalled item into the active list, we should install it (create symlink).
-                 // If the user toggles it ON, we install it.
-                 
-                 // This function just writes the INI based on the list.
-                 // It assumes the physical files are already in state.
-                 // So we only write lines for items that SHOULD be in INI.
-                 
-                 // Which items should be in INI?
-                 // Any item that is physically present in Custom Scenery.
-                 // This includes `SCENERY_PACK_DISABLED` items.
-                 
-                 // So, effectively, any item where `folderName` exists in `Custom Scenery` should be written.
-                 // We can check `fileManager` here?
-            }
-            
             let line: String
             let isSpecialIdx = item.folderName.hasPrefix("*")
             let prefix = item.isEnabled ? "SCENERY_PACK " : "SCENERY_PACK_DISABLED "
@@ -589,14 +570,170 @@ class PluginManager {
         newItem.isInIni = false
         scenery[index] = newItem
         
-        // Move to bottom? Or keep place?
-        // Usually uninstalled go to bottom.
-        // For now, save INI which will remove it from file since it's not on disk.
-        saveSceneryOrder()
+        // Remove from any group
+        if let groupIndex = sceneryGroups.firstIndex(where: { $0.childFolderNames.contains(item.folderName) }) {
+            var group = sceneryGroups[groupIndex]
+            group.childFolderNames.removeAll(where: { $0 == item.folderName })
+            sceneryGroups[groupIndex] = group
+            // If group empty? Keep it or remove it? Let's keep it.
+        }
         
-        // Rescan to sort correctly?
-        // Or manually move. Rescan is safer.
+        saveSceneryOrder()
         scanScenery()
+    }
+    
+    // MARK: - Scenery Grouping
+
+    func createGroup(name: String, with items: [Scenery]) {
+        let folderNames = items.map { $0.folderName }
+        let newGroup = SceneryGroup(name: name, childFolderNames: folderNames)
+        
+        // Remove items from any existing groups
+        for folder in folderNames {
+             for (idx, _) in sceneryGroups.enumerated() {
+                 if let i = sceneryGroups[idx].childFolderNames.firstIndex(of: folder) {
+                     sceneryGroups[idx].childFolderNames.remove(at: i)
+                 }
+             }
+        }
+        
+        sceneryGroups.append(newGroup)
+        
+        // Reorder scenery list to group them physically
+        // We place them after the first item's original position (or at top if none)
+        if let firstItem = items.first,
+           let firstIndex = scenery.firstIndex(where: { $0.folderName == firstItem.folderName }) {
+            
+            // Remove all items from current positions
+            var remaining = scenery.filter { !folderNames.contains($0.folderName) }
+            
+            // Insert them back at firstIndex (clamped)
+            let insertIndex = min(firstIndex, remaining.count)
+            // We need to fetch the actual updated objects (scenery is value type)
+            // But we can just use `items` if we trust they are fresh, better get from `scenery`
+            let movingItems = scenery.filter { folderNames.contains($0.folderName) }
+            
+            remaining.insert(contentsOf: movingItems, at: insertIndex)
+            scenery = remaining
+        }
+        
+        saveSceneryOrder()
+    }
+    
+    func deleteGroup(_ group: SceneryGroup) {
+        sceneryGroups.removeAll { $0.id == group.id }
+        // Items remain in `scenery` list, just ungrouped.
+    }
+    
+    func toggleGroup(_ group: SceneryGroup, isEnabled: Bool) {
+        // Toggle all children
+        // We need to find them in `scenery`
+        for folderName in group.childFolderNames {
+            if let index = scenery.firstIndex(where: { $0.folderName == folderName }) {
+                let item = scenery[index]
+                if item.isEnabled != isEnabled {
+                     toggleScenery(item)
+                }
+            }
+        }
+    }
+    
+    func renameGroup(_ group: SceneryGroup, newName: String) {
+        if let index = sceneryGroups.firstIndex(where: { $0.id == group.id }) {
+            sceneryGroups[index].name = newName
+        }
+    }
+    
+    func moveSceneryToGroup(_ sceneryItem: Scenery, group: SceneryGroup) {
+        // 1. Identify current members before addition (to find location)
+        let currentMembers = scenery.filter { group.childFolderNames.contains($0.folderName) }
+        
+        // 2. Remove from old group (metadata)
+        removeFromGroup(sceneryItem)
+        
+        // 3. Add to new group (metadata)
+        if let index = sceneryGroups.firstIndex(where: { $0.id == group.id }) {
+            sceneryGroups[index].childFolderNames.append(sceneryItem.folderName)
+            
+            // 4. Physical Move
+            // If group already has members, move this item to be after the last member.
+            if let lastMember = currentMembers.last,
+               let targetIndex = scenery.firstIndex(where: { $0.id == lastMember.id }),
+               let currentIndex = scenery.firstIndex(where: { $0.id == sceneryItem.id }) {
+                
+                var newScenery = scenery
+                // Remove from old pos
+                let item = newScenery.remove(at: currentIndex)
+                
+                // Calculate insert index. 
+                // If currentIndex < targetIndex, removing shifts targetIndex down by 1.
+                var insertAt = targetIndex
+                if currentIndex < targetIndex {
+                    if let reFoundIndex = newScenery.firstIndex(where: { $0.id == lastMember.id }) {
+                        insertAt = reFoundIndex + 1
+                    }
+                } else {
+                    // Item was after group. Removing it doesn't change group indices.
+                    // targetIndex is valid.
+                     if let reFoundIndex = newScenery.firstIndex(where: { $0.id == lastMember.id }) {
+                        insertAt = reFoundIndex + 1
+                    }
+                }
+                
+                // Boundary check
+                insertAt = min(insertAt, newScenery.count)
+                newScenery.insert(item, at: insertAt)
+                
+                self.scenery = newScenery
+                saveSceneryOrder()
+            } else {
+                // Group was empty. Item stays where it is, and defines the new group position.
+                // Just save to trigger updates
+                saveSceneryOrder()
+            }
+        }
+    }
+    
+    func moveScenery(_ item: Scenery, relativeTo target: Scenery) {
+        guard item.id != target.id else { return }
+        
+        // 1. Remove from old group (metadata)
+        removeFromGroup(item)
+        
+        // 2. Check target's group
+        if let targetGroup = sceneryGroups.first(where: { $0.childFolderNames.contains(target.folderName) }) {
+             // Target is in a group, add item to it
+             if let idx = sceneryGroups.firstIndex(where: { $0.id == targetGroup.id }) {
+                 sceneryGroups[idx].childFolderNames.append(item.folderName)
+             }
+        }
+        
+        // 3. Physical Move
+        // We want 'item' to be immediately after 'target'
+        if let _ = scenery.firstIndex(where: { $0.id == target.id }),
+           let currentIndex = scenery.firstIndex(where: { $0.id == item.id }) {
+            
+            var newScenery = scenery
+            let movingItem = newScenery.remove(at: currentIndex)
+            
+            // Re-find target index
+            if let newTargetIndex = newScenery.firstIndex(where: { $0.id == target.id }) {
+                // Insert after
+                let insertIndex = min(newTargetIndex + 1, newScenery.count)
+                newScenery.insert(movingItem, at: insertIndex)
+                
+                self.scenery = newScenery
+                saveSceneryOrder()
+            }
+        }
+    }
+    
+    func removeFromGroup(_ sceneryItem: Scenery) {
+         for (idx, _) in sceneryGroups.enumerated() {
+             if let i = sceneryGroups[idx].childFolderNames.firstIndex(of: sceneryItem.folderName) {
+                 sceneryGroups[idx].childFolderNames.remove(at: i)
+             }
+         }
     }
     
     func launchXPlane() {
@@ -624,8 +761,6 @@ class PluginManager {
             }
 
         } else {
-            // Maybe it's not a .app bundle in the root?
-            // User selected the "X-Plane 12 folder". usually contains 'X-Plane.app'
              print("X-Plane.app not found in \(xPlanePath.path)")
         }
     }
