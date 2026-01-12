@@ -644,6 +644,49 @@ class PluginManager {
         }
     }
     
+    func moveSceneryToGroup(items: [Scenery], group: SceneryGroup) {
+        guard !items.isEmpty else { return }
+        
+        // 1. Identify current members (to determine insertion point)
+        let currentMembers = scenery.filter { group.childFolderNames.contains($0.folderName) }
+        
+        // 2. Remove items from old groups (metadata)
+        let itemFolders = Set(items.map { $0.folderName })
+        for (idx, _) in sceneryGroups.enumerated() {
+            sceneryGroups[idx].childFolderNames.removeAll(where: { itemFolders.contains($0) })
+        }
+        
+        // 3. Add to new group (metadata)
+        if let index = sceneryGroups.firstIndex(where: { $0.id == group.id }) {
+            sceneryGroups[index].childFolderNames.append(contentsOf: itemFolders)
+            
+            // 4. Physical Move
+            var newScenery = scenery
+            
+            // First, remove all moving items from the list
+            newScenery.removeAll(where: { itemFolders.contains($0.folderName)})
+            
+            // Determine insert index
+            var insertAt = newScenery.count // Default to end
+            
+            if let lastMember = currentMembers.last {
+                 if let targetIndex = newScenery.firstIndex(where: { $0.id == lastMember.id }) {
+                     insertAt = targetIndex + 1
+                 }
+            } else {
+                if let firstItem = items.first,
+                   let originalIndex = scenery.firstIndex(where: { $0.id == firstItem.id }) {
+                    insertAt = min(originalIndex, newScenery.count)
+                }
+            }
+            
+            // Insert
+            newScenery.insert(contentsOf: items, at: insertAt)
+            self.scenery = newScenery
+            saveSceneryOrder()
+        }
+    }
+
     func moveSceneryToGroup(_ sceneryItem: Scenery, group: SceneryGroup) {
         // 1. Identify current members before addition (to find location)
         let currentMembers = scenery.filter { group.childFolderNames.contains($0.folderName) }
@@ -694,6 +737,43 @@ class PluginManager {
         }
     }
     
+    func moveScenery(items: [Scenery], relativeTo target: Scenery) {
+        guard !items.isEmpty else { return }
+        
+        let validItems = items.filter { $0.id != target.id }
+        guard !validItems.isEmpty else { return }
+        
+        // 1. Remove from all old groups (metadata)
+        let itemFolders = Set(validItems.map { $0.folderName })
+        for (idx, _) in sceneryGroups.enumerated() {
+            sceneryGroups[idx].childFolderNames.removeAll(where: { itemFolders.contains($0) })
+        }
+        
+        // 2. Check target's group
+        if let targetGroup = sceneryGroups.first(where: { $0.childFolderNames.contains(target.folderName) }) {
+             // Target is in a group, add items to it
+             if let idx = sceneryGroups.firstIndex(where: { $0.id == targetGroup.id }) {
+                 sceneryGroups[idx].childFolderNames.append(contentsOf: itemFolders)
+             }
+        }
+        
+        // 3. Physical Move
+        var newScenery = scenery
+        
+        // Remove moving items
+        newScenery.removeAll(where: { itemFolders.contains($0.folderName) })
+        
+        // Re-find target index
+        if let newTargetIndex = newScenery.firstIndex(where: { $0.id == target.id }) {
+            // Insert after
+            let insertIndex = min(newTargetIndex + 1, newScenery.count)
+            newScenery.insert(contentsOf: validItems, at: insertIndex)
+            
+            self.scenery = newScenery
+            saveSceneryOrder()
+        }
+    }
+
     func moveScenery(_ item: Scenery, relativeTo target: Scenery) {
         guard item.id != target.id else { return }
         
@@ -709,7 +789,6 @@ class PluginManager {
         }
         
         // 3. Physical Move
-        // We want 'item' to be immediately after 'target'
         if let _ = scenery.firstIndex(where: { $0.id == target.id }),
            let currentIndex = scenery.firstIndex(where: { $0.id == item.id }) {
             

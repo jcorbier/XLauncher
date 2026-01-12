@@ -18,9 +18,9 @@ struct SceneryListView: View {
                 ForEach(displayItems) { item in
                     switch item {
                     case .group(let group, let members):
-                        SceneryGroupSection(group: group, members: members)
+                        SceneryGroupSection(group: group, members: members, selection: selection)
                     case .simple(let scenery):
-                        SceneryRow(item: scenery)
+                        SceneryRow(item: scenery, selection: selection)
                             .tag(scenery.id)
                             .draggable(scenery.id.uuidString)
                     }
@@ -128,6 +128,7 @@ struct SceneryGroupSection: View {
     @Environment(PluginManager.self) var pluginManager
     let group: PluginManager.SceneryGroup
     let members: [PluginManager.Scenery]
+    let selection: Set<UUID>
     
     @State private var isRenaming = false
     @State private var renameText = ""
@@ -142,8 +143,9 @@ struct SceneryGroupSection: View {
             }
         )) {
             ForEach(members) { item in
-                SceneryRow(item: item)
+                SceneryRow(item: item, selection: selection)
                     .padding(.leading, 8)
+                    .tag(item.id)
                     .draggable(item.id.uuidString)
             }
             .onMove(perform: moveMembers)
@@ -188,20 +190,43 @@ struct SceneryGroupSection: View {
     }
     
     func handleDrop(items: [String]) -> Bool {
-        guard let uuidString = items.first, let uuid = UUID(uuidString: uuidString) else { return false }
+        var didMove = false
+        var itemsToMove: [PluginManager.Scenery] = []
+        var potentialUUIDs = Set<UUID>()
         
-        if let sceneryItem = pluginManager.scenery.first(where: { $0.id == uuid }) {
-            // Check if already in this group
-            if group.childFolderNames.contains(sceneryItem.folderName) {
-                return false
+        // 1. Collect dropped UUIDs
+        for uuidString in items {
+            if let uuid = UUID(uuidString: uuidString) {
+                potentialUUIDs.insert(uuid)
             }
-            
-            withAnimation {
-                pluginManager.moveSceneryToGroup(sceneryItem, group: group)
-            }
-            return true
         }
-        return false
+        
+        // 2. Check overlap with selection
+        // If the dropped items are part of the selection, move the whole selection
+        if !selection.isDisjoint(with: potentialUUIDs) {
+            potentialUUIDs.formUnion(selection)
+        }
+        
+        // 3. Resolve to Scenery objects
+        for uuid in potentialUUIDs {
+            if let sceneryItem = pluginManager.scenery.first(where: { $0.id == uuid }) {
+                // Check if already in this group
+                if !group.childFolderNames.contains(sceneryItem.folderName) {
+                    itemsToMove.append(sceneryItem)
+                }
+            }
+        }
+        
+        if !itemsToMove.isEmpty {
+            DispatchQueue.main.async {
+                withAnimation {
+                    pluginManager.moveSceneryToGroup(items: itemsToMove, group: group)
+                }
+            }
+            didMove = true
+        }
+        
+        return didMove
     }
     
     func moveMembers(from source: IndexSet, to destination: Int) {
@@ -231,6 +256,7 @@ struct SceneryGroupSection: View {
 struct SceneryRow: View {
     @Environment(PluginManager.self) var pluginManager
     let item: PluginManager.Scenery
+    let selection: Set<UUID>
     
     var body: some View {
         HStack {
@@ -283,14 +309,37 @@ struct SceneryRow: View {
         .deleteDisabled(!item.isManaged)
         .contentShape(Rectangle())
         .dropDestination(for: String.self) { items, location in
-            guard let uuidString = items.first, let uuid = UUID(uuidString: uuidString) else { return false }
-            guard let sourceItem = pluginManager.scenery.first(where: { $0.id == uuid }) else { return false }
+            var itemsToMove: [PluginManager.Scenery] = []
+            var potentialUUIDs = Set<UUID>()
             
-            // Move sourceItem relative to 'item' (this row)
-            withAnimation {
-                pluginManager.moveScenery(sourceItem, relativeTo: item)
+            // 1. Collect dropped UUIDs
+            for uuidString in items {
+                if let uuid = UUID(uuidString: uuidString) {
+                    potentialUUIDs.insert(uuid)
+                }
             }
-            return true
+            
+            // 2. Overlap with selection
+            if !selection.isDisjoint(with: potentialUUIDs) {
+                 potentialUUIDs.formUnion(selection)
+            }
+            
+            // 3. Resolve
+            for uuid in potentialUUIDs {
+                if let sceneryItem = pluginManager.scenery.first(where: { $0.id == uuid }) {
+                    itemsToMove.append(sceneryItem)
+                }
+            }
+            
+            if !itemsToMove.isEmpty {
+                DispatchQueue.main.async {
+                    withAnimation {
+                        pluginManager.moveScenery(items: itemsToMove, relativeTo: item)
+                    }
+                }
+                return true
+            }
+            return false
         }
     }
     
