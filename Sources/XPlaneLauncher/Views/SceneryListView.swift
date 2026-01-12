@@ -129,6 +129,9 @@ struct SceneryGroupSection: View {
     let group: PluginManager.SceneryGroup
     let members: [PluginManager.Scenery]
     
+    @State private var isRenaming = false
+    @State private var renameText = ""
+    
     var body: some View {
         DisclosureGroup(isExpanded: Binding(
             get: { group.isExpanded },
@@ -167,10 +170,18 @@ struct SceneryGroupSection: View {
             }
             .contextMenu {
                 Button("Rename...", systemImage: "pencil") {
-                    // TODO: Rename Dialog
+                    renameText = group.name
+                    isRenaming = true
                 }
                 Button("Delete Group", systemImage: "trash", role: .destructive) {
                     pluginManager.deleteGroup(group)
+                }
+            }
+            .alert("Rename Group", isPresented: $isRenaming) {
+                TextField("New Name", text: $renameText)
+                Button("Cancel", role: .cancel) { }
+                Button("Rename") {
+                    pluginManager.renameGroup(group, newName: renameText)
                 }
             }
         }
