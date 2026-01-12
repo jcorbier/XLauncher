@@ -97,7 +97,13 @@ X-Plane Launcher provides advanced control over your custom scenery:
 2.  **Toggle**:
     - Toggling a scenery item OFF sets it to `SCENERY_PACK_DISABLED` in the INI file. The symlink remains, keeping the scenery physically present but disabled in X-Plane.
 
-3.  **New Scenery**:
+3.  **Scenery Grouping**:
+    - Select multiple scenery items.
+    - Click the "Create Group" button in the top-right corner to bundle them together.
+    - Groups allow you to organize your scenery list and toggle multiple items at once.
+    - Drag and drop items into or out of groups as needed.
+
+4.  **New Scenery**:
     - Any new scenery folders manually added to `Custom Scenery` (not yet in the INI) are detected and placed at the top of the list, matching X-Plane's default behavior.
 
 ## License
