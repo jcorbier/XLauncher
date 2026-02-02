@@ -6,7 +6,7 @@ X-Plane Launcher is a macOS application designed to simplify the management of y
 
 - **Profile Management**: Create named profiles (e.g., "VATSIM", "Offline", "Default") to quickly switch between different sets of plugins and scenery.
 - **Smart Plugin & Scenery Management**: Keep your X-Plane `plugins` and `Custom Scenery` folders clean. The launcher manages content using symlinks, keeping your actual files in separate "available" source directories.
-- **Script Execution**: Automatically run shell scripts when applying a profile (useful for configuring external tools like Hoppie ACARS based on your active profile).
+- **Script Execution**: Automatically run shell scripts when launching X-Plane (useful for configuring external tools like Hoppie ACARS based on your active profile).
 - **One-Click Launch**: Launch X-Plane directly from the app after selecting your profile.
 
 ## Requirements
@@ -78,7 +78,7 @@ You can configure these paths to be anywhere on your system in the App Settings.
 
 ### Scripting
 
-You can associate a shell script with a profile. When the profile is applied, the script is executed.
+You can associate one or more shell scripts with a profile. These scripts are executed immediately before X-Plane starts.
 The environment variable `XLAUNCHER_PROFILE` is set to the name of the active profile.
 Any custom variables defined in **Settings > Script Environment** are also injected into the script's environment.
 
