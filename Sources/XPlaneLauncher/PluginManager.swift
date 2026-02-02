@@ -818,6 +818,13 @@ class PluginManager {
     func launchXPlane() {
         guard let xPlanePath = xPlanePath else { return }
         
+        // Execute profile script if exists
+        if let selectedId = selectedProfileId,
+           let profile = profiles.first(where: { $0.id == selectedId }),
+           let scriptPath = profile.shellScriptPath, !scriptPath.isEmpty {
+            executeShellScript(at: scriptPath, profileName: profile.name)
+        }
+        
         let appURL = xPlanePath.appendingPathComponent("X-Plane.app")
 
         
@@ -899,11 +906,6 @@ class PluginManager {
             if item.isEnabled != shouldBeEnabled {
                 toggleScenery(item)
             }
-        }
-        
-        // Execute Shell Script if present
-        if let scriptPath = profile.shellScriptPath, !scriptPath.isEmpty {
-            executeShellScript(at: scriptPath, profileName: profile.name)
         }
     }
     
