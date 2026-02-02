@@ -81,52 +81,6 @@ struct ProfileSelectorView: View {
                 Spacer()
             }
             .padding(.horizontal)
-            
-            // Profile Details (Shell Script)
-            if let selectedId = pluginManager.selectedProfileId,
-               let profile = pluginManager.profiles.first(where: { $0.id == selectedId }) {
-                
-                HStack {
-                    Text("Shell Script:")
-                        .font(.body)
-                    
-                    if let scriptPath = profile.shellScriptPath, !scriptPath.isEmpty {
-                        Text(URL(fileURLWithPath: scriptPath).lastPathComponent)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .help(scriptPath)
-                    } else {
-                        Text("None")
-                            .foregroundStyle(.secondary)
-                    }
-                    
-                    Spacer()
-                    
-                    Button("Select...") {
-                        let panel = NSOpenPanel()
-                        panel.canChooseFiles = true
-                        panel.canChooseDirectories = false
-                        panel.allowsMultipleSelection = false
-                        panel.prompt = "Select Shell Script"
-                        
-                        if panel.runModal() == .OK, let url = panel.url {
-                            var updatedProfile = profile
-                            updatedProfile.shellScriptPath = url.path
-                            pluginManager.updateProfile(updatedProfile)
-                        }
-                    }
-                    
-                    if profile.shellScriptPath != nil {
-                        Button("Clear") {
-                            var updatedProfile = profile
-                            updatedProfile.shellScriptPath = nil
-                            pluginManager.updateProfile(updatedProfile)
-                        }
-                    }
-                }
-                .padding(.horizontal)
-                .padding(.bottom)
-            }
         }
         .alert("Save Profile", isPresented: $showingSaveProfileAlert) {
             TextField("Profile Name", text: $newProfileName)

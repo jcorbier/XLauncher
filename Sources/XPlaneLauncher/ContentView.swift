@@ -46,6 +46,11 @@ struct ContentView: View {
                     .tabItem {
                         Label("Scenery", systemImage: "map")
                     }
+                
+                ScriptsListView()
+                    .tabItem {
+                        Label("Scripts", systemImage: "terminal")
+                    }
             }
             .background(Color(NSColor.controlBackgroundColor))
             

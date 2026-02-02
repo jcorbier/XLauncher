@@ -66,12 +66,19 @@ class PluginManager {
     }
     
     // Profiles
+    struct ProfileScript: Identifiable, Codable, Hashable {
+        var id = UUID()
+        var path: String
+        var isEnabled: Bool
+    }
+    
     struct PluginProfile: Identifiable, Codable, Hashable {
         var id = UUID()
         var name: String
         var pluginFolderNames: [String]
         var sceneryFolderNames: [String] = []
         var shellScriptPath: String?
+        var scripts: [ProfileScript] = []
     }
     
     var profiles: [PluginProfile] = []
@@ -129,6 +136,15 @@ class PluginManager {
         if let data = defaults.data(forKey: profilesKey),
            let savedProfiles = try? JSONDecoder().decode([PluginProfile].self, from: data) {
             self.profiles = savedProfiles
+            
+            // Migration: Move shellScriptPath to scripts if needed
+            for i in 0..<profiles.count {
+                if profiles[i].scripts.isEmpty,
+                   let oldScript = profiles[i].shellScriptPath, !oldScript.isEmpty {
+                    let newScript = ProfileScript(path: oldScript, isEnabled: true)
+                    profiles[i].scripts.append(newScript)
+                }
+            }
         }
         
         if let savedPath = defaults.string(forKey: pathKey) {
@@ -213,7 +229,10 @@ class PluginManager {
         let currentEnabledScenery = Set(scenery.filter { $0.isEnabled }.map { $0.folderName })
         let profileEnabledScenery = Set(profile.sceneryFolderNames)
         
-        return currentEnabledPlugins != profileEnabledPlugins || currentEnabledScenery != profileEnabledScenery
+        let currentScripts = Set(activeScripts)
+        let profileScripts = Set(profile.scripts)
+        
+        return currentEnabledPlugins != profileEnabledPlugins || currentEnabledScenery != profileEnabledScenery || currentScripts != profileScripts
     }
     func savePath() {
         if let path = xPlanePath {
@@ -818,11 +837,14 @@ class PluginManager {
     func launchXPlane() {
         guard let xPlanePath = xPlanePath else { return }
         
-        // Execute profile script if exists
+        // Execute profile scripts
         if let selectedId = selectedProfileId,
-           let profile = profiles.first(where: { $0.id == selectedId }),
-           let scriptPath = profile.shellScriptPath, !scriptPath.isEmpty {
-            executeShellScript(at: scriptPath, profileName: profile.name)
+           let profile = profiles.first(where: { $0.id == selectedId }) {
+            
+            // Execute ACTIVE scripts (what the user sees in UI)
+            for script in activeScripts where script.isEnabled {
+                 executeShellScript(at: script.path, profileName: profile.name)
+            }
         }
         
         let appURL = xPlanePath.appendingPathComponent("X-Plane.app")
@@ -869,8 +891,10 @@ class PluginManager {
             profiles[index] = profile
             profiles[index].pluginFolderNames = enabledPlugins
             profiles[index].sceneryFolderNames = enabledScenery
+            profiles[index].scripts = activeScripts // Save active scripts
             
             saveProfilesToDisk()
+            
         }
     }
     
@@ -879,6 +903,27 @@ class PluginManager {
         saveProfilesToDisk()
         if selectedProfileId == profile.id {
             selectedProfileId = nil
+        }
+    }
+    
+    var activeScripts: [ProfileScript] = []
+
+    // MARK: - Script Management
+    
+    func addScript(name: String, path: String) {
+        // Operates on ACTIVE scripts (unsaved state)
+        let newScript = ProfileScript(path: path, isEnabled: true)
+        activeScripts.append(newScript)
+        // Do NOT save to disk immediately.
+    }
+    
+    func deleteScript(_ script: ProfileScript) {
+        activeScripts.removeAll { $0.id == script.id }
+    }
+    
+    func toggleScript(_ script: ProfileScript) {
+        if let index = activeScripts.firstIndex(where: { $0.id == script.id }) {
+            activeScripts[index].isEnabled.toggle()
         }
     }
     
@@ -907,6 +952,9 @@ class PluginManager {
                 toggleScenery(item)
             }
         }
+        
+        // Load scripts from profile into active state
+        self.activeScripts = profile.scripts
     }
     
     private func executeShellScript(at path: String, profileName: String) {
