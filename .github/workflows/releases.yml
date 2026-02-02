@@ -10,7 +10,7 @@ on:
 jobs:
   release:
     name: Build & Release
-    runs-on: macos-14
+    runs-on: macos-26
     permissions:
       contents: write
 
@@ -42,7 +42,7 @@ jobs:
           fi
 
       - name: Select Xcode
-        run: sudo xcode-select -switch /Applications/Xcode_16.2.app/Contents/Developer
+        run: sudo xcode-select -switch /Applications/Xcode_26.2.app/Contents/Developer
 
       - name: Install Tools
         run: |

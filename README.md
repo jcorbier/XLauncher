@@ -11,7 +11,7 @@ X-Plane Launcher is a macOS application designed to simplify the management of y
 
 ## Requirements
 
-- macOS 14.0 or later
+- macOS 15.6 or later
 - X-Plane 12
 
 ## Installation
