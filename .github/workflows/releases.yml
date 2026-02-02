@@ -27,14 +27,18 @@ jobs:
             echo "IS_DRAFT=false" >> $GITHUB_ENV
             echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
             echo "TAG_NAME=${GITHUB_REF_NAME}" >> $GITHUB_ENV
-            echo "RELEASE_NAME=${GITHUB_REF_NAME}" >> $GITHUB_ENV
-            echo "PRERELEASE=false" >> $GITHUB_ENV
+            
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "release_name=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "tag_name=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
           else
             echo "IS_DRAFT=true" >> $GITHUB_ENV
             echo "VERSION=0.0.0-draft" >> $GITHUB_ENV
             echo "TAG_NAME=rolling-draft" >> $GITHUB_ENV
-            echo "RELEASE_NAME=Rolling Draft" >> $GITHUB_ENV
-            echo "PRERELEASE=true" >> $GITHUB_ENV
+            
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "release_name=Rolling Draft" >> "$GITHUB_OUTPUT"
+            echo "tag_name=rolling-draft" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Select Xcode
@@ -138,6 +142,6 @@ jobs:
         with:
           files: XLauncher.dmg
           body_path: RELEASE_CHANGELOG.md
-          prerelease: ${{ env.PRERELEASE }}
-          name: ${{ env.RELEASE_NAME }}
-          tag_name: ${{ env.TAG_NAME }}
+          prerelease: ${{ steps.vars.outputs.prerelease }}
+          name: ${{ steps.vars.outputs.release_name }}
+          tag_name: ${{ steps.vars.outputs.tag_name }}
