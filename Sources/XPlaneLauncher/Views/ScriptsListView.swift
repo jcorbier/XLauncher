@@ -104,5 +104,10 @@ struct ScriptRow: View {
             .toggleStyle(.switch)
         }
         .padding(.vertical, 4)
+        .contextMenu {
+            Button("Delete", role: .destructive) {
+                pluginManager.deleteScript(script)
+            }
+        }
     }
 }
