@@ -159,6 +159,9 @@ class PluginManager {
                    let savedId = UUID(uuidString: savedIdString) {
                      isRestoringState = true
                      self.selectedProfileId = savedId
+                     if let profile = profiles.first(where: { $0.id == savedId }) {
+                         self.activeScripts = profile.scripts
+                     }
                      isRestoringState = false
                 }
             }
