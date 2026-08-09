@@ -37,20 +37,28 @@ class PluginManager {
             scanScenery()
         }
     }
-    var availablePluginsPath: URL? {
+    var launcherDataFolder: URL? {
         didSet {
             guard !isLoading else { return }
             savePath()
+            ensureLauncherDataDirectories()
             scanPlugins()
-        }
-    }
-    var availableSceneryPath: URL? {
-        didSet {
-            guard !isLoading else { return }
-            savePath()
             scanScenery()
         }
     }
+    var pluginsDataFolder: URL? {
+        launcherDataFolder?.appendingPathComponent("Plugins")
+    }
+    var sceneryDataFolder: URL? {
+        launcherDataFolder?.appendingPathComponent("Scenery")
+    }
+    var aircraftDataFolder: URL? {
+        launcherDataFolder?.appendingPathComponent("Aircraft")
+    }
+    var luaScriptsDataFolder: URL? {
+        launcherDataFolder?.appendingPathComponent("LuaScripts")
+    }
+
     var plugins: [Plugin] = []
     var scenery: [Scenery] = []
     struct ScriptEnvVar: Identifiable, Codable, Hashable {
@@ -88,7 +96,7 @@ class PluginManager {
         let id = UUID()
         let name: String
         var isEnabled: Bool
-        let folderName: String // The actual folder name in "available plugins"
+        let folderName: String // The actual folder name in managed plugins directory
     }
     
     struct Scenery: Identifiable, Equatable, Hashable {
@@ -107,8 +115,8 @@ class PluginManager {
     private let fileManager = FileManager.default
     private let defaults = UserDefaults.standard
     private let pathKey = "XPlanePath"
-    private let availablePluginsPathKey = "AvailablePluginsPath"
-    private let availableSceneryPathKey = "AvailableSceneryPath"
+    private let launcherDataFolderKey = "LauncherDataFolder"
+
     private let kXPlaneCustomSceneryFileName = "scenery_packs.ini"
 
     private let profilesKey = "PluginProfiles"
@@ -132,6 +140,22 @@ class PluginManager {
     }
     
     init() {
+        // Default Central Launcher Data Folder
+        if let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+            let defaultFolder = appSupport.appendingPathComponent("XPlaneLauncher")
+            self.launcherDataFolder = defaultFolder
+        }
+
+        if let savedDataPath = defaults.string(forKey: launcherDataFolderKey) {
+            let url = URL(fileURLWithPath: savedDataPath)
+            var isDir: ObjCBool = false
+            if fileManager.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
+                self.launcherDataFolder = url
+            }
+        }
+
+        ensureLauncherDataDirectories()
+
         // Load profiles
         if let data = defaults.data(forKey: profilesKey),
            let savedProfiles = try? JSONDecoder().decode([PluginProfile].self, from: data) {
@@ -167,21 +191,7 @@ class PluginManager {
             }
         }
         
-        if let savedPluginPath = defaults.string(forKey: availablePluginsPathKey) {
-            let url = URL(fileURLWithPath: savedPluginPath)
-            var isDir: ObjCBool = false
-            if fileManager.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
-                self.availablePluginsPath = url
-            }
-        }
-        
-        if let savedSceneryPath = defaults.string(forKey: availableSceneryPathKey) {
-            let url = URL(fileURLWithPath: savedSceneryPath)
-            var isDir: ObjCBool = false
-            if fileManager.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
-                self.availableSceneryPath = url
-            }
-        }
+
         
         // Initial scan if paths are ready (xPlanePath is set above)
         scanPlugins()
@@ -198,6 +208,15 @@ class PluginManager {
         }
         
         isLoading = false
+    }
+
+    func ensureLauncherDataDirectories() {
+        guard let dataFolder = launcherDataFolder else { return }
+        let subfolders = ["Plugins", "Scenery", "Aircraft", "LuaScripts"]
+        for sub in subfolders {
+            let path = dataFolder.appendingPathComponent(sub)
+            try? fileManager.createDirectory(at: path, withIntermediateDirectories: true)
+        }
     }
     
     
@@ -241,16 +260,12 @@ class PluginManager {
         if let path = xPlanePath {
             defaults.set(path.path, forKey: pathKey)
         }
-        if let path = availablePluginsPath {
-             defaults.set(path.path, forKey: availablePluginsPathKey)
+        if let path = launcherDataFolder {
+            defaults.set(path.path, forKey: launcherDataFolderKey)
         } else {
-            defaults.removeObject(forKey: availablePluginsPathKey)
+            defaults.removeObject(forKey: launcherDataFolderKey)
         }
-        if let path = availableSceneryPath {
-            defaults.set(path.path, forKey: availableSceneryPathKey)
-        } else {
-            defaults.removeObject(forKey: availableSceneryPathKey)
-        }
+
     }
     
     func saveScriptEnvironment() {
@@ -266,39 +281,36 @@ class PluginManager {
     }
     
     func scanPlugins() {
-        guard let xPlanePath = xPlanePath else {
+        guard let xPlanePath = xPlanePath,
+              let pluginsURL = pluginsDataFolder else {
             plugins = []
             return
         }
         
         // Define paths
-        let resourcesURL = xPlanePath.appendingPathComponent("Resources")
-        // Use custom path if set, otherwise default
-        let availablePluginsURL = availablePluginsPath ?? resourcesURL.appendingPathComponent("available plugins")
-        let pluginsURL = resourcesURL.appendingPathComponent("plugins")
+        let pluginsURLTarget = xPlanePath.appendingPathComponent("Resources").appendingPathComponent("plugins")
         
         // Check if directories exist
         var isDir: ObjCBool = false
-        guard fileManager.fileExists(atPath: availablePluginsURL.path, isDirectory: &isDir), isDir.boolValue else {
-            // Only print if we are actually expecting it (i.e. xPlanePath is valid)
-            print("available plugins not found at \(availablePluginsURL.path)")
+        guard fileManager.fileExists(atPath: pluginsURL.path, isDirectory: &isDir), isDir.boolValue else {
+            print("Plugins folder not found at \(pluginsURL.path)")
             plugins = []
             return
         }
         
         do {
-            let availableContents = try fileManager.contentsOfDirectory(at: availablePluginsURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
+            let contents = try fileManager.contentsOfDirectory(at: pluginsURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
             
             // Filter only directories
             var newPlugins: [Plugin] = []
             
-            for folder in availableContents {
+            for folder in contents {
                 var isFolder: ObjCBool = false
                 if fileManager.fileExists(atPath: folder.path, isDirectory: &isFolder), isFolder.boolValue {
                     let folderName = folder.lastPathComponent
                     
                     // Check if symlinked in 'plugins'
-                    let targetLink = pluginsURL.appendingPathComponent(folderName)
+                    let targetLink = pluginsURLTarget.appendingPathComponent(folderName)
                     let isEnabled = fileManager.fileExists(atPath: targetLink.path)
                     
                     newPlugins.append(Plugin(name: folderName, isEnabled: isEnabled, folderName: folderName))
@@ -326,7 +338,7 @@ class PluginManager {
         }
         
         let customSceneryURL = xPlanePath.appendingPathComponent("Custom Scenery")
-        let availableSceneryURL = availableSceneryPath ?? xPlanePath.appendingPathComponent("Resources").appendingPathComponent("available scenery")
+        let managedSceneryURL = sceneryDataFolder
 
         // 1. Read scenery_packs.ini to establish order
         var iniItems: [(line: String, folderName: String, enabled: Bool)] = []
@@ -391,12 +403,12 @@ class PluginManager {
             print("Error scanning Custom Scenery: \(error)")
         }
         
-        // 3. Scan "Available Scenery" for uninstalled items
+        // 3. Scan managed Scenery folder for uninstalled items
         var uninstalled: [Scenery] = []
-        if fileManager.fileExists(atPath: availableSceneryURL.path) {
+        if let managedSceneryURL = managedSceneryURL, fileManager.fileExists(atPath: managedSceneryURL.path) {
             do {
-                let availableContents = try fileManager.contentsOfDirectory(at: availableSceneryURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
-                for url in availableContents {
+                let contents = try fileManager.contentsOfDirectory(at: managedSceneryURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
+                for url in contents {
                     var isDir: ObjCBool = false
                     if fileManager.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
                         let name = url.lastPathComponent
@@ -408,14 +420,14 @@ class PluginManager {
                             uninstalled.append(Scenery(name: name,
                                                        isEnabled: false,
                                                        folderName: name,
-                                                       isManaged: true, // It comes from available, so we can manage it
+                                                       isManaged: true, // It comes from central data folder, so we can manage it
                                                        isInIni: false,
                                                        iniLine: ""))
                         }
                     }
                 }
             } catch {
-                print("Error scanning available scenery: \(error)")
+                print("Error scanning scenery: \(error)")
             }
         }
         
@@ -452,7 +464,7 @@ class PluginManager {
             }
         }
         
-        // C. Uninstalled (Available)
+        // C. Uninstalled (In Central Data Folder)
         finalScenery.append(contentsOf: uninstalled.sorted { $0.name < $1.name })
         
         self.scenery = finalScenery
@@ -499,11 +511,12 @@ class PluginManager {
     }
 
     func togglePlugin(_ plugin: Plugin) {
-        guard let xPlanePath = xPlanePath else { return }
+        guard let xPlanePath = xPlanePath,
+              let pluginsFolder = pluginsDataFolder else { return }
         
         let pluginsURL = xPlanePath.appendingPathComponent("Resources").appendingPathComponent("plugins")
         
-        let sourceURL = (availablePluginsPath ?? xPlanePath.appendingPathComponent("Resources").appendingPathComponent("available plugins")).appendingPathComponent(plugin.folderName)
+        let sourceURL = pluginsFolder.appendingPathComponent(plugin.folderName)
         let linkURL = pluginsURL.appendingPathComponent(plugin.folderName)
         
         print("Toggling \(plugin.name). Current state: \(plugin.isEnabled)")
@@ -550,12 +563,10 @@ class PluginManager {
         if !wasEnabled {
              // Enable
              // Check if we need to link it
-             if let xPlanePath = xPlanePath {
+             if let xPlanePath = xPlanePath, let sceneryFolder = sceneryDataFolder {
                  let linkURL = xPlanePath.appendingPathComponent("Custom Scenery").appendingPathComponent(newItem.folderName)
                  if !fileManager.fileExists(atPath: linkURL.path) {
-                     // It's missing, try to link from Available Scenery
-                     let source = (availableSceneryPath ?? xPlanePath.appendingPathComponent("Resources").appendingPathComponent("available scenery")).appendingPathComponent(newItem.folderName)
-                     
+                     let source = sceneryFolder.appendingPathComponent(newItem.folderName)
                      if fileManager.fileExists(atPath: source.path) {
                          try? fileManager.createSymbolicLink(at: linkURL, withDestinationURL: source)
                          newItem.isManaged = true // It is now managed

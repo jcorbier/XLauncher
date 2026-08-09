@@ -31,7 +31,7 @@ struct SceneryListView: View {
                     ContentUnavailableView {
                         Label("No Scenery Found", systemImage: "map")
                     } description: {
-                        Text("Check your 'available scenery' folder.")
+                        Text("Check your Central Data Folder ('Scenery' subfolder).")
                     }
                 }
             }

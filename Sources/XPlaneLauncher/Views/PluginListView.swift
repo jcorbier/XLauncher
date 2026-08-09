@@ -39,7 +39,7 @@ struct PluginListView: View {
                 ContentUnavailableView {
                     Label("No Plugins Found", systemImage: "puzzlepiece.extension")
                 } description: {
-                    Text("Check your X-Plane 'Resources/available plugins' folder.")
+                    Text("Check your Central Data Folder ('Plugins' subfolder).")
                 }
             }
         }

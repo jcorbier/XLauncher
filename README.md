@@ -5,7 +5,7 @@ X-Plane Launcher is a macOS application designed to simplify the management of y
 ## Features
 
 - **Profile Management**: Create named profiles (e.g., "VATSIM", "Offline", "Default") to quickly switch between different sets of plugins and scenery.
-- **Smart Plugin & Scenery Management**: Keep your X-Plane `plugins` and `Custom Scenery` folders clean. The launcher manages content using symlinks, keeping your actual files in separate "available" source directories.
+- **Smart Plugin & Scenery Management**: Keep your X-Plane `plugins` and `Custom Scenery` folders clean. The launcher manages content using symlinks, keeping your actual files organized inside subfolders of the Central Data Folder.
 - **Script Execution**: Automatically run shell scripts when launching X-Plane (useful for configuring external tools like Hoppie ACARS based on your active profile).
 - **One-Click Launch**: Launch X-Plane directly from the app after selecting your profile.
 
@@ -34,41 +34,45 @@ To build the application, ensure you have Xcode installed (or the Swift command 
 
 ## Setup
 
-### Organizing Resources
+### Central Data Folder & Organizing Resources
 
-For X-Plane Launcher to work, you need to store your plugins and scenery in "source" folders. By default, the app looks for:
+X-Plane Launcher uses a **Central Data Folder** to store your managed addons. By default, it is located at:
+`~/Library/Application Support/XPlaneLauncher/`
 
-- `X-Plane 12/Resources/available plugins` (for plugins)
-- `X-Plane 12/Resources/available scenery` (for scenery packs)
+Inside this folder, subdirectories are automatically created for your addons:
+- `Plugins/` (for managed plugins)
+- `Scenery/` (for custom scenery packs)
+- `Aircraft/` (for aircraft)
+- `LuaScripts/` (for FlyWithLua scripts)
 
-You can configure these paths to be anywhere on your system in the App Settings.
+You can customize the location of the Central Data Folder in App Settings.
 
-#### Default Setup Example
+#### Folder Structure Example
 
-1. Navigate to your X-Plane 12 folder (e.g., `/X-Plane 12/Resources/`).
-2. Create `available plugins` and `available scenery` folders.
-3. Move your non-default plugins into `available plugins` and your custom scenery packs into `available scenery`.
-4. The structure should look like this:
-   ```text
-   X-Plane 12/
-   ├── Custom Scenery/    <-- Managed by Launcher (contains symlinks)
-   └── Resources/
-       ├── plugins/           <-- Managed by Launcher (contains symlinks)
-       ├── available plugins/ <-- Source for plugins
-       │   ├── BetterPushback
-       │   └── ...
-       └── available scenery/ <-- Source for scenery
-           ├── KLAX - Los Angeles
-           └── ...
-   ```
+```text
+~/Library/Application Support/XPlaneLauncher/
+├── Plugins/    <-- Source for plugins
+│   ├── BetterPushback
+│   └── ...
+├── Scenery/    <-- Source for scenery packs
+│   ├── KLAX - Los Angeles
+│   └── ...
+├── Aircraft/   <-- Source for aircraft
+└── LuaScripts/ <-- Source for FlyWithLua scripts
+
+X-Plane 12/
+├── Custom Scenery/  <-- Managed by Launcher (contains symlinks)
+└── Resources/
+    └── plugins/     <-- Managed by Launcher (contains symlinks)
+```
 
 ## Usage
 
 1. **Open XLauncher**.
-2. **Configure Settings**: Go to `XLauncher` > `Settings...` (or `Cmd+,`) to open the Settings dialog.
+2. **Configure Settings**: Go to `XLauncher` > `Settings...` (or `Cmd+,`) to open Settings.
+   - **Central Data Folder**: Select or view the central data folder location where all your managed plugins, scenery, aircraft, and Lua scripts live.
    - **X-Plane Location**: Select your X-Plane 12 installation folder (the root folder containing `X-Plane.app`).
-   - **Plugins/Scenery Sources**: (Optional) If you don't use the default folder structure, specify the paths to your available plugins and scenery sources here.
-   - **Script Environment**: Define global environment variables that will be passed to your profile scripts (e.g., API keys, user credentials).
+   - **Script Environment**: Define global environment variables passed to your profile scripts.
 3. **Manage Profiles**:
    - Use the **Plugins** and **Scenery** tabs to toggle content on/off.
    - Use the "Save Current as Profile" button to save your current configuration as a new profile.

@@ -47,30 +47,19 @@ struct SettingsView: View {
                     }
                     
                     Divider()
-                    
-                    FolderSelectorRow(label: "Plugins Source:", path: pluginManager.availablePluginsPath, placeholder: "Default (Resources/available plugins)") {
+
+                    FolderSelectorRow(label: "Central Data Folder:", path: pluginManager.launcherDataFolder, placeholder: "Default (Application Support/XPlaneLauncher)") {
                         let panel = NSOpenPanel()
                         panel.canChooseFiles = false
                         panel.canChooseDirectories = true
                         panel.allowsMultipleSelection = false
-                        panel.prompt = "Select Plugins Source Folder"
+                        panel.prompt = "Select Central Data Folder"
                         if panel.runModal() == .OK {
-                            pluginManager.availablePluginsPath = panel.url
+                            pluginManager.launcherDataFolder = panel.url
                         }
                     }
                     
-                    Divider()
-                    
-                    FolderSelectorRow(label: "Scenery Source:", path: pluginManager.availableSceneryPath, placeholder: "Default (Resources/available scenery)") {
-                        let panel = NSOpenPanel()
-                        panel.canChooseFiles = false
-                        panel.canChooseDirectories = true
-                        panel.allowsMultipleSelection = false
-                        panel.prompt = "Select Scenery Source Folder"
-                        if panel.runModal() == .OK {
-                            pluginManager.availableSceneryPath = panel.url
-                        }
-                    }
+
                 }
                 .padding(8)
             }
