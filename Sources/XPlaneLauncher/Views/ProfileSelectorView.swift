@@ -32,32 +32,63 @@ struct ProfileSelectorView: View {
     var body: some View {
         @Bindable var pluginManager = pluginManager
         
-        VStack(spacing: 12) {
-            // Profile Selection Row
-            HStack {
+        HStack(spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "person.crop.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(.blue)
+                
                 Text("Profile:")
-                    .font(.body)
+                    .font(.headline)
                 
                 Picker("", selection: $pluginManager.selectedProfileId) {
                     Text("None / Custom").tag(UUID?.none)
                     Divider()
                     ForEach(pluginManager.profiles) { profile in
-                        let name = (pluginManager.selectedProfileId == profile.id && pluginManager.isCurrentProfileModified) ? "\(profile.name) *" : profile.name
-                        Text(name).tag(Optional(profile.id))
+                        Text(profile.name).tag(Optional(profile.id))
                     }
                 }
-                .frame(width: 200)
-                
+                .labelsHidden()
+                .frame(width: 180)
+            }
+            
+            if pluginManager.selectedProfileId != nil && pluginManager.isCurrentProfileModified {
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(Color.orange)
+                        .frame(width: 6, height: 6)
+                    Text("Modified")
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.orange)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Color.orange.opacity(0.15))
+                .clipShape(Capsule())
+            }
+            
+            Spacer()
+            
+            HStack(spacing: 8) {
                 Button(action: {
                     if let selectedId = pluginManager.selectedProfileId,
                        let profile = pluginManager.profiles.first(where: { $0.id == selectedId }) {
                         pluginManager.updateProfile(profile)
                     }
                 }) {
-                    Image(systemName: "arrow.triangle.2.circlepath")
+                    Label("Update", systemImage: "arrow.triangle.2.circlepath")
                 }
-                .help("Update current profile with selected plugins")
                 .disabled(pluginManager.selectedProfileId == nil || !pluginManager.isCurrentProfileModified)
+                .help("Update current profile with current selection")
+                
+                Button(action: {
+                    newProfileName = ""
+                    showingSaveProfileAlert = true
+                }) {
+                    Label("Save New", systemImage: "plus")
+                }
+                .help("Save current selection as a new profile")
                 
                 Button(action: {
                     if let selectedId = pluginManager.selectedProfileId,
@@ -67,21 +98,18 @@ struct ProfileSelectorView: View {
                 }) {
                     Image(systemName: "trash")
                 }
-                .help("Delete selected profile")
                 .disabled(pluginManager.selectedProfileId == nil)
-                
-                Button(action: {
-                    newProfileName = ""
-                    showingSaveProfileAlert = true
-                }) {
-                    Image(systemName: "plus")
-                }
-                .help("Save current selection as new profile")
-                
-                Spacer()
+                .help("Delete selected profile")
             }
-            .padding(.horizontal)
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Color(NSColor.controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color(NSColor.separatorColor), lineWidth: 0.5)
+        )
         .alert("Save Profile", isPresented: $showingSaveProfileAlert) {
             TextField("Profile Name", text: $newProfileName)
             Button("Save") {

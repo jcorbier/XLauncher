@@ -53,21 +53,48 @@ struct PluginRow: View {
     let plugin: PluginManager.Plugin
     
     var body: some View {
-        HStack {
-            Image(systemName: "puzzlepiece.fill")
+        HStack(spacing: 12) {
+            Image(systemName: "puzzlepiece.extension.fill")
+                .font(.title3)
                 .foregroundStyle(plugin.isEnabled ? .green : .secondary)
+                .frame(width: 32, height: 32)
+                .background(plugin.isEnabled ? Color.green.opacity(0.12) : Color.secondary.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
             
-            Text(plugin.name)
-                .font(.body)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(plugin.name)
+                    .font(.body)
+                    .fontWeight(.medium)
+                Text(plugin.folderName)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             
             Spacer()
+            
+            Text(plugin.isEnabled ? "Enabled" : "Disabled")
+                .font(.caption2)
+                .fontWeight(.semibold)
+                .foregroundStyle(plugin.isEnabled ? .green : .secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(plugin.isEnabled ? Color.green.opacity(0.12) : Color.secondary.opacity(0.12))
+                .clipShape(Capsule())
             
             Toggle("", isOn: Binding(
                 get: { plugin.isEnabled },
                 set: { _ in pluginManager.togglePlugin(plugin) }
             ))
             .toggleStyle(.switch)
+            .labelsHidden()
         }
-        .padding(.vertical, 4)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color(NSColor.controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color(NSColor.separatorColor), lineWidth: 0.5)
+        )
     }
 }

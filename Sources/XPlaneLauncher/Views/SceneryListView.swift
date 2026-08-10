@@ -259,21 +259,26 @@ struct SceneryRow: View {
     let selection: Set<UUID>
     
     var body: some View {
-        HStack {
+        HStack(spacing: 12) {
             Image(systemName: item.isEnabled ? "map.fill" : "map")
+                .font(.title3)
                 .foregroundStyle(statusColor)
+                .frame(width: 32, height: 32)
+                .background(statusColor.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
             
-            VStack(alignment: .leading) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(item.name)
                     .font(.body)
+                    .fontWeight(.medium)
                 if !item.isManaged && !item.isInIni {
-                     Text("New (Unmanaged)")
+                    Text("New (Unmanaged)")
                         .font(.caption)
                         .foregroundStyle(.blue)
                 } else if !item.isInIni && item.isEnabled {
                     Text("New")
-                       .font(.caption)
-                       .foregroundStyle(.blue)
+                        .font(.caption)
+                        .foregroundStyle(.blue)
                 } else if !item.isEnabled && !item.isInIni {
                     Text("Not Installed")
                         .font(.caption)
@@ -283,12 +288,22 @@ struct SceneryRow: View {
             
             Spacer()
             
+            Text(item.isEnabled ? "Enabled" : (item.isInIni ? "Disabled" : "Available"))
+                .font(.caption2)
+                .fontWeight(.semibold)
+                .foregroundStyle(statusColor)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(statusColor.opacity(0.12))
+                .clipShape(Capsule())
+            
             if item.isEnabled || item.isInIni {
                 Toggle("", isOn: Binding(
                     get: { item.isEnabled },
                     set: { _ in pluginManager.toggleScenery(item) }
                 ))
                 .toggleStyle(.switch)
+                .labelsHidden()
                 .disabled(!item.isToggleable)
             } else {
                 Button("Install") {
@@ -297,9 +312,15 @@ struct SceneryRow: View {
                 .buttonStyle(.bordered)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color(NSColor.controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color(NSColor.separatorColor), lineWidth: 0.5)
+        )
         .contextMenu {
-            // Add "Remove from Group" if in group
             if pluginManager.sceneryGroups.contains(where: { $0.childFolderNames.contains(item.folderName) }) {
                 Button("Remove from Group") {
                     pluginManager.removeFromGroup(item)

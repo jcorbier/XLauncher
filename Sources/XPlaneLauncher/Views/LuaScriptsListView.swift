@@ -32,22 +32,29 @@ struct LuaScriptRow: View {
     let script: PluginManager.LuaScript
     
     var body: some View {
-        HStack {
+        HStack(spacing: 12) {
             Image(systemName: script.isDirectory ? "folder.fill" : "scroll")
+                .font(.title3)
                 .foregroundStyle(script.isEnabled ? .green : .secondary)
+                .frame(width: 32, height: 32)
+                .background(script.isEnabled ? Color.green.opacity(0.12) : Color.secondary.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
             
-            VStack(alignment: .leading) {
+            VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(script.name)
                         .font(.body)
+                        .fontWeight(.medium)
                     
                     if script.isDirectory {
                         Text("Folder")
                             .font(.caption2)
-                            .padding(.horizontal, 4)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.purple)
+                            .padding(.horizontal, 6)
                             .padding(.vertical, 2)
-                            .background(Color.secondary.opacity(0.2))
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .background(Color.purple.opacity(0.12))
+                            .clipShape(Capsule())
                     }
                 }
                 
@@ -58,12 +65,29 @@ struct LuaScriptRow: View {
             
             Spacer()
             
+            Text(script.isEnabled ? "Enabled" : "Disabled")
+                .font(.caption2)
+                .fontWeight(.semibold)
+                .foregroundStyle(script.isEnabled ? .green : .secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(script.isEnabled ? Color.green.opacity(0.12) : Color.secondary.opacity(0.12))
+                .clipShape(Capsule())
+            
             Toggle("", isOn: Binding(
                 get: { script.isEnabled },
                 set: { _ in pluginManager.toggleLuaScript(script) }
             ))
             .toggleStyle(.switch)
+            .labelsHidden()
         }
-        .padding(.vertical, 4)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color(NSColor.controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color(NSColor.separatorColor), lineWidth: 0.5)
+        )
     }
 }
