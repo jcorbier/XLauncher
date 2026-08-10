@@ -6,6 +6,7 @@ X-Plane Launcher is a macOS application designed to simplify the management of y
 
 - **Profile Management**: Create named profiles (e.g., "VATSIM", "Offline", "Default") to quickly switch between different sets of plugins and scenery.
 - **Smart Plugin & Scenery Management**: Keep your X-Plane `plugins` and `Custom Scenery` folders clean. The launcher manages content using symlinks, keeping your actual files organized inside subfolders of the Central Data Folder.
+- **Addon Updates**: Automatically detect and update addons configured with SkunkCrafts Updater (`skunkcrafts_updater.cfg`) or X-Updater (`x-updater.json`) directly from the UI.
 - **Script Execution**: Automatically run shell scripts when launching X-Plane (useful for configuring external tools like Hoppie ACARS based on your active profile).
 - **One-Click Launch**: Launch X-Plane directly from the app after selecting your profile.
 

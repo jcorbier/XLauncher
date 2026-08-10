@@ -26,6 +26,7 @@ import SwiftUI
 
 struct ContentView: View {
     @Environment(PluginManager.self) var pluginManager
+    @Environment(UpdateManager.self) var updateManager
     @State private var selectedCategory: NavigationCategory? = .aircraft
     
     enum NavigationCategory: String, CaseIterable, Identifiable {
@@ -34,6 +35,8 @@ struct ContentView: View {
         case scenery = "Scenery"
         case luaScripts = "Lua Scripts"
         case scripts = "Profile Scripts"
+        case updates = "Updates"
+        case settings = "Settings"
         
         var id: String { rawValue }
         
@@ -44,6 +47,8 @@ struct ContentView: View {
             case .scenery: return "map"
             case .luaScripts: return "scroll"
             case .scripts: return "terminal"
+            case .updates: return "arrow.triangle.2.circlepath.circle"
+            case .settings: return "gearshape"
             }
         }
         
@@ -51,17 +56,51 @@ struct ContentView: View {
             [.aircraft, .plugins, .scenery, .luaScripts, .scripts]
         }
         
+        static var systemCategories: [NavigationCategory] {
+            [.updates, .settings]
+        }
+        
         var isAddonCategory: Bool {
             NavigationCategory.mainCategories.contains(self)
         }
     }
     
+    var availableUpdatesCount: Int {
+        updateManager.updatableAddons.filter { $0.isUpdateAvailable }.count
+    }
+    
     var body: some View {
         NavigationSplitView {
-            List(NavigationCategory.allCases, selection: $selectedCategory) { category in
-                NavigationLink(value: category) {
-                    Label(category.rawValue, systemImage: category.systemImage)
-                        .font(.body)
+            List(selection: $selectedCategory) {
+                Section("Add-ons") {
+                    ForEach(NavigationCategory.mainCategories) { category in
+                        NavigationLink(value: category) {
+                            Label(category.rawValue, systemImage: category.systemImage)
+                                .font(.body)
+                        }
+                    }
+                }
+                
+                Section("System") {
+                    ForEach(NavigationCategory.systemCategories) { category in
+                        NavigationLink(value: category) {
+                            HStack(spacing: 8) {
+                                Label(category.rawValue, systemImage: category.systemImage)
+                                    .font(.body)
+                                
+                                if category == .updates && availableUpdatesCount > 0 {
+                                    Text("\(availableUpdatesCount)")
+                                        .font(.caption2)
+                                        .fontWeight(.bold)
+                                        .foregroundStyle(.white)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(Color.orange)
+                                        .clipShape(Capsule())
+                                }
+                            }
+                        }
+                    }
                 }
             }
             .listStyle(.sidebar)
@@ -89,6 +128,10 @@ struct ContentView: View {
                         LuaScriptsListView()
                     case .scripts:
                         ScriptsListView()
+                    case .updates:
+                        UpdatesView()
+                    case .settings:
+                        SettingsView()
                     case .none:
                         ContentUnavailableView("Select a Category", systemImage: "sidebar.left")
                     }
@@ -108,6 +151,10 @@ struct ContentView: View {
                 .background(Material.bar)
             }
             .background(Color(NSColor.windowBackgroundColor))
+        }
+        .task {
+            updateManager.scanUpdatableAddons()
+            updateManager.checkAllAddonUpdates()
         }
     }
 }

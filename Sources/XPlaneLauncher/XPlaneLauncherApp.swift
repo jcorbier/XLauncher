@@ -28,12 +28,20 @@ import SwiftUI
 struct XPlaneLauncherApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @State private var pluginManager = PluginManager()
+    @State private var updateManager = UpdateManager()
     
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environment(pluginManager)
+                .environment(updateManager)
                 .frame(minWidth: 600, minHeight: 500)
+                .onAppear {
+                    updateManager.launcherDataFolder = pluginManager.launcherDataFolder
+                }
+                .onChange(of: pluginManager.launcherDataFolder) { _, newValue in
+                    updateManager.launcherDataFolder = newValue
+                }
         }
         .windowResizability(.contentSize)
         .windowStyle(.hiddenTitleBar) // Modern look
@@ -42,11 +50,6 @@ struct XPlaneLauncherApp: App {
             CommandGroup(replacing: .saveItem) { }
             CommandGroup(replacing: .printItem) { }
             CommandGroup(replacing: .importExport) { }
-        }
-        
-        Settings {
-            SettingsView()
-                .environment(pluginManager)
         }
     }
 }

@@ -25,6 +25,7 @@
 import Foundation
 import SwiftUI
 
+@MainActor
 @Observable
 class PluginManager {
     private var isLoading = true

@@ -26,101 +26,103 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(PluginManager.self) var pluginManager
-    
     @State private var selectedEnvVarId: PluginManager.ScriptEnvVar.ID?
     
     var body: some View {
         @Bindable var pluginManager = pluginManager
         
-        VStack(spacing: 20) {
-            GroupBox("General") {
-                VStack(spacing: 8) {
-                    FolderSelectorRow(label: "X-Plane Location:", path: pluginManager.xPlanePath, placeholder: "Select X-Plane 12 folder") {
-                        let panel = NSOpenPanel()
-                        panel.canChooseFiles = false
-                        panel.canChooseDirectories = true
-                        panel.allowsMultipleSelection = false
-                        panel.prompt = "Select X-Plane Folder"
-                        if panel.runModal() == .OK {
-                            pluginManager.xPlanePath = panel.url
-                        }
-                    }
-                    
-                    Divider()
-
-                    FolderSelectorRow(label: "Central Data Folder:", path: pluginManager.launcherDataFolder, placeholder: "Default (Application Support/XPlaneLauncher)") {
-                        let panel = NSOpenPanel()
-                        panel.canChooseFiles = false
-                        panel.canChooseDirectories = true
-                        panel.allowsMultipleSelection = false
-                        panel.prompt = "Select Central Data Folder"
-                        if panel.runModal() == .OK {
-                            pluginManager.launcherDataFolder = panel.url
-                        }
-                    }
-                    
-
-                }
-                .padding(8)
+        VStack(spacing: 0) {
+            // Header Bar
+            HStack {
+                Label("Settings", systemImage: "gearshape")
+                    .font(.title3)
+                    .fontWeight(.bold)
+                Spacer()
             }
+            .padding(12)
+            .background(Color(NSColor.controlBackgroundColor))
             
-            GroupBox("Script Environment") {
-                VStack(spacing: 0) {
-                    Table($pluginManager.scriptEnvironment, selection: $selectedEnvVarId) {
-                        TableColumn("Environment Variable") { $envVar in
-                            TextField("Key", text: $envVar.key)
-                                .labelsHidden()
-                                .textFieldStyle(.plain)
-                        }
-                        TableColumn("Value") { $envVar in
-                            TextField("Value", text: $envVar.value)
-                                .labelsHidden()
-                                .textFieldStyle(.plain)
-                        }
-                    }
-                    .scrollContentBackground(.hidden)
-                    .background(Color(NSColor.controlBackgroundColor))
-                    .border(Color(NSColor.separatorColor), width: 1)
-                    
-                    HStack {
-                        Button(action: {
-                            pluginManager.scriptEnvironment.append(PluginManager.ScriptEnvVar(key: "NEW_VAR", value: "VALUE"))
-                        }) {
-                            Image(systemName: "plus")
-                                .frame(width: 20, height: 20)
-                        }
-                        
-                        Button(action: {
-                            if let selectedId = selectedEnvVarId {
-                                pluginManager.scriptEnvironment.removeAll { $0.id == selectedId }
-                                selectedEnvVarId = nil
+            Divider()
+            
+            ScrollView {
+                VStack(spacing: 20) {
+                    GroupBox("General") {
+                        VStack(spacing: 8) {
+                            FolderSelectorRow(label: "X-Plane Location:", path: pluginManager.xPlanePath, placeholder: "Select X-Plane 12 folder") {
+                                let panel = NSOpenPanel()
+                                panel.canChooseFiles = false
+                                panel.canChooseDirectories = true
+                                panel.allowsMultipleSelection = false
+                                panel.prompt = "Select X-Plane Folder"
+                                if panel.runModal() == .OK {
+                                    pluginManager.xPlanePath = panel.url
+                                }
                             }
-                        }) {
-                            Image(systemName: "minus")
-                                .frame(width: 20, height: 20)
+                            
+                            Divider()
+
+                            FolderSelectorRow(label: "Central Data Folder:", path: pluginManager.launcherDataFolder, placeholder: "Default (Application Support/XPlaneLauncher)") {
+                                let panel = NSOpenPanel()
+                                panel.canChooseFiles = false
+                                panel.canChooseDirectories = true
+                                panel.allowsMultipleSelection = false
+                                panel.prompt = "Select Central Data Folder"
+                                if panel.runModal() == .OK {
+                                    pluginManager.launcherDataFolder = panel.url
+                                }
+                            }
                         }
-                        .disabled(selectedEnvVarId == nil)
-                        
-                        Spacer()
+                        .padding(8)
                     }
-                    .padding(.top, 8)
+                    
+                    GroupBox("Script Environment") {
+                        VStack(spacing: 0) {
+                            Table($pluginManager.scriptEnvironment, selection: $selectedEnvVarId) {
+                                TableColumn("Environment Variable") { $envVar in
+                                    TextField("Key", text: $envVar.key)
+                                        .labelsHidden()
+                                        .textFieldStyle(.plain)
+                                }
+                                TableColumn("Value") { $envVar in
+                                    TextField("Value", text: $envVar.value)
+                                        .labelsHidden()
+                                        .textFieldStyle(.plain)
+                                }
+                            }
+                            .frame(minHeight: 160)
+                            .scrollContentBackground(.hidden)
+                            .background(Color(NSColor.controlBackgroundColor))
+                            .border(Color(NSColor.separatorColor), width: 1)
+                            
+                            HStack {
+                                Button(action: {
+                                    pluginManager.scriptEnvironment.append(PluginManager.ScriptEnvVar(key: "NEW_VAR", value: "VALUE"))
+                                }) {
+                                    Image(systemName: "plus")
+                                        .frame(width: 20, height: 20)
+                                }
+                                
+                                Button(action: {
+                                    if let selectedId = selectedEnvVarId {
+                                        pluginManager.scriptEnvironment.removeAll { $0.id == selectedId }
+                                        selectedEnvVarId = nil
+                                    }
+                                }) {
+                                    Image(systemName: "minus")
+                                        .frame(width: 20, height: 20)
+                                }
+                                .disabled(selectedEnvVarId == nil)
+                                
+                                Spacer()
+                            }
+                            .padding(.top, 8)
+                        }
+                        .padding(8)
+                    }
                 }
-                .padding(8)
+                .padding(16)
             }
         }
-        .padding()
-        .frame(width: 500, height: 400)
-    }
-    
-    private func selectFolder() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.prompt = "Select X-Plane Folder"
-        
-        if panel.runModal() == .OK {
-            pluginManager.xPlanePath = panel.url
-        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
