@@ -37,6 +37,11 @@ struct ContentView: View {
             
             // Main List
             TabView {
+                AircraftListView()
+                    .tabItem {
+                        Label("Aircraft", systemImage: "airplane")
+                    }
+                
                 PluginListView()
                     .tabItem {
                         Label("Plugins", systemImage: "puzzlepiece.extension")
@@ -45,6 +50,11 @@ struct ContentView: View {
                 SceneryListView()
                     .tabItem {
                         Label("Scenery", systemImage: "map")
+                    }
+                
+                LuaScriptsListView()
+                    .tabItem {
+                        Label("Lua Scripts", systemImage: "scroll")
                     }
                 
                 ScriptsListView()

@@ -74,10 +74,10 @@ X-Plane 12/
    - **X-Plane Location**: Select your X-Plane 12 installation folder (the root folder containing `X-Plane.app`).
    - **Script Environment**: Define global environment variables passed to your profile scripts.
 3. **Manage Profiles**:
-   - Use the **Plugins** and **Scenery** tabs to toggle content on/off.
+   - Use the **Aircraft**, **Plugins**, **Scenery**, and **Lua Scripts** tabs to toggle content on/off.
    - Use the "Save Current as Profile" button to save your current configuration as a new profile.
    - Select a profile from the dropdown to instantly apply it.
-   - Managing a profile will automatically update the `plugins` and `Custom Scenery` folders with symlinks.
+   - Managing a profile will automatically update the `Aircraft`, `plugins`, `Custom Scenery`, and `FlyWithLua/Scripts` folders with symlinks.
 4. **Launch**: Click the "Launch X-Plane" button.
 
 ### Scripting

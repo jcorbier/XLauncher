@@ -35,6 +35,8 @@ class PluginManager {
             savePath()
             scanPlugins()
             scanScenery()
+            scanAircraft()
+            scanLuaScripts()
         }
     }
     var launcherDataFolder: URL? {
@@ -44,6 +46,8 @@ class PluginManager {
             ensureLauncherDataDirectories()
             scanPlugins()
             scanScenery()
+            scanAircraft()
+            scanLuaScripts()
         }
     }
     var pluginsDataFolder: URL? {
@@ -59,8 +63,14 @@ class PluginManager {
         launcherDataFolder?.appendingPathComponent("LuaScripts")
     }
 
+    var flyWithLuaScriptsFolder: URL? {
+        xPlanePath?.appendingPathComponent("Resources").appendingPathComponent("plugins").appendingPathComponent("FlyWithLua").appendingPathComponent("Scripts")
+    }
+
     var plugins: [Plugin] = []
     var scenery: [Scenery] = []
+    var aircraft: [Aircraft] = []
+    var luaScripts: [LuaScript] = []
     struct ScriptEnvVar: Identifiable, Codable, Hashable {
         var id = UUID()
         var key: String
@@ -85,19 +95,23 @@ class PluginManager {
         var name: String
         var pluginFolderNames: [String]
         var sceneryFolderNames: [String] = []
+        var aircraftFolderNames: [String] = []
+        var luaScriptFolderNames: [String] = []
         var shellScriptPath: String?
         var scripts: [ProfileScript] = []
         var environmentVariables: [ScriptEnvVar] = []
 
         enum CodingKeys: String, CodingKey {
-            case id, name, pluginFolderNames, sceneryFolderNames, shellScriptPath, scripts, environmentVariables
+            case id, name, pluginFolderNames, sceneryFolderNames, aircraftFolderNames, luaScriptFolderNames, shellScriptPath, scripts, environmentVariables
         }
 
-        init(id: UUID = UUID(), name: String, pluginFolderNames: [String], sceneryFolderNames: [String] = [], shellScriptPath: String? = nil, scripts: [ProfileScript] = [], environmentVariables: [ScriptEnvVar] = []) {
+        init(id: UUID = UUID(), name: String, pluginFolderNames: [String], sceneryFolderNames: [String] = [], aircraftFolderNames: [String] = [], luaScriptFolderNames: [String] = [], shellScriptPath: String? = nil, scripts: [ProfileScript] = [], environmentVariables: [ScriptEnvVar] = []) {
             self.id = id
             self.name = name
             self.pluginFolderNames = pluginFolderNames
             self.sceneryFolderNames = sceneryFolderNames
+            self.aircraftFolderNames = aircraftFolderNames
+            self.luaScriptFolderNames = luaScriptFolderNames
             self.shellScriptPath = shellScriptPath
             self.scripts = scripts
             self.environmentVariables = environmentVariables
@@ -109,10 +123,27 @@ class PluginManager {
             self.name = try container.decode(String.self, forKey: .name)
             self.pluginFolderNames = try container.decode([String].self, forKey: .pluginFolderNames)
             self.sceneryFolderNames = try container.decodeIfPresent([String].self, forKey: .sceneryFolderNames) ?? []
+            self.aircraftFolderNames = try container.decodeIfPresent([String].self, forKey: .aircraftFolderNames) ?? []
+            self.luaScriptFolderNames = try container.decodeIfPresent([String].self, forKey: .luaScriptFolderNames) ?? []
             self.shellScriptPath = try container.decodeIfPresent(String.self, forKey: .shellScriptPath)
             self.scripts = try container.decodeIfPresent([ProfileScript].self, forKey: .scripts) ?? []
             self.environmentVariables = try container.decodeIfPresent([ScriptEnvVar].self, forKey: .environmentVariables) ?? []
         }
+    }
+    
+    struct Aircraft: Identifiable, Equatable, Hashable {
+        let id = UUID()
+        let name: String
+        var isEnabled: Bool
+        let folderName: String
+    }
+    
+    struct LuaScript: Identifiable, Equatable, Hashable {
+        let id = UUID()
+        let name: String
+        var isEnabled: Bool
+        let folderName: String
+        let isDirectory: Bool
     }
     
     var profiles: [PluginProfile] = []
@@ -223,6 +254,8 @@ class PluginManager {
         // Initial scan if paths are ready (xPlanePath is set above)
         scanPlugins()
         scanScenery()
+        scanAircraft()
+        scanLuaScripts()
         
         if let data = defaults.data(forKey: scriptEnvironmentKey),
            let envData = try? JSONDecoder().decode([ScriptEnvVar].self, from: data) {
@@ -278,13 +311,19 @@ class PluginManager {
         let currentEnabledScenery = Set(scenery.filter { $0.isEnabled }.map { $0.folderName })
         let profileEnabledScenery = Set(profile.sceneryFolderNames)
         
+        let currentEnabledAircraft = Set(aircraft.filter { $0.isEnabled }.map { $0.folderName })
+        let profileEnabledAircraft = Set(profile.aircraftFolderNames)
+        
+        let currentEnabledLua = Set(luaScripts.filter { $0.isEnabled }.map { $0.folderName })
+        let profileEnabledLua = Set(profile.luaScriptFolderNames)
+        
         let currentScripts = Set(activeScripts)
         let profileScripts = Set(profile.scripts)
         
         let currentEnvVars = Set(activeEnvironmentVariables)
         let profileEnvVars = Set(profile.environmentVariables)
         
-        return currentEnabledPlugins != profileEnabledPlugins || currentEnabledScenery != profileEnabledScenery || currentScripts != profileScripts || currentEnvVars != profileEnvVars
+        return currentEnabledPlugins != profileEnabledPlugins || currentEnabledScenery != profileEnabledScenery || currentEnabledAircraft != profileEnabledAircraft || currentEnabledLua != profileEnabledLua || currentScripts != profileScripts || currentEnvVars != profileEnvVars
     }
     func savePath() {
         if let path = xPlanePath {
@@ -351,6 +390,94 @@ class PluginManager {
             
         } catch {
             print("Error scanning plugins: \(error)")
+        }
+    }
+    
+    // MARK: - Aircraft Management
+    
+    func scanAircraft() {
+        guard let xPlanePath = xPlanePath,
+              let aircraftFolder = aircraftDataFolder else {
+            aircraft = []
+            return
+        }
+        
+        let targetAircraftFolder = xPlanePath.appendingPathComponent("Aircraft")
+        
+        var isDir: ObjCBool = false
+        guard fileManager.fileExists(atPath: aircraftFolder.path, isDirectory: &isDir), isDir.boolValue else {
+            aircraft = []
+            return
+        }
+        
+        do {
+            let contents = try fileManager.contentsOfDirectory(at: aircraftFolder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
+            var newAircraft: [Aircraft] = []
+            
+            for folder in contents {
+                var isFolder: ObjCBool = false
+                if fileManager.fileExists(atPath: folder.path, isDirectory: &isFolder), isFolder.boolValue {
+                    let folderName = folder.lastPathComponent
+                    let targetLink = targetAircraftFolder.appendingPathComponent(folderName)
+                    let isEnabled = fileManager.fileExists(atPath: targetLink.path)
+                    
+                    newAircraft.append(Aircraft(name: folderName, isEnabled: isEnabled, folderName: folderName))
+                }
+            }
+            
+            self.aircraft = newAircraft.sorted { $0.name < $1.name }
+        } catch {
+            print("Error scanning aircraft: \(error)")
+        }
+    }
+    
+    // MARK: - FlyWithLua Script Management
+    
+    func scanLuaScripts() {
+        guard let luaScriptsFolder = luaScriptsDataFolder else {
+            luaScripts = []
+            return
+        }
+        
+        var isDir: ObjCBool = false
+        guard fileManager.fileExists(atPath: luaScriptsFolder.path, isDirectory: &isDir), isDir.boolValue else {
+            luaScripts = []
+            return
+        }
+        
+        let targetFolder = flyWithLuaScriptsFolder
+        
+        do {
+            let contents = try fileManager.contentsOfDirectory(at: luaScriptsFolder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
+            var newScripts: [LuaScript] = []
+            
+            for item in contents {
+                var isFolder: ObjCBool = false
+                if fileManager.fileExists(atPath: item.path, isDirectory: &isFolder) {
+                    let folderName = item.lastPathComponent
+                    let isDirBool = isFolder.boolValue
+                    
+                    var isEnabled = false
+                    if let targetFolder = targetFolder {
+                        if isDirBool {
+                            if let childContents = try? fileManager.contentsOfDirectory(at: item, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]),
+                               let firstChild = childContents.first {
+                                let childLink = targetFolder.appendingPathComponent(firstChild.lastPathComponent)
+                                isEnabled = fileManager.fileExists(atPath: childLink.path)
+                            }
+                        } else {
+                            let targetLink = targetFolder.appendingPathComponent(folderName)
+                            isEnabled = fileManager.fileExists(atPath: targetLink.path)
+                        }
+                    }
+                    
+                    newScripts.append(LuaScript(name: folderName, isEnabled: isEnabled, folderName: folderName, isDirectory: isDirBool))
+                }
+            }
+            
+            self.luaScripts = newScripts.sorted { $0.name < $1.name }
+        } catch {
+            print("Error scanning Lua scripts: \(error)")
         }
     }
     
@@ -568,6 +695,90 @@ class PluginManager {
             }
         } catch {
             print("Error toggling plugin: \(error)")
+        }
+    }
+    
+    func toggleAircraft(_ item: Aircraft) {
+        guard let xPlanePath = xPlanePath,
+              let aircraftFolder = aircraftDataFolder else { return }
+        
+        let targetAircraftFolder = xPlanePath.appendingPathComponent("Aircraft")
+        let sourceURL = aircraftFolder.appendingPathComponent(item.folderName)
+        let linkURL = targetAircraftFolder.appendingPathComponent(item.folderName)
+        
+        print("Toggling aircraft \(item.name). Current state: \(item.isEnabled)")
+        
+        do {
+            if item.isEnabled {
+                if fileManager.fileExists(atPath: linkURL.path) {
+                    try fileManager.removeItem(at: linkURL)
+                }
+            } else {
+                try fileManager.createSymbolicLink(at: linkURL, withDestinationURL: sourceURL)
+            }
+            
+            if let index = aircraft.firstIndex(where: { $0.id == item.id }) {
+                aircraft[index].isEnabled.toggle()
+            }
+        } catch {
+            print("Error toggling aircraft: \(error)")
+        }
+    }
+    
+    func toggleLuaScript(_ item: LuaScript) {
+        guard let targetFolder = flyWithLuaScriptsFolder,
+              let sourceRoot = luaScriptsDataFolder else { return }
+        
+        let itemSourceURL = sourceRoot.appendingPathComponent(item.folderName)
+        
+        if !item.isEnabled {
+            try? fileManager.createDirectory(at: targetFolder, withIntermediateDirectories: true)
+        }
+        
+        do {
+            if item.isEnabled {
+                // Disable -> remove symlinks
+                if item.isDirectory {
+                    if let children = try? fileManager.contentsOfDirectory(at: itemSourceURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
+                        for child in children {
+                            let linkURL = targetFolder.appendingPathComponent(child.lastPathComponent)
+                            if fileManager.fileExists(atPath: linkURL.path) {
+                                try fileManager.removeItem(at: linkURL)
+                            }
+                        }
+                    }
+                } else {
+                    let linkURL = targetFolder.appendingPathComponent(item.folderName)
+                    if fileManager.fileExists(atPath: linkURL.path) {
+                        try fileManager.removeItem(at: linkURL)
+                    }
+                }
+            } else {
+                // Enable -> create symlinks
+                if item.isDirectory {
+                    if let children = try? fileManager.contentsOfDirectory(at: itemSourceURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
+                        for child in children {
+                            let linkURL = targetFolder.appendingPathComponent(child.lastPathComponent)
+                            if fileManager.fileExists(atPath: linkURL.path) {
+                                try? fileManager.removeItem(at: linkURL)
+                            }
+                            try fileManager.createSymbolicLink(at: linkURL, withDestinationURL: child)
+                        }
+                    }
+                } else {
+                    let linkURL = targetFolder.appendingPathComponent(item.folderName)
+                    if fileManager.fileExists(atPath: linkURL.path) {
+                        try? fileManager.removeItem(at: linkURL)
+                    }
+                    try fileManager.createSymbolicLink(at: linkURL, withDestinationURL: itemSourceURL)
+                }
+            }
+            
+            if let index = luaScripts.firstIndex(where: { $0.id == item.id }) {
+                luaScripts[index].isEnabled.toggle()
+            }
+        } catch {
+            print("Error toggling Lua script: \(error)")
         }
     }
     
@@ -922,7 +1133,9 @@ class PluginManager {
     func saveProfile(name: String) {
         let enabledPlugins = plugins.filter { $0.isEnabled }.map { $0.folderName }
         let enabledScenery = scenery.filter { $0.isEnabled }.map { $0.folderName }
-        let newProfile = PluginProfile(name: name, pluginFolderNames: enabledPlugins, sceneryFolderNames: enabledScenery, scripts: activeScripts, environmentVariables: activeEnvironmentVariables)
+        let enabledAircraft = aircraft.filter { $0.isEnabled }.map { $0.folderName }
+        let enabledLua = luaScripts.filter { $0.isEnabled }.map { $0.folderName }
+        let newProfile = PluginProfile(name: name, pluginFolderNames: enabledPlugins, sceneryFolderNames: enabledScenery, aircraftFolderNames: enabledAircraft, luaScriptFolderNames: enabledLua, scripts: activeScripts, environmentVariables: activeEnvironmentVariables)
         profiles.append(newProfile)
         saveProfilesToDisk()
         selectedProfileId = newProfile.id // Select it
@@ -931,10 +1144,14 @@ class PluginManager {
     func updateProfile(_ profile: PluginProfile) {
         let enabledPlugins = plugins.filter { $0.isEnabled }.map { $0.folderName }
         let enabledScenery = scenery.filter { $0.isEnabled }.map { $0.folderName }
+        let enabledAircraft = aircraft.filter { $0.isEnabled }.map { $0.folderName }
+        let enabledLua = luaScripts.filter { $0.isEnabled }.map { $0.folderName }
         if let index = profiles.firstIndex(where: { $0.id == profile.id }) {
             profiles[index] = profile
             profiles[index].pluginFolderNames = enabledPlugins
             profiles[index].sceneryFolderNames = enabledScenery
+            profiles[index].aircraftFolderNames = enabledAircraft
+            profiles[index].luaScriptFolderNames = enabledLua
             profiles[index].scripts = activeScripts // Save active scripts
             profiles[index].environmentVariables = activeEnvironmentVariables // Save active environment variables
             
@@ -1004,6 +1221,20 @@ class PluginManager {
             let shouldBeEnabled = profile.sceneryFolderNames.contains(item.folderName)
             if item.isEnabled != shouldBeEnabled {
                 toggleScenery(item)
+            }
+        }
+        
+        for item in aircraft {
+            let shouldBeEnabled = profile.aircraftFolderNames.contains(item.folderName)
+            if item.isEnabled != shouldBeEnabled {
+                toggleAircraft(item)
+            }
+        }
+        
+        for item in luaScripts {
+            let shouldBeEnabled = profile.luaScriptFolderNames.contains(item.folderName)
+            if item.isEnabled != shouldBeEnabled {
+                toggleLuaScript(item)
             }
         }
         
