@@ -1,60 +1,106 @@
-//
-//  ScriptsListView.swift
-//  XPlaneLauncher
-//
-//  Created for Script Management
-//
-
 import SwiftUI
 
 struct ScriptsListView: View {
     @Environment(PluginManager.self) var pluginManager
     @State private var showingFileImporter = false
-    
-    // Sort logic handled in manager, or here. Manager is cleaner.
-    
-    var currentProfile: PluginManager.PluginProfile? {
-        guard let id = pluginManager.selectedProfileId else { return nil }
-        return pluginManager.profiles.first(where: { $0.id == id })
-    }
+    @State private var selectedEnvVarId: PluginManager.ScriptEnvVar.ID?
     
     var body: some View {
-        VStack {
+        @Bindable var pluginManager = pluginManager
+        
+        VStack(spacing: 12) {
             if pluginManager.selectedProfileId != nil {
-                List {
-                    ForEach(pluginManager.activeScripts) { script in
-                        ScriptRow(script: script)
+                HSplitView {
+                    // Profile Scripts Column
+                    GroupBox("Profile Scripts") {
+                        VStack(spacing: 0) {
+                            List {
+                                ForEach(pluginManager.activeScripts) { script in
+                                    ScriptRow(script: script)
+                                }
+                                .onDelete(perform: deleteItems)
+                                
+                                if pluginManager.activeScripts.isEmpty {
+                                    ContentUnavailableView {
+                                        Label("No Scripts", systemImage: "terminal")
+                                    } description: {
+                                        Text("Add shell scripts to execute when launching this profile.")
+                                    }
+                                }
+                            }
+                            .listStyle(.inset)
+                            .scrollContentBackground(.hidden)
+                            
+                            HStack {
+                                Button(action: { showingFileImporter = true }) {
+                                    Label("Add Script", systemImage: "plus")
+                                }
+                                Spacer()
+                            }
+                            .padding(.top, 8)
+                        }
+                        .padding(8)
                     }
-                    .onDelete(perform: deleteItems)
+                    .frame(minWidth: 250)
                     
-                    if pluginManager.activeScripts.isEmpty {
-                        ContentUnavailableView {
-                            Label("No Scripts", systemImage: "terminal")
-                        } description: {
-                            Text("Add shell scripts to execute when launching this profile.")
+                    // Profile Environment Variables Column
+                    GroupBox("Profile Environment Variables") {
+                        VStack(spacing: 0) {
+                            Table($pluginManager.activeEnvironmentVariables, selection: $selectedEnvVarId) {
+                                TableColumn("Key") { $envVar in
+                                    TextField("Key", text: $envVar.key)
+                                        .labelsHidden()
+                                        .textFieldStyle(.plain)
+                                }
+                                TableColumn("Value") { $envVar in
+                                    TextField("Value", text: $envVar.value)
+                                        .labelsHidden()
+                                        .textFieldStyle(.plain)
+                                }
+                            }
+                            .scrollContentBackground(.hidden)
+                            .background(Color(NSColor.controlBackgroundColor))
+                            .border(Color(NSColor.separatorColor), width: 1)
+                            
+                            HStack {
+                                Button(action: {
+                                    pluginManager.addProfileEnvVar()
+                                }) {
+                                    Image(systemName: "plus")
+                                        .frame(width: 20, height: 20)
+                                }
+                                
+                                Button(action: {
+                                    if let selectedId = selectedEnvVarId {
+                                        pluginManager.deleteProfileEnvVar(id: selectedId)
+                                        selectedEnvVarId = nil
+                                    }
+                                }) {
+                                    Image(systemName: "minus")
+                                        .frame(width: 20, height: 20)
+                                }
+                                .disabled(selectedEnvVarId == nil)
+                                
+                                Spacer()
+                            }
+                            .padding(.top, 8)
                         }
+                        .padding(8)
                     }
+                    .frame(minWidth: 250)
                 }
-                .listStyle(.inset)
-                .scrollContentBackground(.hidden)
-                .toolbar {
-                    ToolbarItem(placement: .primaryAction) {
-                        Button(action: { showingFileImporter = true }) {
-                            Label("Add Script", systemImage: "plus")
-                        }
-                    }
-                }
+                .padding()
             } else {
-                 ContentUnavailableView {
+                ContentUnavailableView {
                     Label("No Profile Selected", systemImage: "person.crop.circle.badge.exclamationmark")
                 } description: {
-                    Text("Select a profile to manage scripts.")
+                    Text("Select a profile to manage scripts and environment variables.")
                 }
             }
         }
         .fileImporter(
             isPresented: $showingFileImporter,
-            allowedContentTypes: [.shellScript, .plainText], // Adjust as needed
+            allowedContentTypes: [.shellScript, .plainText],
             allowsMultipleSelection: true
         ) { result in
             switch result {
@@ -70,8 +116,8 @@ struct ScriptsListView: View {
     
     func deleteItems(at offsets: IndexSet) {
         offsets.forEach { index in
-             let script = pluginManager.activeScripts[index]
-             pluginManager.deleteScript(script)
+            let script = pluginManager.activeScripts[index]
+            pluginManager.deleteScript(script)
         }
     }
 }

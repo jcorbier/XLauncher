@@ -87,6 +87,32 @@ class PluginManager {
         var sceneryFolderNames: [String] = []
         var shellScriptPath: String?
         var scripts: [ProfileScript] = []
+        var environmentVariables: [ScriptEnvVar] = []
+
+        enum CodingKeys: String, CodingKey {
+            case id, name, pluginFolderNames, sceneryFolderNames, shellScriptPath, scripts, environmentVariables
+        }
+
+        init(id: UUID = UUID(), name: String, pluginFolderNames: [String], sceneryFolderNames: [String] = [], shellScriptPath: String? = nil, scripts: [ProfileScript] = [], environmentVariables: [ScriptEnvVar] = []) {
+            self.id = id
+            self.name = name
+            self.pluginFolderNames = pluginFolderNames
+            self.sceneryFolderNames = sceneryFolderNames
+            self.shellScriptPath = shellScriptPath
+            self.scripts = scripts
+            self.environmentVariables = environmentVariables
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+            self.name = try container.decode(String.self, forKey: .name)
+            self.pluginFolderNames = try container.decode([String].self, forKey: .pluginFolderNames)
+            self.sceneryFolderNames = try container.decodeIfPresent([String].self, forKey: .sceneryFolderNames) ?? []
+            self.shellScriptPath = try container.decodeIfPresent(String.self, forKey: .shellScriptPath)
+            self.scripts = try container.decodeIfPresent([ProfileScript].self, forKey: .scripts) ?? []
+            self.environmentVariables = try container.decodeIfPresent([ScriptEnvVar].self, forKey: .environmentVariables) ?? []
+        }
     }
     
     var profiles: [PluginProfile] = []
@@ -185,6 +211,7 @@ class PluginManager {
                      self.selectedProfileId = savedId
                      if let profile = profiles.first(where: { $0.id == savedId }) {
                          self.activeScripts = profile.scripts
+                         self.activeEnvironmentVariables = profile.environmentVariables
                      }
                      isRestoringState = false
                 }
@@ -254,7 +281,10 @@ class PluginManager {
         let currentScripts = Set(activeScripts)
         let profileScripts = Set(profile.scripts)
         
-        return currentEnabledPlugins != profileEnabledPlugins || currentEnabledScenery != profileEnabledScenery || currentScripts != profileScripts
+        let currentEnvVars = Set(activeEnvironmentVariables)
+        let profileEnvVars = Set(profile.environmentVariables)
+        
+        return currentEnabledPlugins != profileEnabledPlugins || currentEnabledScenery != profileEnabledScenery || currentScripts != profileScripts || currentEnvVars != profileEnvVars
     }
     func savePath() {
         if let path = xPlanePath {
@@ -892,7 +922,7 @@ class PluginManager {
     func saveProfile(name: String) {
         let enabledPlugins = plugins.filter { $0.isEnabled }.map { $0.folderName }
         let enabledScenery = scenery.filter { $0.isEnabled }.map { $0.folderName }
-        let newProfile = PluginProfile(name: name, pluginFolderNames: enabledPlugins, sceneryFolderNames: enabledScenery)
+        let newProfile = PluginProfile(name: name, pluginFolderNames: enabledPlugins, sceneryFolderNames: enabledScenery, scripts: activeScripts, environmentVariables: activeEnvironmentVariables)
         profiles.append(newProfile)
         saveProfilesToDisk()
         selectedProfileId = newProfile.id // Select it
@@ -906,6 +936,7 @@ class PluginManager {
             profiles[index].pluginFolderNames = enabledPlugins
             profiles[index].sceneryFolderNames = enabledScenery
             profiles[index].scripts = activeScripts // Save active scripts
+            profiles[index].environmentVariables = activeEnvironmentVariables // Save active environment variables
             
             saveProfilesToDisk()
             
@@ -921,6 +952,7 @@ class PluginManager {
     }
     
     var activeScripts: [ProfileScript] = []
+    var activeEnvironmentVariables: [ScriptEnvVar] = []
 
     // MARK: - Script Management
     
@@ -939,6 +971,14 @@ class PluginManager {
         if let index = activeScripts.firstIndex(where: { $0.id == script.id }) {
             activeScripts[index].isEnabled.toggle()
         }
+    }
+    
+    func addProfileEnvVar(key: String = "NEW_VAR", value: String = "VALUE") {
+        activeEnvironmentVariables.append(ScriptEnvVar(key: key, value: value))
+    }
+    
+    func deleteProfileEnvVar(id: UUID) {
+        activeEnvironmentVariables.removeAll { $0.id == id }
     }
     
     private func saveProfilesToDisk() {
@@ -967,8 +1007,9 @@ class PluginManager {
             }
         }
         
-        // Load scripts from profile into active state
+        // Load scripts & env vars from profile into active state
         self.activeScripts = profile.scripts
+        self.activeEnvironmentVariables = profile.environmentVariables
     }
     
     private func executeShellScript(at path: String, profileName: String) {
@@ -977,14 +1018,23 @@ class PluginManager {
         process.executableURL = URL(fileURLWithPath: path)
         
         var env = ProcessInfo.processInfo.environment
-        env["XLAUNCHER_PROFILE"] = profileName
         
-        // Merge user defined environment
+        // 1. Global environment variables
         for envVar in scriptEnvironment {
             if !envVar.key.isEmpty {
                 env[envVar.key] = envVar.value
             }
         }
+        
+        // 2. Per-profile environment variables (overriding global keys)
+        for envVar in activeEnvironmentVariables {
+            if !envVar.key.isEmpty {
+                env[envVar.key] = envVar.value
+            }
+        }
+        
+        // 3. System profile name variable
+        env["XLAUNCHER_PROFILE"] = profileName
         
         process.environment = env
         

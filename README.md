@@ -82,11 +82,12 @@ X-Plane 12/
 
 ### Scripting
 
-You can associate one or more shell scripts with a profile. These scripts are executed immediately before X-Plane starts.
-The environment variable `XLAUNCHER_PROFILE` is set to the name of the active profile.
-Any custom variables defined in **Settings > Script Environment** are also injected into the script's environment.
+You can associate shell scripts and custom environment variables with each profile. These scripts are executed immediately before X-Plane starts.
+- `XLAUNCHER_PROFILE` is automatically set to the name of the active profile.
+- Environment variables defined globally in **Settings > Script Environment** are passed to scripts.
+- **Per-Profile Environment Variables** (configured in the **Scripts** tab for a selected profile) override global variables, allowing custom per-profile configuration values.
 
-**Example Use Case**: Configuring Hoppie ACARS network based on profile.
+**Example Use Case**: Setting custom credentials or ACARS server settings per-profile.
 
 See `examples/hoppie.sh` for a sample script.
 
