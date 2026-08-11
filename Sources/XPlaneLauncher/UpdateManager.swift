@@ -39,6 +39,7 @@ class UpdateManager {
     
     enum UpdaterType: String, Codable, Identifiable {
         case skunkcrafts = "SkunkCrafts"
+        case xUpdater = "X-Updater"
         var id: String { rawValue }
     }
 
@@ -81,6 +82,9 @@ class UpdateManager {
         if let url = SkunkCraftsUpdaterService.shared.findConfig(in: folderURL) {
             return (.skunkcrafts, url)
         }
+        if let url = XUpdaterService.shared.findConfig(in: folderURL) {
+            return (.xUpdater, url)
+        }
         return nil
     }
     
@@ -88,6 +92,10 @@ class UpdateManager {
         if type == .skunkcrafts {
             if let config = SkunkCraftsUpdaterService.shared.parseConfig(at: url, defaultName: defaultName) {
                 return (config.name, config.version, config.remoteManifestURL)
+            }
+        } else if type == .xUpdater {
+            if let config = XUpdaterService.shared.parseConfig(at: url, defaultName: defaultName) {
+                return (config.name, config.version, config.remoteURL)
             }
         }
         return (defaultName, nil, nil)
@@ -199,6 +207,24 @@ class UpdateManager {
                     latestV = result.latestVersion
                     isAvailable = result.isUpdateAvailable
                     statusMsg = result.statusMessage
+                } else if addon.updaterType == .xUpdater {
+                    let config = XUpdaterConfig(
+                        name: addon.name,
+                        version: addon.currentVersion,
+                        remoteURL: addon.remoteManifestURL
+                    )
+                    let result = try await XUpdaterService.shared.checkAddonStatus(
+                        folderURL: addon.folderURL,
+                        config: config,
+                        logHandler: { [weak self] msg in
+                            Task { @MainActor in
+                                self?.log(msg)
+                            }
+                        }
+                    )
+                    latestV = result.latestVersion
+                    isAvailable = result.isUpdateAvailable
+                    statusMsg = result.statusMessage
                 }
                 
                 if let i = self.updatableAddons.firstIndex(where: { $0.id == addonId }) {
@@ -233,6 +259,28 @@ class UpdateManager {
                         baseURL: nil
                     )
                     try await SkunkCraftsUpdaterService.shared.downloadAndApplyUpdates(
+                        for: addon.folderURL,
+                        config: config,
+                        logHandler: { [weak self] msg in
+                            Task { @MainActor in
+                                self?.log(msg)
+                            }
+                        },
+                        progressHandler: { [weak self] message, progress in
+                            Task { @MainActor in
+                                if let i = self?.updatableAddons.firstIndex(where: { $0.id == addonId }) {
+                                    self?.updatableAddons[i].statusMessage = message
+                                }
+                            }
+                        }
+                    )
+                } else if addon.updaterType == .xUpdater {
+                    let config = XUpdaterConfig(
+                        name: addon.name,
+                        version: addon.latestVersion ?? addon.currentVersion,
+                        remoteURL: addon.remoteManifestURL
+                    )
+                    try await XUpdaterService.shared.downloadAndApplyUpdates(
                         for: addon.folderURL,
                         config: config,
                         logHandler: { [weak self] msg in

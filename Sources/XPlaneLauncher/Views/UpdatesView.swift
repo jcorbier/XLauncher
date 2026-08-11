@@ -235,16 +235,27 @@ struct UpdatableAddonRow: View {
                         .clipShape(Capsule())
                     
                     if addon.isUpdateAvailable {
-                        Button("Update") {
+                        let isRepair = (addon.statusMessage.lowercased().contains("repair") || (addon.currentVersion != nil && addon.latestVersion != nil && addon.currentVersion == addon.latestVersion))
+                        Button(isRepair ? "Repair" : "Update") {
                             updateManager.updateAddon(addon)
                         }
                         .buttonStyle(.borderedProminent)
+                        .tint(isRepair ? .orange : .accentColor)
                         .controlSize(.small)
                     } else {
-                        Button("Check") {
+                        Menu {
+                            Button("Check for Updates") {
+                                updateManager.checkForUpdates(for: addon)
+                            }
+                            Button("Verify & Repair Files") {
+                                updateManager.updateAddon(addon)
+                            }
+                        } label: {
+                            Text("Check")
+                        } primaryAction: {
                             updateManager.checkForUpdates(for: addon)
                         }
-                        .buttonStyle(.bordered)
+                        .menuStyle(.borderedButton)
                         .controlSize(.small)
                     }
                 }
@@ -258,5 +269,17 @@ struct UpdatableAddonRow: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(Color(NSColor.separatorColor), lineWidth: 0.5)
         )
+        .contextMenu {
+            Button("Check for Updates") {
+                updateManager.checkForUpdates(for: addon)
+            }
+            Button("Verify & Repair Files") {
+                updateManager.updateAddon(addon)
+            }
+            Divider()
+            Button("Show in Finder") {
+                NSWorkspace.shared.activateFileViewerSelecting([addon.folderURL])
+            }
+        }
     }
 }
