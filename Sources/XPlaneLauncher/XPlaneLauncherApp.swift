@@ -29,18 +29,30 @@ struct XPlaneLauncherApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @State private var pluginManager = PluginManager()
     @State private var updateManager = UpdateManager()
+    @State private var cslManager = CSLManager()
     
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environment(pluginManager)
                 .environment(updateManager)
+                .environment(cslManager)
                 .frame(minWidth: 600, minHeight: 500)
                 .onAppear {
                     updateManager.launcherDataFolder = pluginManager.launcherDataFolder
+                    cslManager.cslFolderURL = pluginManager.cslPath
                 }
                 .onChange(of: pluginManager.launcherDataFolder) { _, newValue in
                     updateManager.launcherDataFolder = newValue
+                }
+                .onChange(of: pluginManager.cslPath) { _, newValue in
+                    cslManager.cslFolderURL = newValue
+                }
+                .onChange(of: pluginManager.enableCSLSupport) { _, enabled in
+                    if enabled {
+                        cslManager.cslFolderURL = pluginManager.cslPath
+                        cslManager.scanAndCheck()
+                    }
                 }
         }
         .windowResizability(.contentSize)

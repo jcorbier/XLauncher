@@ -75,6 +75,19 @@ struct SettingsView: View {
                         .padding(8)
                     }
                     
+                    GroupBox("X-CSL Models") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Toggle("Enable X-CSL support", isOn: $pluginManager.enableCSLSupport)
+                                .font(.body)
+                            
+                            Text("When enabled, adds a CSL tab in the sidebar to check, install, and update CSL models in Resources/plugins/IVAO_CSL/CSL from the X-CSL repository.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(8)
+                    }
+                    
                     GroupBox("Script Environment") {
                         VStack(spacing: 0) {
                             Table($pluginManager.scriptEnvironment, selection: $selectedEnvVarId) {

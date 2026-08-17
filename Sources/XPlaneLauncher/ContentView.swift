@@ -27,6 +27,7 @@ import SwiftUI
 struct ContentView: View {
     @Environment(PluginManager.self) var pluginManager
     @Environment(UpdateManager.self) var updateManager
+    @Environment(CSLManager.self) var cslManager
     @State private var selectedCategory: NavigationCategory? = .aircraft
     
     enum NavigationCategory: String, CaseIterable, Identifiable {
@@ -35,6 +36,7 @@ struct ContentView: View {
         case scenery = "Scenery"
         case luaScripts = "Lua Scripts"
         case scripts = "Profile Scripts"
+        case csl = "CSL"
         case updates = "Updates"
         case settings = "Settings"
         
@@ -47,13 +49,18 @@ struct ContentView: View {
             case .scenery: return "map"
             case .luaScripts: return "scroll"
             case .scripts: return "terminal"
+            case .csl: return "airplane.circle"
             case .updates: return "arrow.triangle.2.circlepath.circle"
             case .settings: return "gearshape"
             }
         }
         
-        static var mainCategories: [NavigationCategory] {
-            [.aircraft, .plugins, .scenery, .luaScripts, .scripts]
+        static func mainCategories(cslEnabled: Bool) -> [NavigationCategory] {
+            var list: [NavigationCategory] = [.aircraft, .plugins, .scenery, .luaScripts, .scripts]
+            if cslEnabled {
+                list.append(.csl)
+            }
+            return list
         }
         
         static var systemCategories: [NavigationCategory] {
@@ -61,7 +68,7 @@ struct ContentView: View {
         }
         
         var isAddonCategory: Bool {
-            NavigationCategory.mainCategories.contains(self)
+            self != .updates && self != .settings && self != .csl
         }
     }
     
@@ -73,10 +80,30 @@ struct ContentView: View {
         NavigationSplitView {
             List(selection: $selectedCategory) {
                 Section("Add-ons") {
-                    ForEach(NavigationCategory.mainCategories) { category in
+                    ForEach(NavigationCategory.mainCategories(cslEnabled: pluginManager.enableCSLSupport)) { category in
                         NavigationLink(value: category) {
-                            Label(category.rawValue, systemImage: category.systemImage)
-                                .font(.body)
+                            HStack(spacing: 8) {
+                                Label(category.rawValue, systemImage: category.systemImage)
+                                    .font(.body)
+                                
+                                if category == .csl {
+                                    Spacer()
+                                    
+                                    if cslManager.isProcessing {
+                                        ProgressView()
+                                            .controlSize(.small)
+                                    } else if cslManager.updatesAvailableCount > 0 {
+                                        Text("\(cslManager.updatesAvailableCount)")
+                                            .font(.caption2)
+                                            .fontWeight(.bold)
+                                            .foregroundStyle(.white)
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(Color.orange)
+                                            .clipShape(Capsule())
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -137,6 +164,8 @@ struct ContentView: View {
                         LuaScriptsListView()
                     case .scripts:
                         ScriptsListView()
+                    case .csl:
+                        CSLListView()
                     case .updates:
                         UpdatesView()
                     case .settings:
@@ -164,6 +193,10 @@ struct ContentView: View {
         .task {
             updateManager.scanUpdatableAddons()
             updateManager.checkAllAddonUpdates()
+            if pluginManager.enableCSLSupport {
+                cslManager.cslFolderURL = pluginManager.cslPath
+                cslManager.scanAndCheck()
+            }
         }
     }
 }

@@ -68,6 +68,17 @@ class PluginManager {
         xPlanePath?.appendingPathComponent("Resources").appendingPathComponent("plugins").appendingPathComponent("FlyWithLua").appendingPathComponent("Scripts")
     }
 
+    var cslPath: URL? {
+        xPlanePath?.appendingPathComponent("Resources").appendingPathComponent("plugins").appendingPathComponent("IVAO_CSL").appendingPathComponent("CSL")
+    }
+
+    var enableCSLSupport: Bool = false {
+        didSet {
+            guard !isLoading else { return }
+            defaults.set(enableCSLSupport, forKey: enableCSLSupportKey)
+        }
+    }
+
     var plugins: [Plugin] = []
     var scenery: [Scenery] = []
     var aircraft: [Aircraft] = []
@@ -181,6 +192,7 @@ class PluginManager {
     private let selectedProfileIdKey = "SelectedProfileId"
     private let scriptEnvironmentKey = "ScriptEnvVars"
     private let sceneryGroupsKey = "SceneryGroups"
+    private let enableCSLSupportKey = "EnableCSLSupport"
     
     private var isApplyingProfile = false
     
@@ -267,6 +279,8 @@ class PluginManager {
            let groups = try? JSONDecoder().decode([SceneryGroup].self, from: data) {
             self.sceneryGroups = groups
         }
+        
+        self.enableCSLSupport = defaults.bool(forKey: enableCSLSupportKey)
         
         isLoading = false
     }
