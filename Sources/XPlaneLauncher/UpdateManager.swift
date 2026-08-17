@@ -21,6 +21,18 @@ class UpdateManager {
     var updatableAddons: [UpdatableAddon] = []
     var logs: [String] = []
     
+    var isCheckingUpdates: Bool {
+        updatableAddons.contains { $0.isChecking }
+    }
+    
+    var isUpdatingAddons: Bool {
+        updatableAddons.contains { $0.isUpdating }
+    }
+    
+    var isProcessing: Bool {
+        updatableAddons.contains { $0.isChecking || $0.isUpdating }
+    }
+    
     func log(_ message: String) {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm:ss"

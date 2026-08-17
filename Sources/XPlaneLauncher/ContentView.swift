@@ -88,15 +88,24 @@ struct ContentView: View {
                                 Label(category.rawValue, systemImage: category.systemImage)
                                     .font(.body)
                                 
-                                if category == .updates && availableUpdatesCount > 0 {
-                                    Text("\(availableUpdatesCount)")
-                                        .font(.caption2)
-                                        .fontWeight(.bold)
-                                        .foregroundStyle(.white)
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 2)
-                                        .background(Color.orange)
-                                        .clipShape(Capsule())
+                                if category == .updates {
+                                    Spacer()
+                                    
+                                    if updateManager.isProcessing {
+                                        ProgressView()
+                                            .controlSize(.small)
+                                    }
+                                    
+                                    if availableUpdatesCount > 0 {
+                                        Text("\(availableUpdatesCount)")
+                                            .font(.caption2)
+                                            .fontWeight(.bold)
+                                            .foregroundStyle(.white)
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(Color.orange)
+                                            .clipShape(Capsule())
+                                    }
                                 }
                             }
                         }

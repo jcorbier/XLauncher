@@ -63,6 +63,7 @@ struct UpdatesView: View {
                 }) {
                     Label("Check for Updates", systemImage: "arrow.clockwise")
                 }
+                .disabled(updateManager.isProcessing)
                 
                 Button(action: {
                     for addon in updateManager.updatableAddons where addon.isUpdateAvailable {
@@ -71,7 +72,7 @@ struct UpdatesView: View {
                 }) {
                     Label("Update All", systemImage: "square.and.arrow.down")
                 }
-                .disabled(!hasAvailableUpdates)
+                .disabled(!hasAvailableUpdates || updateManager.isProcessing)
                 
                 Button(action: {
                     showDebugConsole.toggle()
