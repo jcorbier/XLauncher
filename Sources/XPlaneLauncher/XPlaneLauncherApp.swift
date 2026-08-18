@@ -83,8 +83,8 @@ struct XPlaneLauncherApp: App {
                     showWelcomeScreen = true
                 }
                 Divider()
-                Button("X-Plane Launcher Help") {
-                    if let url = URL(string: "https://github.com/jcorbier/x-plane-launcher") {
+                Button("X-Plane Launcher Documentation") {
+                    if let url = URL(string: "https://xlauncher.readthedocs.io/en/latest/") {
                         NSWorkspace.shared.open(url)
                     }
                 }

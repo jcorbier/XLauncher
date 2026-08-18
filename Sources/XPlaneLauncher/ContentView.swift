@@ -142,6 +142,22 @@ struct ContentView: View {
                             }
                         }
                     }
+                    
+                    Button(action: {
+                        if let url = URL(string: "https://xlauncher.readthedocs.io/en/latest/") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }) {
+                        HStack(spacing: 8) {
+                            Label("Help", systemImage: "questionmark.circle")
+                                .font(.body)
+                            Spacer()
+                            Image(systemName: "arrow.up.right")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .buttonStyle(.plain)
                 }
             }
             .listStyle(.sidebar)
