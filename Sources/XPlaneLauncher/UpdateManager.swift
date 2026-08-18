@@ -13,6 +13,7 @@ class UpdateManager {
     
     var launcherDataFolder: URL? {
         didSet {
+            guard launcherDataFolder != oldValue else { return }
             scanUpdatableAddons()
             checkAllAddonUpdates()
         }
@@ -167,13 +168,14 @@ class UpdateManager {
     // MARK: - Update Checking
     
     func checkAllAddonUpdates() {
-        for addon in updatableAddons {
+        for addon in updatableAddons where !addon.isChecking && !addon.isUpdating {
             checkForUpdates(for: addon)
         }
     }
     
     func checkForUpdates(for addon: UpdatableAddon) {
         guard let index = updatableAddons.firstIndex(where: { $0.id == addon.id }) else { return }
+        guard !updatableAddons[index].isChecking && !updatableAddons[index].isUpdating else { return }
         updatableAddons[index].isChecking = true
         updatableAddons[index].statusMessage = "Checking..."
         
@@ -249,6 +251,7 @@ class UpdateManager {
     
     func updateAddon(_ addon: UpdatableAddon) {
         guard let index = updatableAddons.firstIndex(where: { $0.id == addon.id }) else { return }
+        guard !updatableAddons[index].isUpdating else { return }
         updatableAddons[index].isUpdating = true
         updatableAddons[index].statusMessage = "Updating..."
         

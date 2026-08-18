@@ -205,13 +205,5 @@ struct ContentView: View {
                 }
             }
         }
-        .task {
-            updateManager.scanUpdatableAddons()
-            updateManager.checkAllAddonUpdates()
-            if pluginManager.enableCSLSupport {
-                cslManager.cslFolderURL = pluginManager.cslPath
-                cslManager.scanAndCheck()
-            }
-        }
     }
 }
