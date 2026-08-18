@@ -82,7 +82,7 @@ jobs:
           
           # Update Version in Info.plist
           plutil -replace CFBundleShortVersionString -string "$VERSION" XLauncher.app/Contents/Info.plist
-          plutil -replace CFBundleVersion -string "$VERSION" XLauncher.app/Contents/Info.plist
+          plutil -replace CFBundleVersion -string "${{ github.run_number }}" XLauncher.app/Contents/Info.plist
           
           # Resign the app after modification
           codesign -f -s - XLauncher.app
