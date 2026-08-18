@@ -28,6 +28,7 @@ struct XPlaneLauncherApp: App {
     @State private var pluginManager = PluginManager()
     @State private var updateManager = UpdateManager()
     @State private var cslManager = CSLManager()
+    @State private var appUpdateManager = AppUpdateManager()
     @State private var showWelcomeScreen = false
     
     var body: some Scene {
@@ -36,12 +37,16 @@ struct XPlaneLauncherApp: App {
                 .environment(pluginManager)
                 .environment(updateManager)
                 .environment(cslManager)
+                .environment(appUpdateManager)
                 .frame(minWidth: 600, minHeight: 500)
                 .onAppear {
                     updateManager.launcherDataFolder = pluginManager.launcherDataFolder
                     cslManager.cslFolderURL = pluginManager.cslPath
                     if !pluginManager.hasCompletedWelcome && !pluginManager.isConfigured {
                         showWelcomeScreen = true
+                    }
+                    if appUpdateManager.automaticallyCheckOnLaunch {
+                        appUpdateManager.checkForUpdates(manual: false)
                     }
                 }
                 .onChange(of: pluginManager.launcherDataFolder) { _, newValue in
@@ -72,6 +77,10 @@ struct XPlaneLauncherApp: App {
             CommandGroup(replacing: .printItem) { }
             CommandGroup(replacing: .importExport) { }
             CommandGroup(after: .appInfo) {
+                Button("Check for Updates...") {
+                    appUpdateManager.checkForUpdates(manual: true)
+                }
+                Divider()
                 Button("Welcome to X-Plane Launcher...") {
                     showWelcomeScreen = true
                 }

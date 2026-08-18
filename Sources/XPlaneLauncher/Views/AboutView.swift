@@ -24,7 +24,17 @@ import SwiftUI
 import AppKit
 
 struct AboutView: View {
+    @Environment(AppUpdateManager.self) var appUpdateManager
     @State private var copiedLicense: Bool = false
+    @State private var showReleaseNotesSheet: Bool = false
+    
+    private var lastCheckedFormatted: String {
+        guard let date = appUpdateManager.lastCheckDate else { return "Never" }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.locale = Locale(identifier: "en_US")
+        formatter.unitsStyle = .full
+        return formatter.localizedString(for: date, relativeTo: Date())
+    }
     
     var body: some View {
         VStack(spacing: 0) {
@@ -34,6 +44,23 @@ struct AboutView: View {
                     .font(.title3)
                     .fontWeight(.bold)
                 Spacer()
+                
+                if appUpdateManager.isChecking {
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Checking...")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    Button(action: {
+                        appUpdateManager.checkForUpdates(manual: true)
+                    }) {
+                        Label("Check for Updates", systemImage: "arrow.clockwise")
+                    }
+                    .controlSize(.small)
+                }
             }
             .padding(12)
             .background(Color(NSColor.controlBackgroundColor))
@@ -77,6 +104,67 @@ struct AboutView: View {
                                 .foregroundStyle(.secondary)
                                 .multilineTextAlignment(.center)
                                 .padding(.top, 2)
+                        }
+                        
+                        // Update Banner / Status
+                        if appUpdateManager.isUpdateAvailable, let release = appUpdateManager.latestRelease {
+                            VStack(spacing: 10) {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "sparkles")
+                                        .font(.title2)
+                                        .foregroundStyle(.orange)
+                                    
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Update Available: \(release.displayTitle)")
+                                            .font(.subheadline)
+                                            .fontWeight(.semibold)
+                                        Text("A newer version of X-Plane Launcher is available for download.")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    
+                                    Spacer()
+                                }
+                                
+                                HStack(spacing: 10) {
+                                    Button(action: {
+                                        showReleaseNotesSheet = true
+                                    }) {
+                                        Label("What's New", systemImage: "doc.plaintext")
+                                    }
+                                    .controlSize(.small)
+                                    
+                                    Button(action: {
+                                        appUpdateManager.downloadLatestDMG()
+                                    }) {
+                                        Label(
+                                            release.dmgAsset != nil ? "Download DMG (\(release.dmgAsset!.formattedSize))" : "Download Update",
+                                            systemImage: "arrow.down.circle.fill"
+                                        )
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    .controlSize(.small)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .trailing)
+                            }
+                            .padding(12)
+                            .background(Color.orange.opacity(0.1))
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+                            )
+                            .padding(.top, 6)
+                        } else if appUpdateManager.lastCheckDate != nil {
+                            HStack(spacing: 6) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.caption)
+                                    .foregroundStyle(.green)
+                                Text("Up to date • Last checked \(lastCheckedFormatted)")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(.top, 4)
                         }
                     }
                     .padding(.top, 12)
@@ -216,6 +304,10 @@ struct AboutView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .sheet(isPresented: $showReleaseNotesSheet) {
+            let releases = appUpdateManager.newReleases.isEmpty ? (appUpdateManager.latestRelease.map { [$0] } ?? []) : appUpdateManager.newReleases
+            AppReleaseNotesSheet(releases: releases)
+        }
     }
 }
 

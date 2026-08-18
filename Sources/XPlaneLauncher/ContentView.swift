@@ -26,6 +26,7 @@ struct ContentView: View {
     @Environment(PluginManager.self) var pluginManager
     @Environment(UpdateManager.self) var updateManager
     @Environment(CSLManager.self) var cslManager
+    @Environment(AppUpdateManager.self) var appUpdateManager
     @Binding var showWelcomeScreen: Bool
     @State private var selectedCategory: NavigationCategory? = .aircraft
     
@@ -158,8 +159,25 @@ struct ContentView: View {
                     .buttonStyle(.plain)
                     
                     NavigationLink(value: NavigationCategory.about) {
-                        Label(NavigationCategory.about.rawValue, systemImage: NavigationCategory.about.systemImage)
-                            .font(.body)
+                        HStack(spacing: 8) {
+                            Label(NavigationCategory.about.rawValue, systemImage: NavigationCategory.about.systemImage)
+                                .font(.body)
+                            
+                            Spacer()
+                            
+                            if appUpdateManager.isUpdateAvailable {
+                                let tag = appUpdateManager.latestRelease?.tagName ?? ""
+                                let badgeText = tag.isEmpty ? "NEW" : (tag.lowercased().hasPrefix("v") ? "NEW \(tag)" : "NEW v\(tag)")
+                                Text(badgeText)
+                                    .font(.system(size: 9, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.orange)
+                                    .clipShape(Capsule())
+                                    .lineLimit(1)
+                            }
+                        }
                     }
                 }
             }

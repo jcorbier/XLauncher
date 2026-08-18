@@ -24,12 +24,23 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(PluginManager.self) var pluginManager
+    @Environment(AppUpdateManager.self) var appUpdateManager
     @Environment(CSLManager.self) var cslManager: CSLManager?
     @State private var selectedEnvVarId: PluginManager.ScriptEnvVar.ID?
     @State private var showWelcomeSheet: Bool = false
+    @State private var showReleaseNotesSheet: Bool = false
+    
+    private var lastCheckedFormatted: String {
+        guard let date = appUpdateManager.lastCheckDate else { return "Never" }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.locale = Locale(identifier: "en_US")
+        formatter.unitsStyle = .full
+        return formatter.localizedString(for: date, relativeTo: Date())
+    }
     
     var body: some View {
         @Bindable var pluginManager = pluginManager
+        @Bindable var appUpdateManager = appUpdateManager
         
         VStack(spacing: 0) {
             // Header Bar
@@ -173,6 +184,98 @@ struct SettingsView: View {
                         }
                         .padding(8)
                     }
+                    
+                    GroupBox("Application Updates") {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Toggle("Automatically check for updates on launch", isOn: $appUpdateManager.automaticallyCheckOnLaunch)
+                                .font(.body)
+                            
+                            Toggle("Include pre-release and beta versions", isOn: $appUpdateManager.includePrereleases)
+                                .font(.body)
+                                .onChange(of: appUpdateManager.includePrereleases) { _, _ in
+                                    appUpdateManager.checkForUpdates(manual: false)
+                                }
+                            
+                            Divider()
+                            
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    HStack(spacing: 6) {
+                                        if appUpdateManager.isChecking {
+                                            ProgressView()
+                                                .controlSize(.small)
+                                            Text("Checking GitHub for updates...")
+                                                .font(.subheadline)
+                                        } else if appUpdateManager.isUpdateAvailable {
+                                            Image(systemName: "sparkles")
+                                                .foregroundStyle(.orange)
+                                            Text(appUpdateManager.statusMessage)
+                                                .font(.subheadline)
+                                                .fontWeight(.semibold)
+                                        } else {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .foregroundStyle(.green)
+                                            Text(appUpdateManager.statusMessage)
+                                                .font(.subheadline)
+                                        }
+                                    }
+                                    
+                                    if appUpdateManager.lastCheckDate != nil {
+                                        Text("Last checked: \(lastCheckedFormatted)")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                
+                                Spacer()
+                                
+                                Button(action: {
+                                    appUpdateManager.checkForUpdates(manual: true)
+                                }) {
+                                    Label("Check Now", systemImage: "arrow.clockwise")
+                                }
+                                .disabled(appUpdateManager.isChecking)
+                            }
+                            
+                            if appUpdateManager.isUpdateAvailable, let release = appUpdateManager.latestRelease {
+                                Divider()
+                                
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("New Version Available: \(release.displayTitle)")
+                                            .font(.subheadline)
+                                            .fontWeight(.medium)
+                                        Text("Released on GitHub. You can download the latest installer (.dmg) or view the changelog.")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    
+                                    Spacer()
+                                    
+                                    Button("What's New") {
+                                        showReleaseNotesSheet = true
+                                    }
+                                    .controlSize(.small)
+                                    
+                                    Button(action: {
+                                        appUpdateManager.downloadLatestDMG()
+                                    }) {
+                                        Label(
+                                            release.dmgAsset != nil ? "Download DMG (\(release.dmgAsset!.formattedSize))" : "Download Update",
+                                            systemImage: "arrow.down.circle.fill"
+                                        )
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    .controlSize(.small)
+                                }
+                                .padding(8)
+                                .background(Color.orange.opacity(0.08))
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(8)
+                    }
                 }
                 .padding(16)
             }
@@ -180,6 +283,10 @@ struct SettingsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .sheet(isPresented: $showWelcomeSheet) {
             WelcomeView()
+        }
+        .sheet(isPresented: $showReleaseNotesSheet) {
+            let releases = appUpdateManager.newReleases.isEmpty ? (appUpdateManager.latestRelease.map { [$0] } ?? []) : appUpdateManager.newReleases
+            AppReleaseNotesSheet(releases: releases)
         }
     }
 }
