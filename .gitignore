@@ -9,3 +9,5 @@ DerivedData/
 XLauncher.app/
 XLauncher.iconset/
 XLauncher.icns
+docs/build/
+.doctrees/

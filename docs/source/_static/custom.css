@@ -1,0 +1,4 @@
+/* Custom CSS styles for X-Plane Launcher documentation */
+.wy-nav-content {
+    max-width: 960px !important;
+}
