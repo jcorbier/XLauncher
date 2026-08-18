@@ -2,8 +2,6 @@
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 
 //
-//  MIT License
-//
 //  Copyright (c) 2026 Jeremie Corbier
 //
 //  Permission is hereby granted, free of charge, to any person obtaining a copy
