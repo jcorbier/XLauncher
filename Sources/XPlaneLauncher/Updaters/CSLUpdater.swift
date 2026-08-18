@@ -30,6 +30,7 @@ enum CSLPackageStatus: String, Codable, Sendable {
     case notInstalled = "not_installed"
     case upToDate = "up_to_date"
     case needsUpdate = "needs_update"
+    case unknown = "unknown"
     case checking = "checking"
     case updating = "updating"
     case error = "error"
@@ -488,13 +489,14 @@ final class CSLManager {
         }
     }
     
+    var hasFetchedRemoteIndex: Bool = false
+    
     var cslFolderURL: URL? {
         didSet {
             if cslFolderURL != oldValue {
+                hasFetchedRemoteIndex = false
                 packages = []
-                if automaticallyCheckCSLUpdates {
-                    scanAndCheck()
-                }
+                scanLocalPackages()
             }
         }
     }
@@ -534,6 +536,82 @@ final class CSLManager {
         logger.clear()
     }
     
+    // MARK: - Local Scanning
+    
+    private func computeDirectoryStats(at dirURL: URL) -> (fileCount: Int, totalSize: Int64) {
+        var fileCount = 0
+        var totalSize: Int64 = 0
+        if let enumerator = fileManager.enumerator(at: dirURL, includingPropertiesForKeys: [.fileSizeKey, .isDirectoryKey], options: [.skipsHiddenFiles]) {
+            while let fileURL = enumerator.nextObject() as? URL {
+                if let res = try? fileURL.resourceValues(forKeys: [.fileSizeKey, .isDirectoryKey]),
+                   res.isDirectory == false {
+                    fileCount += 1
+                    totalSize += Int64(res.fileSize ?? 0)
+                }
+            }
+        }
+        return (fileCount, totalSize)
+    }
+    
+    func scanLocalPackages() {
+        guard let folderURL = cslFolderURL else {
+            packages = []
+            return
+        }
+        
+        guard !hasFetchedRemoteIndex else { return }
+        
+        guard fileManager.fileExists(atPath: folderURL.path) else {
+            packages = []
+            return
+        }
+        
+        guard let subdirs = try? fileManager.contentsOfDirectory(at: folderURL, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) else {
+            packages = []
+            return
+        }
+        
+        var localPackages: [CSLPackage] = []
+        for dirURL in subdirs.sorted(by: { $0.lastPathComponent.localizedCaseInsensitiveCompare($1.lastPathComponent) == .orderedAscending }) {
+            var isDir: ObjCBool = false
+            guard fileManager.fileExists(atPath: dirURL.path, isDirectory: &isDir), isDir.boolValue else {
+                continue
+            }
+            
+            let pkgName = dirURL.lastPathComponent
+            
+            // Check for local x-csl-info.info if present
+            var title = pkgName
+            let infoURL = dirURL.appendingPathComponent("x-csl-info.info")
+            if let data = try? Data(contentsOf: infoURL),
+               let desc = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .ascii) {
+                let cleanDesc = desc.components(separatedBy: .newlines).first?.trimmingCharacters(in: .whitespaces) ?? ""
+                if !cleanDesc.isEmpty {
+                    title = cleanDesc
+                }
+            }
+            
+            let stats = computeDirectoryStats(at: dirURL)
+            
+            let pkg = CSLPackage(
+                name: pkgName,
+                title: title,
+                totalSizeBytes: stats.totalSize,
+                fileCount: stats.fileCount,
+                status: .unknown,
+                filesToUpdate: 0,
+                updateSizeBytes: 0,
+                lastUpdated: "",
+                statusMessage: "Unknown",
+                isInstalled: true,
+                files: []
+            )
+            localPackages.append(pkg)
+        }
+        
+        self.packages = localPackages
+    }
+    
     // MARK: - Scanning & Update Checking
     
     func scanAndCheck() {
@@ -550,11 +628,15 @@ final class CSLManager {
             do {
                 let indexContent = try await service.fetchRemoteIndex()
                 let rawPackages = CSLIndexParser.parseIndex(content: indexContent)
+                self.hasFetchedRemoteIndex = true
                 
                 log("[CSL] Remote index loaded: \(rawPackages.count) total packages available")
                 
                 var parsedPackages: [CSLPackage] = []
+                var processedNames: Set<String> = []
+                
                 for raw in rawPackages {
+                    processedNames.insert(raw.name)
                     let comparison = await service.comparePackage(raw: raw, cslBaseFolder: folderURL)
                     
                     let statusMsg: String
@@ -565,6 +647,8 @@ final class CSLManager {
                         statusMsg = "Update available (\(comparison.filesToUpdate) files, \(ByteCountFormatter.string(fromByteCount: comparison.updateSizeBytes, countStyle: .file)))"
                     case .notInstalled:
                         statusMsg = "Not installed"
+                    case .unknown:
+                        statusMsg = "Unknown"
                     case .checking:
                         statusMsg = "Checking..."
                     case .updating:
@@ -592,7 +676,34 @@ final class CSLManager {
                     parsedPackages.append(pkg)
                 }
                 
-                self.packages = parsedPackages
+                // Include any local directories not in remote index
+                if let subdirs = try? self.fileManager.contentsOfDirectory(at: folderURL, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) {
+                    for dirURL in subdirs {
+                        var isDir: ObjCBool = false
+                        guard self.fileManager.fileExists(atPath: dirURL.path, isDirectory: &isDir), isDir.boolValue else { continue }
+                        let pkgName = dirURL.lastPathComponent
+                        guard !processedNames.contains(pkgName) else { continue }
+                        
+                        let stats = self.computeDirectoryStats(at: dirURL)
+                        
+                        let customPkg = CSLPackage(
+                            name: pkgName,
+                            title: pkgName,
+                            totalSizeBytes: stats.totalSize,
+                            fileCount: stats.fileCount,
+                            status: .unknown,
+                            filesToUpdate: 0,
+                            updateSizeBytes: 0,
+                            lastUpdated: "",
+                            statusMessage: "Unknown (not in server index)",
+                            isInstalled: true,
+                            files: []
+                        )
+                        parsedPackages.append(customPkg)
+                    }
+                }
+                
+                self.packages = parsedPackages.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
                 self.isChecking = false
                 
                 let needUpdate = self.updatesAvailableCount
@@ -728,6 +839,12 @@ final class CSLManager {
     
     func verifyPackage(_ package: CSLPackage) {
         guard let folderURL = cslFolderURL else { return }
+        
+        if package.files.isEmpty || !hasFetchedRemoteIndex {
+            scanAndCheck()
+            return
+        }
+        
         guard let index = packages.firstIndex(where: { $0.id == package.id }) else { return }
         
         packages[index].status = .checking
@@ -775,7 +892,11 @@ final class CSLManager {
             }
             self.isApplyingLights = false
             self.log("[XP12 Lights] Finished applying X-Plane 12 lighting to \(installedPackages.count) packages")
-            self.scanAndCheck()
+            if self.hasFetchedRemoteIndex {
+                self.scanAndCheck()
+            } else {
+                self.scanLocalPackages()
+            }
         }
     }
     
@@ -797,7 +918,11 @@ final class CSLManager {
             }
             self.isApplyingLights = false
             self.log("[XP12 Lights] Finished reverting X-Plane 12 lighting on \(installedPackages.count) packages")
-            self.scanAndCheck()
+            if self.hasFetchedRemoteIndex {
+                self.scanAndCheck()
+            } else {
+                self.scanLocalPackages()
+            }
         }
     }
 }

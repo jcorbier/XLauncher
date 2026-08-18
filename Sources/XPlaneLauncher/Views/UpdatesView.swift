@@ -141,6 +141,20 @@ struct UpdatableAddonRow: View {
         }
     }
     
+    var statusColor: Color {
+        if addon.isUpdateAvailable {
+            return .orange
+        }
+        let msg = addon.statusMessage.lowercased()
+        if msg == "unknown" || msg == "idle" {
+            return .secondary
+        }
+        if msg.contains("fail") || msg.contains("error") {
+            return .red
+        }
+        return .green
+    }
+    
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: addon.updaterType == .skunkcrafts ? "gearshape.2.fill" : "arrow.down.circle.fill")
@@ -203,10 +217,10 @@ struct UpdatableAddonRow: View {
                     Text(addon.statusMessage)
                         .font(.caption2)
                         .fontWeight(.semibold)
-                        .foregroundStyle(addon.isUpdateAvailable ? .orange : .green)
+                        .foregroundStyle(statusColor)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(addon.isUpdateAvailable ? Color.orange.opacity(0.12) : Color.green.opacity(0.12))
+                        .background(statusColor.opacity(0.12))
                         .clipShape(Capsule())
                     
                     if addon.isUpdateAvailable {

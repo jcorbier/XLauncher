@@ -42,6 +42,9 @@ struct XPlaneLauncherApp: App {
                 .onAppear {
                     updateManager.launcherDataFolder = pluginManager.launcherDataFolder
                     cslManager.cslFolderURL = pluginManager.cslPath
+                    if pluginManager.enableCSLSupport && cslManager.automaticallyCheckCSLUpdates {
+                        cslManager.scanAndCheck()
+                    }
                     if !pluginManager.hasCompletedWelcome && !pluginManager.isConfigured {
                         showWelcomeScreen = true
                     }
@@ -54,6 +57,9 @@ struct XPlaneLauncherApp: App {
                 }
                 .onChange(of: pluginManager.cslPath) { _, newValue in
                     cslManager.cslFolderURL = newValue
+                    if pluginManager.enableCSLSupport && cslManager.automaticallyCheckCSLUpdates {
+                        cslManager.scanAndCheck()
+                    }
                 }
                 .onChange(of: pluginManager.enableCSLSupport) { _, enabled in
                     if enabled {

@@ -73,7 +73,7 @@ struct CSLListView: View {
                     .fontWeight(.bold)
                 
                 if !cslManager.packages.isEmpty {
-                    Text("\(cslManager.installedCount) Installed • \(cslManager.updatesAvailableCount) Updates")
+                    Text("\(cslManager.installedCount) Installed • \(cslManager.hasFetchedRemoteIndex ? "\(cslManager.updatesAvailableCount) Updates" : "Status Unknown")")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 8)
@@ -188,6 +188,8 @@ struct CSLListView: View {
                         Text("No CSL models are currently installed in Resources/plugins/IVAO_CSL/CSL.")
                     } else if selectedFilter == .updates {
                         Text("All installed CSL models are up to date.")
+                    } else if selectedFilter == .notInstalled && !cslManager.hasFetchedRemoteIndex {
+                        Text("Click 'Check' above to fetch the list of available X-CSL packages from the server.")
                     } else {
                         Text("Click 'Check' above to fetch the latest index of X-CSL packages.")
                     }
@@ -219,8 +221,8 @@ struct CSLListView: View {
             if cslManager.cslFolderURL == nil {
                 cslManager.cslFolderURL = pluginManager.cslPath
             }
-            if cslManager.packages.isEmpty {
-                cslManager.scanAndCheck()
+            if cslManager.packages.isEmpty && !cslManager.hasFetchedRemoteIndex {
+                cslManager.scanLocalPackages()
             }
         }
     }
@@ -237,7 +239,7 @@ struct CSLPackageRow: View {
         switch package.status {
         case .upToDate: return .green
         case .needsUpdate: return .orange
-        case .notInstalled: return .secondary
+        case .notInstalled, .unknown: return .secondary
         case .checking, .updating: return .blue
         case .error: return .red
         }
@@ -339,6 +341,15 @@ struct CSLPackageRow: View {
                                 .padding(.vertical, 4)
                                 .background(Color.green.opacity(0.12))
                                 .clipShape(Capsule())
+                        } else if package.status == .unknown {
+                            Text("Unknown")
+                                .font(.caption2)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(Color.secondary)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.secondary.opacity(0.12))
+                                .clipShape(Capsule())
                         } else if package.status == .error {
                             Text("Error")
                                 .font(.caption2)
@@ -366,6 +377,9 @@ struct CSLPackageRow: View {
                             .controlSize(.small)
                         } else {
                             Menu {
+                                Button("Check for Updates") {
+                                    cslManager.scanAndCheck()
+                                }
                                 Button("Verify Files") {
                                     cslManager.verifyPackage(package)
                                 }
@@ -381,7 +395,11 @@ struct CSLPackageRow: View {
                             } label: {
                                 Text("Actions")
                             } primaryAction: {
-                                cslManager.verifyPackage(package)
+                                if package.status == .unknown || package.files.isEmpty {
+                                    cslManager.scanAndCheck()
+                                } else {
+                                    cslManager.verifyPackage(package)
+                                }
                             }
                             .menuStyle(.borderedButton)
                             .controlSize(.small)
@@ -432,6 +450,9 @@ struct CSLPackageRow: View {
                     cslManager.updatePackage(package)
                 }
             } else {
+                Button("Check for Updates") {
+                    cslManager.scanAndCheck()
+                }
                 Button("Verify Files") {
                     cslManager.verifyPackage(package)
                 }

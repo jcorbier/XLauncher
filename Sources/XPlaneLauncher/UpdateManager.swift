@@ -102,7 +102,7 @@ class UpdateManager {
         var isUpdateAvailable: Bool = false
         var isChecking: Bool = false
         var isUpdating: Bool = false
-        var statusMessage: String = "Idle"
+        var statusMessage: String = "Unknown"
         var remoteManifestURL: String?
     }
     
