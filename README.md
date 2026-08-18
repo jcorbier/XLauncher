@@ -1,14 +1,17 @@
 # X-Plane Launcher
 
-X-Plane Launcher is a macOS application designed to simplify the management of your X-Plane 12 plugins and configurations. It allows you to create profiles, toggle plugins on/off, and launch X-Plane with a specific setup.
+A native macOS manager and launcher for X-Plane 12.
+
+X-Plane Launcher lets you organize your add-ons in a central folder, create distinct profiles (e.g. VATSIM, airliner, general aviation), reorder scenery, keep add-ons updated, and launch X-Plane with the exact configuration you need.
 
 ## Features
 
-- **Profile Management**: Create named profiles (e.g., "VATSIM", "Offline", "Default") to quickly switch between different sets of plugins and scenery.
-- **Smart Plugin & Scenery Management**: Keep your X-Plane `plugins` and `Custom Scenery` folders clean. The launcher manages content using symlinks, keeping your actual files organized inside subfolders of the Central Data Folder.
-- **Addon Updates**: Automatically detect and update addons configured with SkunkCrafts Updater (`skunkcrafts_updater.cfg`) or X-Updater (`x-updater.json`) directly from the UI.
-- **Script Execution**: Automatically run shell scripts when launching X-Plane (useful for configuring external tools like Hoppie ACARS based on your active profile).
-- **One-Click Launch**: Launch X-Plane directly from the app after selecting your profile.
+- **Profiles**: Save and switch configurations across aircraft, plugins, scenery packs, and FlyWithLua scripts.
+- **Clean symlink management**: Keep your X-Plane directory tidy. Add-ons stay in a central folder and are symlinked into X-Plane on demand.
+- **Scenery pack ordering & grouping**: Reorder `scenery_packs.ini` with drag-and-drop, enable or disable packs without deleting files, and organize scenery into groups.
+- **Add-on updates**: Check and install updates for add-ons supported by SkunkCrafts Updater or X-Updater directly from the UI.
+- **CSL packages & lights**: Manage CSL model matching packages, apply lighting intensity presets (high/medium/low), or restore original lights.
+- **Pre-launch scripts**: Run custom shell scripts with profile-specific environment variables before starting X-Plane (e.g. setting up Hoppie ACARS).
 
 ## Requirements
 
@@ -17,100 +20,55 @@ X-Plane Launcher is a macOS application designed to simplify the management of y
 
 ## Installation
 
-### Building from Source
+### Pre-built binaries
 
-To build the application, ensure you have Xcode installed (or the Swift command line tools).
+Download the latest `XLauncher.dmg` from the [Releases](https://github.com/jcorbier/x-plane-launcher/releases) page and move `XLauncher.app` to your Applications folder.
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/jcorbier/x-plane-launcher.git
-   cd x-plane-launcher
-   ```
+### Building from source
 
-2. Build and package the app:
-   ```bash
-   ./package.sh
-   ```
-   This will create `XLauncher.app`. Move this to your Applications folder.
+Requires Xcode or Swift command-line tools:
 
-## Setup
+```bash
+git clone https://github.com/jcorbier/x-plane-launcher.git
+cd x-plane-launcher
+./package.sh
+```
 
-### Central Data Folder & Organizing Resources
+This generates `XLauncher.app` in the project root.
 
-X-Plane Launcher uses a **Central Data Folder** to store your managed addons. By default, it is located at:
-`~/Library/Application Support/XPlaneLauncher/`
+## Setup & Organization
 
-Inside this folder, subdirectories are automatically created for your addons:
-- `Plugins/` (for managed plugins)
-- `Scenery/` (for custom scenery packs)
-- `Aircraft/` (for aircraft)
-- `LuaScripts/` (for FlyWithLua scripts)
+On first launch, a welcome assistant helps you configure your paths:
+- **X-Plane 12 folder**: Root folder containing `X-Plane.app`.
+- **Central Data Folder**: Default is `~/Library/Application Support/XPlaneLauncher/`.
 
-You can customize the location of the Central Data Folder in App Settings.
+### Directory layout
 
-#### Folder Structure Example
+Store your add-ons in their respective subdirectories inside the central folder:
 
 ```text
 ~/Library/Application Support/XPlaneLauncher/
-├── Plugins/    <-- Source for plugins
-│   ├── BetterPushback
-│   └── ...
-├── Scenery/    <-- Source for scenery packs
-│   ├── KLAX - Los Angeles
-│   └── ...
-├── Aircraft/   <-- Source for aircraft
-└── LuaScripts/ <-- Source for FlyWithLua scripts
-
-X-Plane 12/
-├── Custom Scenery/  <-- Managed by Launcher (contains symlinks)
-└── Resources/
-    └── plugins/     <-- Managed by Launcher (contains symlinks)
+├── Aircraft/   <-- Source aircraft
+├── Plugins/    <-- Source plugins
+├── Scenery/    <-- Source scenery packs
+└── LuaScripts/ <-- Source FlyWithLua scripts
 ```
 
-## Usage
+When applying a profile, the launcher creates symlinks in:
+- `<X-Plane 12>/Aircraft`
+- `<X-Plane 12>/Resources/plugins`
+- `<X-Plane 12>/Custom Scenery`
+- `<X-Plane 12>/Resources/plugins/FlyWithLua/Scripts`
 
-1. **Open XLauncher**.
-2. **Configure Settings**: Go to `XLauncher` > `Settings...` (or `Cmd+,`) to open Settings.
-   - **Central Data Folder**: Select or view the central data folder location where all your managed plugins, scenery, aircraft, and Lua scripts live.
-   - **X-Plane Location**: Select your X-Plane 12 installation folder (the root folder containing `X-Plane.app`).
-   - **Script Environment**: Define global environment variables passed to your profile scripts.
-3. **Manage Profiles**:
-   - Use the **Aircraft**, **Plugins**, **Scenery**, and **Lua Scripts** tabs to toggle content on/off.
-   - Use the "Save Current as Profile" button to save your current configuration as a new profile.
-   - Select a profile from the dropdown to instantly apply it.
-   - Managing a profile will automatically update the `Aircraft`, `plugins`, `Custom Scenery`, and `FlyWithLua/Scripts` folders with symlinks.
-4. **Launch**: Click the "Launch X-Plane" button.
+## Scripting
 
-### Scripting
+You can attach shell scripts to profiles to run before X-Plane launches.
 
-You can associate shell scripts and custom environment variables with each profile. These scripts are executed immediately before X-Plane starts.
-- `XLAUNCHER_PROFILE` is automatically set to the name of the active profile.
-- Environment variables defined globally in **Settings > Script Environment** are passed to scripts.
-- **Per-Profile Environment Variables** (configured in the **Scripts** tab for a selected profile) override global variables, allowing custom per-profile configuration values.
+- `XLAUNCHER_PROFILE` is automatically set to the active profile name.
+- Global environment variables can be configured in **Settings**.
+- Per-profile environment variables can be configured in the **Profile Scripts** tab.
 
-**Example Use Case**: Setting custom credentials or ACARS server settings per-profile.
-
-See `examples/hoppie.sh` for a sample script.
-
-### Scenery Management
-
-X-Plane Launcher provides advanced control over your custom scenery:
-
-1.  **Load Order (scenery_packs.ini)**:
-    - The scenery list reflects the exact load order defined in `Custom Scenery/scenery_packs.ini`.
-    - **Reorder**: Drag and drop items in the list to change their priority. The INI file is updated immediately.
-
-2.  **Toggle**:
-    - Toggling a scenery item OFF sets it to `SCENERY_PACK_DISABLED` in the INI file. The symlink remains, keeping the scenery physically present but disabled in X-Plane.
-
-3.  **Scenery Grouping**:
-    - Select multiple scenery items.
-    - Click the "Create Group" button in the top-right corner to bundle them together.
-    - Groups allow you to organize your scenery list and toggle multiple items at once.
-    - Drag and drop items into or out of groups as needed.
-
-4.  **New Scenery**:
-    - Any new scenery folders manually added to `Custom Scenery` (not yet in the INI) are detected and placed at the top of the list, matching X-Plane's default behavior.
+An example script is available in [examples/hoppie.sh](examples/hoppie.sh).
 
 ## License
 
