@@ -86,6 +86,17 @@ class PluginManager {
         }
     }
 
+    var hasCompletedWelcome: Bool = false {
+        didSet {
+            guard !isLoading else { return }
+            defaults.set(hasCompletedWelcome, forKey: hasCompletedWelcomeKey)
+        }
+    }
+
+    var isConfigured: Bool {
+        xPlanePath != nil
+    }
+
     var plugins: [Plugin] = []
     var scenery: [Scenery] = []
     var aircraft: [Aircraft] = []
@@ -201,6 +212,7 @@ class PluginManager {
     private let sceneryGroupsKey = "SceneryGroups"
     private let enableCSLSupportKey = "EnableCSLSupport"
     private let enableCSLXP12LightsKey = "EnableCSLXP12Lights"
+    private let hasCompletedWelcomeKey = "HasCompletedWelcome"
     
     private var isApplyingProfile = false
     
@@ -290,6 +302,7 @@ class PluginManager {
         
         self.enableCSLSupport = defaults.bool(forKey: enableCSLSupportKey)
         self.enableCSLXP12Lights = defaults.bool(forKey: enableCSLXP12LightsKey)
+        self.hasCompletedWelcome = defaults.bool(forKey: hasCompletedWelcomeKey)
         
         isLoading = false
     }

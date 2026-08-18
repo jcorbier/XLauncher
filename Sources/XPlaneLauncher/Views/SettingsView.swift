@@ -28,6 +28,7 @@ struct SettingsView: View {
     @Environment(PluginManager.self) var pluginManager
     @Environment(CSLManager.self) var cslManager: CSLManager?
     @State private var selectedEnvVarId: PluginManager.ScriptEnvVar.ID?
+    @State private var showWelcomeSheet: Bool = false
     
     var body: some View {
         @Bindable var pluginManager = pluginManager
@@ -70,6 +71,24 @@ struct SettingsView: View {
                                 panel.prompt = "Select Central Data Folder"
                                 if panel.runModal() == .OK {
                                     pluginManager.launcherDataFolder = panel.url
+                                }
+                            }
+                            
+                            Divider()
+                            
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Welcome Guide")
+                                        .font(.subheadline)
+                                    Text("Review the setup assistant and feature overview.")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                
+                                Spacer()
+                                
+                                Button("Show Welcome Screen...") {
+                                    showWelcomeSheet = true
                                 }
                             }
                         }
@@ -161,5 +180,8 @@ struct SettingsView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .sheet(isPresented: $showWelcomeSheet) {
+            WelcomeView()
+        }
     }
 }

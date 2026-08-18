@@ -30,10 +30,11 @@ struct XPlaneLauncherApp: App {
     @State private var pluginManager = PluginManager()
     @State private var updateManager = UpdateManager()
     @State private var cslManager = CSLManager()
+    @State private var showWelcomeScreen = false
     
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(showWelcomeScreen: $showWelcomeScreen)
                 .environment(pluginManager)
                 .environment(updateManager)
                 .environment(cslManager)
@@ -41,6 +42,9 @@ struct XPlaneLauncherApp: App {
                 .onAppear {
                     updateManager.launcherDataFolder = pluginManager.launcherDataFolder
                     cslManager.cslFolderURL = pluginManager.cslPath
+                    if !pluginManager.hasCompletedWelcome && !pluginManager.isConfigured {
+                        showWelcomeScreen = true
+                    }
                 }
                 .onChange(of: pluginManager.launcherDataFolder) { _, newValue in
                     updateManager.launcherDataFolder = newValue
@@ -69,6 +73,22 @@ struct XPlaneLauncherApp: App {
             CommandGroup(replacing: .saveItem) { }
             CommandGroup(replacing: .printItem) { }
             CommandGroup(replacing: .importExport) { }
+            CommandGroup(after: .appInfo) {
+                Button("Welcome to X-Plane Launcher...") {
+                    showWelcomeScreen = true
+                }
+            }
+            CommandGroup(replacing: .help) {
+                Button("Show Welcome Screen...") {
+                    showWelcomeScreen = true
+                }
+                Divider()
+                Button("X-Plane Launcher Help") {
+                    if let url = URL(string: "https://github.com/jcorbier/x-plane-launcher") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+            }
         }
     }
 }

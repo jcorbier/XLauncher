@@ -28,7 +28,12 @@ struct ContentView: View {
     @Environment(PluginManager.self) var pluginManager
     @Environment(UpdateManager.self) var updateManager
     @Environment(CSLManager.self) var cslManager
+    @Binding var showWelcomeScreen: Bool
     @State private var selectedCategory: NavigationCategory? = .aircraft
+    
+    init(showWelcomeScreen: Binding<Bool> = .constant(false)) {
+        self._showWelcomeScreen = showWelcomeScreen
+    }
     
     enum NavigationCategory: String, CaseIterable, Identifiable {
         case aircraft = "Aircraft"
@@ -189,6 +194,16 @@ struct ContentView: View {
                 .background(Material.bar)
             }
             .background(Color(NSColor.windowBackgroundColor))
+        }
+        .sheet(isPresented: $showWelcomeScreen) {
+            WelcomeView {
+                updateManager.scanUpdatableAddons()
+                updateManager.checkAllAddonUpdates()
+                if pluginManager.enableCSLSupport {
+                    cslManager.cslFolderURL = pluginManager.cslPath
+                    cslManager.scanAndCheck()
+                }
+            }
         }
         .task {
             updateManager.scanUpdatableAddons()
