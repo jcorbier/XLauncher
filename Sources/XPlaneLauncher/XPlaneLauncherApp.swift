@@ -54,6 +54,13 @@ struct XPlaneLauncherApp: App {
                         cslManager.scanAndCheck()
                     }
                 }
+                .onChange(of: pluginManager.enableCSLXP12Lights) { _, enabled in
+                    if enabled {
+                        cslManager.applyXP12LightsToAll()
+                    } else {
+                        cslManager.revertXP12LightsFromAll()
+                    }
+                }
         }
         .windowResizability(.contentSize)
         .windowStyle(.hiddenTitleBar) // Modern look

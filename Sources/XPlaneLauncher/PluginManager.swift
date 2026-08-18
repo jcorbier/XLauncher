@@ -79,6 +79,13 @@ class PluginManager {
         }
     }
 
+    var enableCSLXP12Lights: Bool = false {
+        didSet {
+            guard !isLoading else { return }
+            defaults.set(enableCSLXP12Lights, forKey: enableCSLXP12LightsKey)
+        }
+    }
+
     var plugins: [Plugin] = []
     var scenery: [Scenery] = []
     var aircraft: [Aircraft] = []
@@ -193,6 +200,7 @@ class PluginManager {
     private let scriptEnvironmentKey = "ScriptEnvVars"
     private let sceneryGroupsKey = "SceneryGroups"
     private let enableCSLSupportKey = "EnableCSLSupport"
+    private let enableCSLXP12LightsKey = "EnableCSLXP12Lights"
     
     private var isApplyingProfile = false
     
@@ -281,6 +289,7 @@ class PluginManager {
         }
         
         self.enableCSLSupport = defaults.bool(forKey: enableCSLSupportKey)
+        self.enableCSLXP12Lights = defaults.bool(forKey: enableCSLXP12LightsKey)
         
         isLoading = false
     }

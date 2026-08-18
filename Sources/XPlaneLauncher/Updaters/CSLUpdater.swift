@@ -290,14 +290,17 @@ final class CSLUpdaterService: Sendable {
         for file in raw.files {
             let relPath = file.path.hasPrefix(prefix) ? String(file.path.dropFirst(prefix.count)) : file.path
             let localFileURL = pkgDir.appendingPathComponent(relPath)
+            let isObj = localFileURL.pathExtension.lowercased() == "obj"
+            let bakFileURL = localFileURL.deletingPathExtension().appendingPathExtension(CSLLightsUpdater.backupExtension)
+            let fileToCheck = (isObj && fileManager.fileExists(atPath: bakFileURL.path)) ? bakFileURL : localFileURL
             
-            guard fileManager.fileExists(atPath: localFileURL.path) else {
+            guard fileManager.fileExists(atPath: fileToCheck.path) else {
                 filesToUpdate += 1
                 updateSize += file.sizeBytes
                 continue
             }
             
-            guard let attrs = try? fileManager.attributesOfItem(atPath: localFileURL.path),
+            guard let attrs = try? fileManager.attributesOfItem(atPath: fileToCheck.path),
                   let localSize = attrs[.size] as? Int64 else {
                 filesToUpdate += 1
                 updateSize += file.sizeBytes
@@ -311,7 +314,7 @@ final class CSLUpdaterService: Sendable {
             }
             
             if let expectedMD5 = file.md5, !expectedMD5.isEmpty {
-                let localMD5 = await computeMD5Cached(for: localFileURL)?.lowercased()
+                let localMD5 = await computeMD5Cached(for: fileToCheck)?.lowercased()
                 if localMD5 != expectedMD5 {
                     filesToUpdate += 1
                     updateSize += file.sizeBytes
@@ -343,14 +346,17 @@ final class CSLUpdaterService: Sendable {
         for file in package.files {
             let relPath = file.path.hasPrefix(prefix) ? String(file.path.dropFirst(prefix.count)) : file.path
             let localFileURL = pkgDir.appendingPathComponent(relPath)
+            let isObj = localFileURL.pathExtension.lowercased() == "obj"
+            let bakFileURL = localFileURL.deletingPathExtension().appendingPathExtension(CSLLightsUpdater.backupExtension)
+            let fileToCheck = (isObj && fileManager.fileExists(atPath: bakFileURL.path)) ? bakFileURL : localFileURL
             
-            if !fileManager.fileExists(atPath: localFileURL.path) {
+            if !fileManager.fileExists(atPath: fileToCheck.path) {
                 filesToDownload.append(file)
-            } else if let attrs = try? fileManager.attributesOfItem(atPath: localFileURL.path),
+            } else if let attrs = try? fileManager.attributesOfItem(atPath: fileToCheck.path),
                       let size = attrs[.size] as? Int64, size != file.sizeBytes {
                 filesToDownload.append(file)
             } else if let expectedMD5 = file.md5, !expectedMD5.isEmpty {
-                let localMD5 = await computeMD5Cached(for: localFileURL)?.lowercased()
+                let localMD5 = await computeMD5Cached(for: fileToCheck)?.lowercased()
                 if localMD5 != expectedMD5 {
                     filesToDownload.append(file)
                 }
@@ -414,7 +420,11 @@ final class CSLUpdaterService: Sendable {
                         throw URLError(.badServerResponse)
                     }
                     
-                    // Atomic move
+                    // Atomic move and clean prior .bak
+                    let bakURL = localFileURL.deletingPathExtension().appendingPathExtension(CSLLightsUpdater.backupExtension)
+                    if fileManager.fileExists(atPath: bakURL.path) {
+                        try? fileManager.removeItem(at: bakURL)
+                    }
                     if fileManager.fileExists(atPath: localFileURL.path) {
                         try fileManager.removeItem(at: localFileURL)
                     }
@@ -632,6 +642,17 @@ final class CSLManager {
                     self.packages[i].downloadProgress = 1.0
                     self.packages[i].statusMessage = "Up to date"
                 }
+                
+                // If XP12 lighting is enabled, apply it automatically to the newly updated package
+                if UserDefaults.standard.bool(forKey: "EnableCSLXP12Lights") {
+                    let pkgDir = folderURL.appendingPathComponent(pkgName)
+                    CSLLightsUpdater.shared.processPackage(packageURL: pkgDir, flashingBeacons: true) { [weak self] msg in
+                        Task { @MainActor in
+                            self?.log(msg)
+                        }
+                    }
+                }
+                
                 self.activeDownloadTasks.removeValue(forKey: pkgName)
                 self.isUpdating = !self.activeDownloadTasks.isEmpty
             } catch is CancellationError {
@@ -702,6 +723,54 @@ final class CSLManager {
                 self.packages[i].updateSizeBytes = result.updateSizeBytes
                 self.packages[i].statusMessage = (result.status == .upToDate) ? "Up to date" : "Update available (\(result.filesToUpdate) files)"
             }
+        }
+    }
+    
+    // MARK: - XP12 Lighting Batch Operations
+    
+    var isApplyingLights: Bool = false
+    
+    func applyXP12LightsToAll(flashingBeacons: Bool = true) {
+        guard let folderURL = cslFolderURL else { return }
+        guard !isApplyingLights else { return }
+        isApplyingLights = true
+        log("[XP12 Lights] Applying modern X-Plane 12 lighting to all installed CSL models...")
+        
+        Task { @MainActor in
+            let installedPackages = self.packages.filter { $0.isInstalled }
+            for pkg in installedPackages {
+                let pkgDir = folderURL.appendingPathComponent(pkg.name)
+                CSLLightsUpdater.shared.processPackage(packageURL: pkgDir, flashingBeacons: flashingBeacons) { [weak self] msg in
+                    Task { @MainActor in
+                        self?.log(msg)
+                    }
+                }
+            }
+            self.isApplyingLights = false
+            self.log("[XP12 Lights] Finished applying X-Plane 12 lighting to \(installedPackages.count) packages")
+            self.scanAndCheck()
+        }
+    }
+    
+    func revertXP12LightsFromAll() {
+        guard let folderURL = cslFolderURL else { return }
+        guard !isApplyingLights else { return }
+        isApplyingLights = true
+        log("[XP12 Lights] Reverting all CSL models to original unmodified lighting...")
+        
+        Task { @MainActor in
+            let installedPackages = self.packages.filter { $0.isInstalled }
+            for pkg in installedPackages {
+                let pkgDir = folderURL.appendingPathComponent(pkg.name)
+                CSLLightsUpdater.shared.revertPackage(packageURL: pkgDir) { [weak self] msg in
+                    Task { @MainActor in
+                        self?.log(msg)
+                    }
+                }
+            }
+            self.isApplyingLights = false
+            self.log("[XP12 Lights] Finished reverting X-Plane 12 lighting on \(installedPackages.count) packages")
+            self.scanAndCheck()
         }
     }
 }

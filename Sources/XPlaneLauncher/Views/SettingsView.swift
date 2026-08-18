@@ -26,6 +26,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(PluginManager.self) var pluginManager
+    @Environment(CSLManager.self) var cslManager: CSLManager?
     @State private var selectedEnvVarId: PluginManager.ScriptEnvVar.ID?
     
     var body: some View {
@@ -76,13 +77,36 @@ struct SettingsView: View {
                     }
                     
                     GroupBox("X-CSL Models") {
-                        VStack(alignment: .leading, spacing: 10) {
+                        VStack(alignment: .leading, spacing: 12) {
                             Toggle("Enable X-CSL support", isOn: $pluginManager.enableCSLSupport)
                                 .font(.body)
                             
                             Text("When enabled, adds a CSL tab in the sidebar to check, install, and update CSL models in Resources/plugins/IVAO_CSL/CSL from the X-CSL repository.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                            
+                            if pluginManager.enableCSLSupport {
+                                Divider()
+                                
+                                Toggle("Apply modern X-Plane 12 lighting to X-CSL models", isOn: $pluginManager.enableCSLXP12Lights)
+                                    .font(.body)
+                                    .disabled(cslManager?.isApplyingLights == true)
+                                
+                                Text("Upgrades X-CSL aircraft lights to native X-Plane 12 parameterized lighting with realistic billboard and ground spill effects, gear retraction animations, and dynamic strobe/beacon sequences. Original files are backed up (.bak) and models remain synchronized with server updates.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                
+                                if cslManager?.isApplyingLights == true {
+                                    HStack(spacing: 6) {
+                                        ProgressView()
+                                            .controlSize(.small)
+                                        Text("Updating CSL model lighting...")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .padding(.top, 2)
+                                }
+                            }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(8)
