@@ -25,7 +25,8 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(PluginManager.self) var pluginManager
     @Environment(AppUpdateManager.self) var appUpdateManager
-    @Environment(CSLManager.self) var cslManager: CSLManager?
+    @Environment(CSLManager.self) var cslManager
+    @Environment(UpdateManager.self) var updateManager
     @State private var selectedEnvVarId: PluginManager.ScriptEnvVar.ID?
     @State private var showWelcomeSheet: Bool = false
     @State private var showReleaseNotesSheet: Bool = false
@@ -41,6 +42,8 @@ struct SettingsView: View {
     var body: some View {
         @Bindable var pluginManager = pluginManager
         @Bindable var appUpdateManager = appUpdateManager
+        @Bindable var cslManager = cslManager
+        @Bindable var updateManager = updateManager
         
         VStack(spacing: 0) {
             // Header Bar
@@ -104,92 +107,33 @@ struct SettingsView: View {
                         .padding(8)
                     }
                     
-                    GroupBox("X-CSL Models") {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Toggle("Enable X-CSL support", isOn: $pluginManager.enableCSLSupport)
-                                .font(.body)
-                            
-                            Text("When enabled, adds a CSL tab in the sidebar to check, install, and update CSL models in Resources/plugins/IVAO_CSL/CSL from the X-CSL repository.")
+                    GroupBox("Automatic Updates") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Configure which components automatically check for new versions on startup.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                             
-                            if pluginManager.enableCSLSupport {
-                                Divider()
-                                
-                                Toggle("Apply modern X-Plane 12 lighting to X-CSL models", isOn: $pluginManager.enableCSLXP12Lights)
+                            VStack(alignment: .leading, spacing: 8) {
+                                Toggle("X-Plane Launcher application", isOn: $appUpdateManager.automaticallyCheckOnLaunch)
                                     .font(.body)
-                                    .disabled(cslManager?.isApplyingLights == true)
                                 
-                                Text("Upgrades X-CSL aircraft lights to native X-Plane 12 parameterized lighting with realistic billboard and ground spill effects, gear retraction animations, and dynamic strobe/beacon sequences. Original files are backed up (.bak) and models remain synchronized with server updates.")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                Toggle("SkunkCrafts add-ons", isOn: $updateManager.automaticallyCheckSkunkCraftsUpdates)
+                                    .font(.body)
                                 
-                                if cslManager?.isApplyingLights == true {
-                                    HStack(spacing: 6) {
-                                        ProgressView()
-                                            .controlSize(.small)
-                                        Text("Updating CSL model lighting...")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    .padding(.top, 2)
-                                }
+                                Toggle("X-Updater add-ons", isOn: $updateManager.automaticallyCheckXUpdaterUpdates)
+                                    .font(.body)
+                                
+                                Toggle("X-CSL models", isOn: $cslManager.automaticallyCheckCSLUpdates)
+                                    .font(.body)
+                                    .disabled(!pluginManager.enableCSLSupport)
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(8)
                     }
                     
-                    GroupBox("Script Environment") {
-                        VStack(spacing: 0) {
-                            Table($pluginManager.scriptEnvironment, selection: $selectedEnvVarId) {
-                                TableColumn("Environment Variable") { $envVar in
-                                    TextField("Key", text: $envVar.key)
-                                        .labelsHidden()
-                                        .textFieldStyle(.plain)
-                                }
-                                TableColumn("Value") { $envVar in
-                                    TextField("Value", text: $envVar.value)
-                                        .labelsHidden()
-                                        .textFieldStyle(.plain)
-                                }
-                            }
-                            .frame(minHeight: 160)
-                            .scrollContentBackground(.hidden)
-                            .background(Color(NSColor.controlBackgroundColor))
-                            .border(Color(NSColor.separatorColor), width: 1)
-                            
-                            HStack {
-                                Button(action: {
-                                    pluginManager.scriptEnvironment.append(PluginManager.ScriptEnvVar(key: "NEW_VAR", value: "VALUE"))
-                                }) {
-                                    Image(systemName: "plus")
-                                        .frame(width: 20, height: 20)
-                                }
-                                
-                                Button(action: {
-                                    if let selectedId = selectedEnvVarId {
-                                        pluginManager.scriptEnvironment.removeAll { $0.id == selectedId }
-                                        selectedEnvVarId = nil
-                                    }
-                                }) {
-                                    Image(systemName: "minus")
-                                        .frame(width: 20, height: 20)
-                                }
-                                .disabled(selectedEnvVarId == nil)
-                                
-                                Spacer()
-                            }
-                            .padding(.top, 8)
-                        }
-                        .padding(8)
-                    }
-                    
                     GroupBox("Application Updates") {
                         VStack(alignment: .leading, spacing: 12) {
-                            Toggle("Automatically check for updates on launch", isOn: $appUpdateManager.automaticallyCheckOnLaunch)
-                                .font(.body)
-                            
                             Toggle("Include pre-release and beta versions", isOn: $appUpdateManager.includePrereleases)
                                 .font(.body)
                                 .onChange(of: appUpdateManager.includePrereleases) { _, _ in
@@ -274,6 +218,87 @@ struct SettingsView: View {
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(8)
+                    }
+                    
+                    GroupBox("X-CSL Models") {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Toggle("Enable X-CSL support", isOn: $pluginManager.enableCSLSupport)
+                                .font(.body)
+                            
+                            Text("When enabled, adds a CSL tab in the sidebar to check, install, and update CSL models in Resources/plugins/IVAO_CSL/CSL from the X-CSL repository.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            
+                            if pluginManager.enableCSLSupport {
+                                Divider()
+                                
+                                Toggle("Apply modern X-Plane 12 lighting to X-CSL models", isOn: $pluginManager.enableCSLXP12Lights)
+                                    .font(.body)
+                                    .disabled(cslManager.isApplyingLights == true)
+                                
+                                Text("Upgrades X-CSL aircraft lights to native X-Plane 12 parameterized lighting with realistic billboard and ground spill effects, gear retraction animations, and dynamic strobe/beacon sequences. Original files are backed up (.bak) and models remain synchronized with server updates.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                
+                                if cslManager.isApplyingLights == true {
+                                    HStack(spacing: 6) {
+                                        ProgressView()
+                                            .controlSize(.small)
+                                        Text("Updating CSL model lighting...")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .padding(.top, 2)
+                                }
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(8)
+                    }
+                    
+                    GroupBox("Script Environment") {
+                        VStack(spacing: 0) {
+                            Table($pluginManager.scriptEnvironment, selection: $selectedEnvVarId) {
+                                TableColumn("Environment Variable") { $envVar in
+                                    TextField("Key", text: $envVar.key)
+                                        .labelsHidden()
+                                        .textFieldStyle(.plain)
+                                }
+                                TableColumn("Value") { $envVar in
+                                    TextField("Value", text: $envVar.value)
+                                        .labelsHidden()
+                                        .textFieldStyle(.plain)
+                                }
+                            }
+                            .frame(minHeight: 160)
+                            .scrollContentBackground(.hidden)
+                            .background(Color(NSColor.controlBackgroundColor))
+                            .border(Color(NSColor.separatorColor), width: 1)
+                            
+                            HStack {
+                                Button(action: {
+                                    pluginManager.scriptEnvironment.append(PluginManager.ScriptEnvVar(key: "NEW_VAR", value: "VALUE"))
+                                }) {
+                                    Image(systemName: "plus")
+                                        .frame(width: 20, height: 20)
+                                }
+                                
+                                Button(action: {
+                                    if let selectedId = selectedEnvVarId {
+                                        pluginManager.scriptEnvironment.removeAll { $0.id == selectedId }
+                                        selectedEnvVarId = nil
+                                    }
+                                }) {
+                                    Image(systemName: "minus")
+                                        .frame(width: 20, height: 20)
+                                }
+                                .disabled(selectedEnvVarId == nil)
+                                
+                                Spacer()
+                            }
+                            .padding(.top, 8)
+                        }
                         .padding(8)
                     }
                 }

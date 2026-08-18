@@ -480,11 +480,21 @@ final class CSLUpdaterService: Sendable {
 final class CSLManager {
     private let fileManager = FileManager.default
     private let service = CSLUpdaterService.shared
+    private let autoCheckCSLKey = "AutoCheckCSLUpdates"
+    
+    var automaticallyCheckCSLUpdates: Bool {
+        didSet {
+            UserDefaults.standard.set(automaticallyCheckCSLUpdates, forKey: autoCheckCSLKey)
+        }
+    }
     
     var cslFolderURL: URL? {
         didSet {
             if cslFolderURL != oldValue {
-                scanAndCheck()
+                packages = []
+                if automaticallyCheckCSLUpdates {
+                    scanAndCheck()
+                }
             }
         }
     }
@@ -495,6 +505,14 @@ final class CSLManager {
     let logger = ConsoleLogger()
     
     private var activeDownloadTasks: [String: Task<Void, Never>] = [:]
+    
+    init() {
+        if UserDefaults.standard.object(forKey: autoCheckCSLKey) == nil {
+            self.automaticallyCheckCSLUpdates = true
+        } else {
+            self.automaticallyCheckCSLUpdates = UserDefaults.standard.bool(forKey: autoCheckCSLKey)
+        }
+    }
     
     var isProcessing: Bool {
         isChecking || isUpdating || packages.contains { $0.status == .checking || $0.status == .updating }

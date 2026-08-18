@@ -27,12 +27,28 @@ import SwiftUI
 @Observable
 class UpdateManager {
     private let fileManager = FileManager.default
+    private let defaults = UserDefaults.standard
+    
+    private let autoCheckSkunkCraftsKey = "AutoCheckSkunkCraftsUpdates"
+    private let autoCheckXUpdaterKey = "AutoCheckXUpdaterUpdates"
+    
+    var automaticallyCheckSkunkCraftsUpdates: Bool {
+        didSet {
+            defaults.set(automaticallyCheckSkunkCraftsUpdates, forKey: autoCheckSkunkCraftsKey)
+        }
+    }
+    
+    var automaticallyCheckXUpdaterUpdates: Bool {
+        didSet {
+            defaults.set(automaticallyCheckXUpdaterUpdates, forKey: autoCheckXUpdaterKey)
+        }
+    }
     
     var launcherDataFolder: URL? {
         didSet {
             guard launcherDataFolder != oldValue else { return }
             scanUpdatableAddons()
-            checkAllAddonUpdates()
+            checkAutoUpdates()
         }
     }
     
@@ -91,10 +107,22 @@ class UpdateManager {
     }
     
     init(launcherDataFolder: URL? = nil) {
+        if defaults.object(forKey: autoCheckSkunkCraftsKey) == nil {
+            self.automaticallyCheckSkunkCraftsUpdates = true
+        } else {
+            self.automaticallyCheckSkunkCraftsUpdates = defaults.bool(forKey: autoCheckSkunkCraftsKey)
+        }
+        
+        if defaults.object(forKey: autoCheckXUpdaterKey) == nil {
+            self.automaticallyCheckXUpdaterUpdates = true
+        } else {
+            self.automaticallyCheckXUpdaterUpdates = defaults.bool(forKey: autoCheckXUpdaterKey)
+        }
+        
         self.launcherDataFolder = launcherDataFolder
         scanUpdatableAddons()
         if launcherDataFolder != nil {
-            checkAllAddonUpdates()
+            checkAutoUpdates()
         }
     }
     
@@ -183,6 +211,18 @@ class UpdateManager {
     }
     
     // MARK: - Update Checking
+    
+    func checkAutoUpdates() {
+        for addon in updatableAddons where !addon.isChecking && !addon.isUpdating {
+            if addon.updaterType == .skunkcrafts && !automaticallyCheckSkunkCraftsUpdates {
+                continue
+            }
+            if addon.updaterType == .xUpdater && !automaticallyCheckXUpdaterUpdates {
+                continue
+            }
+            checkForUpdates(for: addon)
+        }
+    }
     
     func checkAllAddonUpdates() {
         for addon in updatableAddons where !addon.isChecking && !addon.isUpdating {

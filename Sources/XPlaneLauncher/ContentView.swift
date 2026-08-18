@@ -237,8 +237,8 @@ struct ContentView: View {
         .sheet(isPresented: $showWelcomeScreen) {
             WelcomeView {
                 updateManager.scanUpdatableAddons()
-                updateManager.checkAllAddonUpdates()
-                if pluginManager.enableCSLSupport {
+                updateManager.checkAutoUpdates()
+                if pluginManager.enableCSLSupport && cslManager.automaticallyCheckCSLUpdates {
                     cslManager.cslFolderURL = pluginManager.cslPath
                     cslManager.scanAndCheck()
                 }

@@ -17,6 +17,29 @@ This page details the options available in the **Settings** view.
 
 ---
 
+## Automatic Updates
+
+Configure which components automatically check for new versions and updates when X-Plane Launcher starts:
+
+- **X-Plane Launcher application**: When enabled, checks GitHub for new application versions on startup.
+- **SkunkCrafts add-ons**: When enabled, queries remote servers for updates to SkunkCrafts-managed add-ons on startup.
+- **X-Updater add-ons**: When enabled, queries remote servers for updates to X-Updater-managed add-ons on startup.
+- **X-CSL models**: When enabled, synchronizes the package index and checks for model updates from the X-CSL repository on startup (available when X-CSL support is enabled).
+
+:::{note}
+Disabling automatic checks on launch does not prevent manual checks. You can still check for updates at any time from the **Updates**, **CSL**, or **Settings** tabs.
+:::
+
+---
+
+## Application Updates
+
+- **Include pre-release and beta versions**: When enabled, checks for pre-release and beta builds on GitHub in addition to stable releases.
+- **Check Now**: Manually checks GitHub for application updates immediately.
+- **What's New / Download**: View version release notes and changelogs, or download the latest disk image installer (`.dmg`) directly when an update is detected.
+
+---
+
 ## X-CSL Models
 
 - **Enable X-CSL support**: Adds the CSL tab to the sidebar for managing multiplayer aircraft models in `<X-Plane 12>/Resources/plugins/IVAO_CSL/CSL`.

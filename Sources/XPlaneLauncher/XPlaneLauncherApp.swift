@@ -58,7 +58,9 @@ struct XPlaneLauncherApp: App {
                 .onChange(of: pluginManager.enableCSLSupport) { _, enabled in
                     if enabled {
                         cslManager.cslFolderURL = pluginManager.cslPath
-                        cslManager.scanAndCheck()
+                        if cslManager.automaticallyCheckCSLUpdates {
+                            cslManager.scanAndCheck()
+                        }
                     }
                 }
                 .onChange(of: pluginManager.enableCSLXP12Lights) { _, enabled in
