@@ -44,6 +44,7 @@ struct ContentView: View {
         case csl = "CSL"
         case updates = "Updates"
         case settings = "Settings"
+        case about = "About"
         
         var id: String { rawValue }
         
@@ -57,6 +58,7 @@ struct ContentView: View {
             case .csl: return "airplane.circle"
             case .updates: return "arrow.triangle.2.circlepath.circle"
             case .settings: return "gearshape"
+            case .about: return "info.circle"
             }
         }
         
@@ -73,7 +75,7 @@ struct ContentView: View {
         }
         
         var isAddonCategory: Bool {
-            self != .updates && self != .settings && self != .csl
+            self != .updates && self != .settings && self != .csl && self != .about
         }
     }
     
@@ -156,6 +158,11 @@ struct ContentView: View {
                         }
                     }
                     .buttonStyle(.plain)
+                    
+                    NavigationLink(value: NavigationCategory.about) {
+                        Label(NavigationCategory.about.rawValue, systemImage: NavigationCategory.about.systemImage)
+                            .font(.body)
+                    }
                 }
             }
             .listStyle(.sidebar)
@@ -189,6 +196,8 @@ struct ContentView: View {
                         UpdatesView()
                     case .settings:
                         SettingsView()
+                    case .about:
+                        AboutView()
                     case .none:
                         ContentUnavailableView("Select a Category", systemImage: "sidebar.left")
                     }
