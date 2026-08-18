@@ -144,9 +144,7 @@ struct ContentView: View {
                     }
                     
                     Button(action: {
-                        if let url = URL(string: "https://xlauncher.readthedocs.io/en/latest/") {
-                            NSWorkspace.shared.open(url)
-                        }
+                        NSWorkspace.shared.open(AppInfo.documentationURL)
                     }) {
                         HStack(spacing: 8) {
                             Label("Help", systemImage: "questionmark.circle")

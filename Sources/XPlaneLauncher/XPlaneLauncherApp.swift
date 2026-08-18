@@ -84,9 +84,7 @@ struct XPlaneLauncherApp: App {
                 }
                 Divider()
                 Button("X-Plane Launcher Documentation") {
-                    if let url = URL(string: "https://xlauncher.readthedocs.io/en/latest/") {
-                        NSWorkspace.shared.open(url)
-                    }
+                    NSWorkspace.shared.open(AppInfo.documentationURL)
                 }
             }
         }
