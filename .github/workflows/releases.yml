@@ -24,13 +24,20 @@ jobs:
         id: vars
         run: |
           if [[ $GITHUB_REF == refs/tags/* ]]; then
+            TAG_NAME="${GITHUB_REF_NAME}"
+            VERSION="${GITHUB_REF_NAME#v}"
             echo "IS_DRAFT=false" >> $GITHUB_ENV
-            echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
-            echo "TAG_NAME=${GITHUB_REF_NAME}" >> $GITHUB_ENV
+            echo "VERSION=${VERSION}" >> $GITHUB_ENV
+            echo "TAG_NAME=${TAG_NAME}" >> $GITHUB_ENV
             
-            echo "prerelease=false" >> "$GITHUB_OUTPUT"
-            echo "release_name=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
-            echo "tag_name=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            # Check if the tag represents a pre-release (e.g. v1.2.0-beta.1, v1.2.0-rc1, etc.)
+            if [[ "$TAG_NAME" == *-* ]] || [[ "$TAG_NAME" =~ (beta|alpha|rc|preview) ]]; then
+              echo "prerelease=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "prerelease=false" >> "$GITHUB_OUTPUT"
+            fi
+            echo "release_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
+            echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
           else
             echo "IS_DRAFT=true" >> $GITHUB_ENV
             echo "VERSION=0.0.0-draft" >> $GITHUB_ENV
