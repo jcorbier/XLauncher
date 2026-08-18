@@ -475,7 +475,7 @@ final class CSLManager {
     var packages: [CSLPackage] = []
     var isChecking: Bool = false
     var isUpdating: Bool = false
-    var logs: [String] = []
+    let logger = ConsoleLogger()
     
     private var activeDownloadTasks: [String: Task<Void, Never>] = [:]
     
@@ -492,19 +492,11 @@ final class CSLManager {
     }
     
     func log(_ message: String) {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm:ss"
-        let timestamp = formatter.string(from: Date())
-        let entry = "[\(timestamp)] \(message)"
-        print(entry)
-        logs.append(entry)
-        if logs.count > 500 {
-            logs.removeFirst(logs.count - 500)
-        }
+        logger.log(message)
     }
     
     func clearLogs() {
-        logs.removeAll()
+        logger.clear()
     }
     
     // MARK: - Scanning & Update Checking

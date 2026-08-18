@@ -77,7 +77,7 @@ struct UpdatesView: View {
                 Button(action: {
                     showDebugConsole.toggle()
                 }) {
-                    Label("Debug Console", systemImage: showDebugConsole ? "terminal.fill" : "terminal")
+                    Label("Console", systemImage: showDebugConsole ? "terminal.fill" : "terminal")
                 }
             }
             .padding(12)
@@ -105,50 +105,7 @@ struct UpdatesView: View {
             
             if showDebugConsole {
                 Divider()
-                
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Label("Live Debug Console (\(updateManager.logs.count) entries)", systemImage: "terminal")
-                            .font(.caption)
-                            .fontWeight(.bold)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Button("Clear") {
-                            updateManager.clearLogs()
-                        }
-                        .buttonStyle(.plain)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.top, 6)
-                    
-                    ScrollViewReader { proxy in
-                        ScrollView {
-                            LazyVStack(alignment: .leading, spacing: 3) {
-                                ForEach(Array(updateManager.logs.enumerated()), id: \.offset) { index, log in
-                                    Text(log)
-                                        .font(.system(.caption2, design: .monospaced))
-                                        .foregroundStyle(Color.green)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .id(index)
-                                }
-                            }
-                            .padding(8)
-                        }
-                        .background(Color.black.opacity(0.9))
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                        .padding(.horizontal, 8)
-                        .padding(.bottom, 8)
-                        .onChange(of: updateManager.logs.count) { _, _ in
-                            if let last = updateManager.logs.indices.last {
-                                proxy.scrollTo(last, anchor: .bottom)
-                            }
-                        }
-                    }
-                }
-                .frame(height: 180)
-                .background(Color(NSColor.controlBackgroundColor))
+                ConsoleView(title: "Live Console", logger: updateManager.logger)
             }
         }
     }

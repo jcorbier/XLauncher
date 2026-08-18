@@ -19,7 +19,7 @@ class UpdateManager {
     }
     
     var updatableAddons: [UpdatableAddon] = []
-    var logs: [String] = []
+    let logger = ConsoleLogger()
     
     var isCheckingUpdates: Bool {
         updatableAddons.contains { $0.isChecking }
@@ -34,19 +34,11 @@ class UpdateManager {
     }
     
     func log(_ message: String) {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm:ss"
-        let timestamp = formatter.string(from: Date())
-        let entry = "[\(timestamp)] \(message)"
-        print(entry)
-        logs.append(entry)
-        if logs.count > 500 {
-            logs.removeFirst(logs.count - 500)
-        }
+        logger.log(message)
     }
     
     func clearLogs() {
-        logs.removeAll()
+        logger.clear()
     }
     
     enum UpdaterType: String, Codable, Identifiable {

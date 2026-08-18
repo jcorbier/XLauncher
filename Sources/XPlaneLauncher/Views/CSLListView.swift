@@ -192,53 +192,10 @@ struct CSLListView: View {
                 .scrollContentBackground(.hidden)
             }
             
-            // Debug Console Drawer
+            // Console Drawer
             if showDebugConsole {
                 Divider()
-                
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Label("CSL Live Console (\(cslManager.logs.count) entries)", systemImage: "terminal")
-                            .font(.caption)
-                            .fontWeight(.bold)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Button("Clear") {
-                            cslManager.clearLogs()
-                        }
-                        .buttonStyle(.plain)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.top, 6)
-                    
-                    ScrollViewReader { proxy in
-                        ScrollView {
-                            LazyVStack(alignment: .leading, spacing: 3) {
-                                ForEach(Array(cslManager.logs.enumerated()), id: \.offset) { index, log in
-                                    Text(log)
-                                        .font(.system(.caption2, design: .monospaced))
-                                        .foregroundStyle(Color.green)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .id(index)
-                                }
-                            }
-                            .padding(8)
-                        }
-                        .background(Color.black.opacity(0.9))
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                        .padding(.horizontal, 8)
-                        .padding(.bottom, 8)
-                        .onChange(of: cslManager.logs.count) { _, _ in
-                            if let last = cslManager.logs.indices.last {
-                                proxy.scrollTo(last, anchor: .bottom)
-                            }
-                        }
-                    }
-                }
-                .frame(height: 180)
-                .background(Color(NSColor.controlBackgroundColor))
+                ConsoleView(title: "CSL Console", logger: cslManager.logger)
             }
         }
         .onAppear {
