@@ -386,7 +386,6 @@ class PluginManager {
         // Check if directories exist
         var isDir: ObjCBool = false
         guard fileManager.fileExists(atPath: pluginsURL.path, isDirectory: &isDir), isDir.boolValue else {
-            print("Plugins folder not found at \(pluginsURL.path)")
             plugins = []
             return
         }
@@ -413,7 +412,7 @@ class PluginManager {
             self.plugins = newPlugins.sorted { $0.name < $1.name }
 
         } catch {
-            print("Error scanning plugins: \(error)")
+            self.lastErrorMessage = "Error scanning plugins: \(error.localizedDescription)"
         }
     }
 
@@ -451,7 +450,7 @@ class PluginManager {
 
             self.aircraft = newAircraft.sorted { $0.name < $1.name }
         } catch {
-            print("Error scanning aircraft: \(error)")
+            self.lastErrorMessage = "Error scanning aircraft: \(error.localizedDescription)"
         }
     }
 
@@ -501,7 +500,7 @@ class PluginManager {
 
             self.luaScripts = newScripts.sorted { $0.name < $1.name }
         } catch {
-            print("Error scanning Lua scripts: \(error)")
+            self.lastErrorMessage = "Error scanning Lua scripts: \(error.localizedDescription)"
         }
     }
 
@@ -581,7 +580,7 @@ class PluginManager {
                 }
             }
         } catch {
-            print("Error scanning Custom Scenery: \(error)")
+            self.lastErrorMessage = "Error scanning Custom Scenery: \(error.localizedDescription)"
         }
 
         // 3. Scan managed Scenery folder for uninstalled items
@@ -608,7 +607,7 @@ class PluginManager {
                     }
                 }
             } catch {
-                print("Error scanning scenery: \(error)")
+                self.lastErrorMessage = "Error scanning scenery: \(error.localizedDescription)"
             }
         }
 
@@ -639,9 +638,6 @@ class PluginManager {
                                             isManaged: isSymlink,
                                             isInIni: true,
                                             iniLine: item.line))
-            } else {
-                 // Item in INI but missing from disk.
-                 print("Skipping missing scenery: \(item.folderName)")
             }
         }
 
@@ -681,7 +677,7 @@ class PluginManager {
         do {
             try content.write(to: iniURL, atomically: true, encoding: .utf8)
         } catch {
-            print("Failed to save scenery_packs.ini: \(error)")
+            self.lastErrorMessage = "Failed to save scenery_packs.ini: \(error.localizedDescription)"
         }
     }
 
@@ -700,8 +696,6 @@ class PluginManager {
         let sourceURL = pluginsFolder.appendingPathComponent(plugin.folderName)
         let linkURL = pluginsURL.appendingPathComponent(plugin.folderName)
 
-        print("Toggling \(plugin.name). Current state: \(plugin.isEnabled)")
-
         do {
             if plugin.isEnabled {
                 // Remove symlink
@@ -718,7 +712,6 @@ class PluginManager {
                 plugins[index].isEnabled.toggle()
             }
         } catch {
-            print("Error toggling plugin \(plugin.name): \(error.localizedDescription)")
             self.lastErrorMessage = "Failed to \(plugin.isEnabled ? "disable" : "enable") plugin '\(plugin.name)': \(error.localizedDescription)"
         }
     }
@@ -730,8 +723,6 @@ class PluginManager {
         let targetAircraftFolder = xPlanePath.appendingPathComponent("Aircraft")
         let sourceURL = aircraftFolder.appendingPathComponent(item.folderName)
         let linkURL = targetAircraftFolder.appendingPathComponent(item.folderName)
-
-        print("Toggling aircraft \(item.name). Current state: \(item.isEnabled)")
 
         do {
             if item.isEnabled {
@@ -746,7 +737,6 @@ class PluginManager {
                 aircraft[index].isEnabled.toggle()
             }
         } catch {
-            print("Error toggling aircraft \(item.name): \(error.localizedDescription)")
             self.lastErrorMessage = "Failed to \(item.isEnabled ? "disable" : "enable") aircraft '\(item.name)': \(error.localizedDescription)"
         }
     }
@@ -803,7 +793,6 @@ class PluginManager {
                 luaScripts[index].isEnabled.toggle()
             }
         } catch {
-            print("Error toggling Lua script \(item.name): \(error.localizedDescription)")
             self.lastErrorMessage = "Failed to \(item.isEnabled ? "disable" : "enable") Lua script '\(item.name)': \(error.localizedDescription)"
         }
     }
@@ -839,12 +828,10 @@ class PluginManager {
                              try fileManager.createSymbolicLink(at: linkURL, withDestinationURL: source)
                              newItem.isManaged = true // It is now managed
                          } catch {
-                             print("Error linking scenery \(newItem.name): \(error.localizedDescription)")
                              self.lastErrorMessage = "Failed to enable scenery '\(newItem.name)': \(error.localizedDescription)"
                              return
                          }
                      } else {
-                         print("Cannot enable: Source not found at \(source.path)")
                          self.lastErrorMessage = "Cannot enable scenery '\(newItem.name)': source folder not found"
                          return
                      }
@@ -872,7 +859,6 @@ class PluginManager {
                     try fileManager.removeItem(at: linkURL)
                 }
             } catch {
-                print("Error unlinking scenery \(item.name): \(error.localizedDescription)")
                 self.lastErrorMessage = "Failed to unlink scenery '\(item.name)': \(error.localizedDescription)"
                 return
             }
@@ -1152,19 +1138,19 @@ class PluginManager {
         if fileManager.fileExists(atPath: appURL.path) {
             // Launch
             let config = NSWorkspace.OpenConfiguration()
-            workspace.openApplication(at: appURL, configuration: config) { app, error in
+            workspace.openApplication(at: appURL, configuration: config) { [weak self] _, error in
                 if let error = error {
-                    print("Failed to launch: \(error)")
+                    DispatchQueue.main.async {
+                        self?.lastErrorMessage = "Failed to launch X-Plane: \(error.localizedDescription)"
+                    }
                 } else {
-                    print("Launched X-Plane")
                     DispatchQueue.main.async {
                         NSApp.terminate(nil)
                     }
                 }
             }
-
         } else {
-             print("X-Plane.app not found in \(xPlanePath.path)")
+            self.lastErrorMessage = AppError.xPlaneNotFound(appURL).localizedDescription
         }
     }
 
@@ -1187,25 +1173,30 @@ class PluginManager {
         let enabledAircraft = aircraft.filter { $0.isEnabled }.map { $0.folderName }
         let enabledLua = luaScripts.filter { $0.isEnabled }.map { $0.folderName }
         if let index = profiles.firstIndex(where: { $0.id == profile.id }) {
-            profiles[index] = profile
-            profiles[index].pluginFolderNames = enabledPlugins
-            profiles[index].sceneryFolderNames = enabledScenery
-            profiles[index].aircraftFolderNames = enabledAircraft
-            profiles[index].luaScriptFolderNames = enabledLua
-            profiles[index].scripts = activeScripts // Save active scripts
-            profiles[index].environmentVariables = activeEnvironmentVariables // Save active environment variables
-
+            profiles[index] = PluginProfile(id: profile.id, name: profile.name, pluginFolderNames: enabledPlugins, sceneryFolderNames: enabledScenery, aircraftFolderNames: enabledAircraft, luaScriptFolderNames: enabledLua, scripts: activeScripts, environmentVariables: activeEnvironmentVariables)
             saveProfilesToDisk()
-
         }
     }
 
     func deleteProfile(_ profile: PluginProfile) {
         profiles.removeAll { $0.id == profile.id }
-        saveProfilesToDisk()
         if selectedProfileId == profile.id {
-            selectedProfileId = nil
+            selectedProfileId = profiles.first?.id
+            if let first = profiles.first {
+                applyProfile(first)
+            }
         }
+        saveProfilesToDisk()
+    }
+
+    func duplicateProfile(_ profile: PluginProfile) {
+        var newProfile = profile
+        newProfile.id = UUID()
+        newProfile.name = "\(profile.name) Copy"
+        profiles.append(newProfile)
+        saveProfilesToDisk()
+        selectedProfileId = newProfile.id
+        applyProfile(newProfile)
     }
 
     var activeScripts: [ProfileScript] = []
@@ -1240,41 +1231,40 @@ class PluginManager {
 
     private func saveProfilesToDisk() {
         if let data = try? JSONEncoder().encode(profiles) {
-            defaults.set(data, forKey: .pluginProfiles)
+            UserDefaults.standard.set(data, forKey: .pluginProfiles)
         }
     }
 
     private func applyProfile(_ profile: PluginProfile) {
-        // We need to iterate over all plugins and enable/disable them to match the profile
-        // Note: scanPlugins() must have run first to populate 'plugins'
-
-        for plugin in plugins {
-            let shouldBeEnabled = profile.pluginFolderNames.contains(plugin.folderName)
-
-            if plugin.isEnabled != shouldBeEnabled {
-                // Change state
-                togglePlugin(plugin)
+        // Apply plugins
+        for index in plugins.indices {
+            let shouldBeEnabled = profile.pluginFolderNames.contains(plugins[index].folderName)
+            if plugins[index].isEnabled != shouldBeEnabled {
+                togglePlugin(plugins[index])
             }
         }
 
-        for item in scenery {
-            let shouldBeEnabled = profile.sceneryFolderNames.contains(item.folderName)
-            if item.isEnabled != shouldBeEnabled {
-                toggleScenery(item)
+        // Apply scenery
+        for index in scenery.indices {
+            let shouldBeEnabled = profile.sceneryFolderNames.contains(scenery[index].folderName)
+            if scenery[index].isEnabled != shouldBeEnabled {
+                toggleScenery(scenery[index])
             }
         }
 
-        for item in aircraft {
-            let shouldBeEnabled = profile.aircraftFolderNames.contains(item.folderName)
-            if item.isEnabled != shouldBeEnabled {
-                toggleAircraft(item)
+        // Apply aircraft
+        for index in aircraft.indices {
+            let shouldBeEnabled = profile.aircraftFolderNames.contains(aircraft[index].folderName)
+            if aircraft[index].isEnabled != shouldBeEnabled {
+                toggleAircraft(aircraft[index])
             }
         }
 
-        for item in luaScripts {
-            let shouldBeEnabled = profile.luaScriptFolderNames.contains(item.folderName)
-            if item.isEnabled != shouldBeEnabled {
-                toggleLuaScript(item)
+        // Apply Lua scripts
+        for index in luaScripts.indices {
+            let shouldBeEnabled = profile.luaScriptFolderNames.contains(luaScripts[index].folderName)
+            if luaScripts[index].isEnabled != shouldBeEnabled {
+                toggleLuaScript(luaScripts[index])
             }
         }
 
@@ -1285,11 +1275,10 @@ class PluginManager {
 
     private func executeShellScript(at path: String, profileName: String) {
         guard fileManager.fileExists(atPath: path) else {
-            print("Failed to execute script: file does not exist at '\(path)'")
+            self.lastErrorMessage = AppError.scriptNotFound(path).localizedDescription
             return
         }
 
-        print("Executing script at: \(path) for profile: \(profileName)")
         let process = Process()
 
         let isExecutable = fileManager.isExecutableFile(atPath: path)
@@ -1324,7 +1313,7 @@ class PluginManager {
         do {
             try process.run()
         } catch {
-            print("Failed to run script at '\(path)': \(error.localizedDescription)")
+            self.lastErrorMessage = AppError.scriptExecutionFailed(path: path, underlyingError: error.localizedDescription).localizedDescription
         }
     }
 }

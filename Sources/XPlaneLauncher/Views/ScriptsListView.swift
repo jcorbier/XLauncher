@@ -131,7 +131,7 @@ struct ScriptsListView: View {
                     pluginManager.addScript(name: url.lastPathComponent, path: url.path)
                 }
             case .failure(let error):
-                print("Failed to import script: \(error.localizedDescription)")
+                pluginManager.lastErrorMessage = "Failed to import script: \(error.localizedDescription)"
             }
         }
     }
