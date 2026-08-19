@@ -95,15 +95,22 @@ struct WelcomeView: View {
                         FeatureRow(
                             icon: "square.and.arrow.down",
                             color: .purple,
-                            title: "Add-on Installation & Deletion",
-                            description: "Drag & drop ZIP packages, folders, or Lua scripts to install add-ons, or right-click any item to delete it and remove it across all profiles."
+                            title: "Add-on Installation & Updates",
+                            description: "Drag & drop add-ons to install, manage updates with SkunkCrafts & X-Updater, and cleanly delete unwanted packages."
                         )
 
                         FeatureRow(
-                            icon: "sparkles",
+                            icon: "airplane",
                             color: .orange,
-                            title: "Updates & X-CSL Models",
-                            description: "Stay up to date with SkunkCrafts & X-Updater, and install multiplayer CSL models with optional X-Plane 12 parameterized lighting."
+                            title: "X-CSL Multiplayer Models",
+                            description: "Install and manage CSL model matching packages for online networks with optional modern X-Plane 12 parameterized lighting."
+                        )
+
+                        FeatureRow(
+                            icon: "point.topleft.down.to.point.bottomright.curvepath",
+                            color: .teal,
+                            title: "Navigation Data (Navigraph)",
+                            description: "Download and update official AIRAC cycles directly from Navigraph for X-Plane 12 and supported add-on aircraft."
                         )
                     }
                     .padding(.horizontal, 20)
@@ -201,6 +208,20 @@ struct WelcomeView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(8)
                         }
+
+                        // Navigation Data Support
+                        GroupBox {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Toggle("Enable Navigraph navdata updates", isOn: $pluginManager.enableNavdataSupport)
+                                    .font(.body)
+
+                                Text("Enables checking, installing, and updating navigation data from Navigraph for X-Plane 12 and supported add-ons.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(8)
+                        }
                     }
                     .padding(.horizontal, 20)
                 }
@@ -238,7 +259,7 @@ struct WelcomeView: View {
             .padding(16)
             .background(Color(NSColor.windowBackgroundColor))
         }
-        .frame(width: 580, height: 640)
+        .frame(width: 580, height: 660)
     }
 }
 

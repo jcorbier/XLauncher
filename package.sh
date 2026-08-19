@@ -45,9 +45,21 @@ cat <<EOF > "$APP_BUNDLE/Contents/Info.plist"
     <true/>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <true/>
+    </dict>
 </dict>
 </plist>
 EOF
+
+if [ -n "$NAVIGRAPH_CLIENT_ID" ]; then
+    plutil -replace NavigraphClientId -string "$NAVIGRAPH_CLIENT_ID" "$APP_BUNDLE/Contents/Info.plist"
+fi
+if [ -n "$NAVIGRAPH_CLIENT_SECRET" ]; then
+    plutil -replace NavigraphClientSecret -string "$NAVIGRAPH_CLIENT_SECRET" "$APP_BUNDLE/Contents/Info.plist"
+fi
 
 if [ -f "$BUILD_DIR/$SOURCE_NAME" ]; then
     echo "Copying binary..."

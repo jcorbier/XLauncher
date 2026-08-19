@@ -39,6 +39,10 @@ Install packages with drag-and-drop, and cleanly delete unwanted add-ons with au
 Check and install updates for add-ons that use SkunkCrafts Updater or X-Updater directly from the application.
 :::
 
+:::{grid-item-card} Navigation Data (Navigraph)
+Download and update AIRAC cycles directly from Navigraph for X-Plane and supported aircrafts.
+:::
+
 :::{grid-item-card} CSL Packages & Lights
 Install and update IVAO/X-CSL model matching packages, and optionally apply native X-Plane 12 lighting presets.
 :::
@@ -103,6 +107,7 @@ user-guide/pre-launch-scripts
 
 features/addon-installer
 features/updates
+features/navdata
 features/csl-models
 ```
 

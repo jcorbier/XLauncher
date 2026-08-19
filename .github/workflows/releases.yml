@@ -88,6 +88,9 @@ jobs:
           lipo -info .build/universal/XPlaneLauncher
 
       - name: Create App Bundle
+        env:
+          NAVIGRAPH_CLIENT_ID: ${{ secrets.NAVIGRAPH_CLIENT_ID }}
+          NAVIGRAPH_CLIENT_SECRET: ${{ secrets.NAVIGRAPH_CLIENT_SECRET }}
         run: |
           chmod +x package.sh
           # Run package script to create structure without rebuilding single arch
@@ -99,6 +102,13 @@ jobs:
           # Update Version in Info.plist
           plutil -replace CFBundleShortVersionString -string "$VERSION" XLauncher.app/Contents/Info.plist
           plutil -replace CFBundleVersion -string "${{ github.run_number }}" XLauncher.app/Contents/Info.plist
+          
+          if [ -n "$NAVIGRAPH_CLIENT_ID" ]; then
+            plutil -replace NavigraphClientId -string "$NAVIGRAPH_CLIENT_ID" XLauncher.app/Contents/Info.plist
+          fi
+          if [ -n "$NAVIGRAPH_CLIENT_SECRET" ]; then
+            plutil -replace NavigraphClientSecret -string "$NAVIGRAPH_CLIENT_SECRET" XLauncher.app/Contents/Info.plist
+          fi
           
           # Resign the app after modification
           codesign -f -s - XLauncher.app

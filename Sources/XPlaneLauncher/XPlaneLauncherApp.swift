@@ -30,7 +30,14 @@ struct XPlaneLauncherApp: App {
     @State private var updateManager = UpdateManager()
     @State private var cslManager = CSLManager()
     @State private var appUpdateManager = AppUpdateManager()
+    @State private var authManager: NavigraphAuthManager
+    @State private var navdataManager: NavdataManager
     @State private var showWelcomeScreen = false
+    init() {
+        let auth = NavigraphAuthManager()
+        self._authManager = State(initialValue: auth)
+        self._navdataManager = State(initialValue: NavdataManager(authManager: auth))
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -39,10 +46,22 @@ struct XPlaneLauncherApp: App {
                 .environment(updateManager)
                 .environment(cslManager)
                 .environment(appUpdateManager)
+                .environment(authManager)
+                .environment(navdataManager)
                 .frame(minWidth: 600, minHeight: 500)
                 .onAppear {
                     updateManager.launcherDataFolder = pluginManager.launcherDataFolder
                     cslManager.cslFolderURL = pluginManager.cslPath
+                    if pluginManager.enableNavdataSupport {
+                        navdataManager.xPlaneURL = pluginManager.xPlanePath
+                        navdataManager.launcherDataFolder = pluginManager.launcherDataFolder
+                        Task {
+                            await authManager.restoreSessionOnLaunch()
+                            if case .authenticated = authManager.authState, navdataManager.automaticallyCheckNavdataUpdates {
+                                await navdataManager.checkOnlinePackages()
+                            }
+                        }
+                    }
                     if pluginManager.enableCSLSupport && cslManager.automaticallyCheckCSLUpdates {
                         cslManager.scanAndCheck()
                     }
@@ -55,6 +74,14 @@ struct XPlaneLauncherApp: App {
                 }
                 .onChange(of: pluginManager.launcherDataFolder) { _, newValue in
                     updateManager.launcherDataFolder = newValue
+                    if pluginManager.enableNavdataSupport {
+                        navdataManager.launcherDataFolder = newValue
+                    }
+                }
+                .onChange(of: pluginManager.xPlanePath) { _, newValue in
+                    if pluginManager.enableNavdataSupport {
+                        navdataManager.xPlaneURL = newValue
+                    }
                 }
                 .onChange(of: pluginManager.cslPath) { _, newValue in
                     cslManager.cslFolderURL = newValue
@@ -75,6 +102,17 @@ struct XPlaneLauncherApp: App {
                         cslManager.applyXP12LightsToAll()
                     } else {
                         cslManager.revertXP12LightsFromAll()
+                    }
+                }
+                .onChange(of: pluginManager.enableNavdataSupport) { _, enabled in
+                    if enabled {
+                        navdataManager.xPlaneURL = pluginManager.xPlanePath
+                        Task {
+                            await authManager.restoreSessionOnLaunch()
+                            if case .authenticated = authManager.authState, navdataManager.automaticallyCheckNavdataUpdates {
+                                await navdataManager.checkOnlinePackages()
+                            }
+                        }
                     }
                 }
         }

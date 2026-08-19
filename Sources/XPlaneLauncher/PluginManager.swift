@@ -116,6 +116,13 @@ class PluginManager {
         }
     }
 
+    var enableNavdataSupport: Bool = false {
+        didSet {
+            guard !isLoading else { return }
+            defaults.set(enableNavdataSupport, forKey: .enableNavdataSupport)
+        }
+    }
+
     var hasCompletedWelcome: Bool = false {
         didSet {
             guard !isLoading else { return }
@@ -139,7 +146,6 @@ class PluginManager {
             saveScriptEnvironment()
         }
     }
-
     var sceneryGroups: [SceneryGroup] = [] {
         didSet {
             saveSceneryGroups()
@@ -326,6 +332,7 @@ class PluginManager {
         self.sceneryGroups = profileService.loadSceneryGroups()
         self.enableCSLSupport = defaults.bool(forKey: .enableCSLSupport)
         self.enableCSLXP12Lights = defaults.bool(forKey: .enableCSLXP12Lights)
+        self.enableNavdataSupport = defaults.bool(forKey: .enableNavdataSupport)
         self.hasCompletedWelcome = defaults.bool(forKey: .hasCompletedWelcome)
 
         logProfileStartupState()

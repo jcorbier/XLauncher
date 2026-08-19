@@ -256,6 +256,7 @@ struct ConsoleView: View {
         case .aircraft: return .teal
         case .lua: return .purple
         case .updates: return .orange
+        case .navdata: return .pink
         case .csl: return .cyan
         case .launch: return .mint
         case .system: return .indigo

@@ -32,6 +32,7 @@ struct ContentView: View {
     @Environment(UpdateManager.self) var updateManager
     @Environment(CSLManager.self) var cslManager
     @Environment(AppUpdateManager.self) var appUpdateManager
+    @Environment(NavdataManager.self) var navdataManager
     @Binding var showWelcomeScreen: Bool
     @State private var selectedCategory: NavigationCategory? = .aircraft
     @State private var installerAnalysis: AddonPackageAnalysis? = nil
@@ -49,6 +50,7 @@ struct ContentView: View {
         case luaScripts = "Lua Scripts"
         case scripts = "Profile Scripts"
         case csl = "CSL"
+        case navdata = "Navigation Data"
         case updates = "Updates"
         case settings = "Settings"
         case about = "About"
@@ -63,16 +65,19 @@ struct ContentView: View {
             case .luaScripts: return "scroll"
             case .scripts: return "terminal"
             case .csl: return "airplane.circle"
+            case .navdata: return "point.topleft.down.to.point.bottomright.curvepath"
             case .updates: return "arrow.triangle.2.circlepath.circle"
             case .settings: return "gearshape"
             case .about: return "info.circle"
             }
         }
-
-        static func mainCategories(cslEnabled: Bool) -> [NavigationCategory] {
+        static func mainCategories(cslEnabled: Bool, navdataEnabled: Bool) -> [NavigationCategory] {
             var list: [NavigationCategory] = [.aircraft, .plugins, .scenery, .luaScripts, .scripts]
             if cslEnabled {
                 list.append(.csl)
+            }
+            if navdataEnabled {
+                list.append(.navdata)
             }
             return list
         }
@@ -82,7 +87,7 @@ struct ContentView: View {
         }
 
         var isAddonCategory: Bool {
-            self != .updates && self != .settings && self != .csl && self != .about
+            self != .updates && self != .settings && self != .csl && self != .navdata && self != .about
         }
     }
 
@@ -90,11 +95,15 @@ struct ContentView: View {
         updateManager.updatableAddons.filter { $0.isUpdateAvailable }.count
     }
 
+    var availableNavdataUpdatesCount: Int {
+        navdataManager.addons.filter { $0.isUpdateAvailable }.count
+    }
+
     var body: some View {
         NavigationSplitView {
             List(selection: $selectedCategory) {
                 Section("Add-ons") {
-                    ForEach(NavigationCategory.mainCategories(cslEnabled: pluginManager.enableCSLSupport)) { category in
+                    ForEach(NavigationCategory.mainCategories(cslEnabled: pluginManager.enableCSLSupport, navdataEnabled: pluginManager.enableNavdataSupport)) { category in
                         NavigationLink(value: category) {
                             HStack(spacing: 8) {
                                 Label(category.rawValue, systemImage: category.systemImage)
@@ -108,6 +117,22 @@ struct ContentView: View {
                                             .controlSize(.small)
                                     } else if cslManager.updatesAvailableCount > 0 {
                                         Text("\(cslManager.updatesAvailableCount)")
+                                            .font(.caption2)
+                                            .fontWeight(.bold)
+                                            .foregroundStyle(.white)
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(Color.orange)
+                                            .clipShape(Capsule())
+                                    }
+                                } else if category == .navdata {
+                                    Spacer()
+
+                                    if navdataManager.isUpdatingAny || navdataManager.isFetchingPackages {
+                                        ProgressView()
+                                            .controlSize(.small)
+                                    } else if availableNavdataUpdatesCount > 0 {
+                                        Text("\(availableNavdataUpdatesCount)")
                                             .font(.caption2)
                                             .fontWeight(.bold)
                                             .foregroundStyle(.white)
@@ -216,6 +241,8 @@ struct ContentView: View {
                         ScriptsListView()
                     case .csl:
                         CSLListView()
+                    case .navdata:
+                        NavdataListView()
                     case .updates:
                         UpdatesView()
                     case .settings:
@@ -298,6 +325,15 @@ struct ContentView: View {
                 if pluginManager.enableCSLSupport && cslManager.automaticallyCheckCSLUpdates {
                     cslManager.cslFolderURL = pluginManager.cslPath
                     cslManager.scanAndCheck()
+                }
+                if pluginManager.enableNavdataSupport {
+                    navdataManager.xPlaneURL = pluginManager.xPlanePath
+                    Task {
+                        await navdataManager.authManager.restoreSessionOnLaunch()
+                        if case .authenticated = navdataManager.authManager.authState, navdataManager.automaticallyCheckNavdataUpdates {
+                            await navdataManager.checkOnlinePackages()
+                        }
+                    }
                 }
             }
         }
