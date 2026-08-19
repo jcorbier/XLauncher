@@ -227,6 +227,8 @@ class PluginManager {
         }
     }
     
+    var lastErrorMessage: String? = nil
+    
     init() {
         // Default Central Launcher Data Folder
         if let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
@@ -729,7 +731,8 @@ class PluginManager {
                 plugins[index].isEnabled.toggle()
             }
         } catch {
-            print("Error toggling plugin: \(error)")
+            print("Error toggling plugin \(plugin.name): \(error.localizedDescription)")
+            self.lastErrorMessage = "Failed to \(plugin.isEnabled ? "disable" : "enable") plugin '\(plugin.name)': \(error.localizedDescription)"
         }
     }
     
@@ -756,7 +759,8 @@ class PluginManager {
                 aircraft[index].isEnabled.toggle()
             }
         } catch {
-            print("Error toggling aircraft: \(error)")
+            print("Error toggling aircraft \(item.name): \(error.localizedDescription)")
+            self.lastErrorMessage = "Failed to \(item.isEnabled ? "disable" : "enable") aircraft '\(item.name)': \(error.localizedDescription)"
         }
     }
     
@@ -791,19 +795,18 @@ class PluginManager {
             } else {
                 // Enable -> create symlinks
                 if item.isDirectory {
-                    if let children = try? fileManager.contentsOfDirectory(at: itemSourceURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
-                        for child in children {
-                            let linkURL = targetFolder.appendingPathComponent(child.lastPathComponent)
-                            if fileManager.fileExists(atPath: linkURL.path) {
-                                try? fileManager.removeItem(at: linkURL)
-                            }
-                            try fileManager.createSymbolicLink(at: linkURL, withDestinationURL: child)
+                    let children = try fileManager.contentsOfDirectory(at: itemSourceURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
+                    for child in children {
+                        let linkURL = targetFolder.appendingPathComponent(child.lastPathComponent)
+                        if fileManager.fileExists(atPath: linkURL.path) {
+                            try fileManager.removeItem(at: linkURL)
                         }
+                        try fileManager.createSymbolicLink(at: linkURL, withDestinationURL: child)
                     }
                 } else {
                     let linkURL = targetFolder.appendingPathComponent(item.folderName)
                     if fileManager.fileExists(atPath: linkURL.path) {
-                        try? fileManager.removeItem(at: linkURL)
+                        try fileManager.removeItem(at: linkURL)
                     }
                     try fileManager.createSymbolicLink(at: linkURL, withDestinationURL: itemSourceURL)
                 }
@@ -813,7 +816,8 @@ class PluginManager {
                 luaScripts[index].isEnabled.toggle()
             }
         } catch {
-            print("Error toggling Lua script: \(error)")
+            print("Error toggling Lua script \(item.name): \(error.localizedDescription)")
+            self.lastErrorMessage = "Failed to \(item.isEnabled ? "disable" : "enable") Lua script '\(item.name)': \(error.localizedDescription)"
         }
     }
     
@@ -844,10 +848,17 @@ class PluginManager {
                  if !fileManager.fileExists(atPath: linkURL.path) {
                      let source = sceneryFolder.appendingPathComponent(newItem.folderName)
                      if fileManager.fileExists(atPath: source.path) {
-                         try? fileManager.createSymbolicLink(at: linkURL, withDestinationURL: source)
-                         newItem.isManaged = true // It is now managed
+                         do {
+                             try fileManager.createSymbolicLink(at: linkURL, withDestinationURL: source)
+                             newItem.isManaged = true // It is now managed
+                         } catch {
+                             print("Error linking scenery \(newItem.name): \(error.localizedDescription)")
+                             self.lastErrorMessage = "Failed to enable scenery '\(newItem.name)': \(error.localizedDescription)"
+                             return
+                         }
                      } else {
                          print("Cannot enable: Source not found at \(source.path)")
+                         self.lastErrorMessage = "Cannot enable scenery '\(newItem.name)': source folder not found"
                          return
                      }
                  }
@@ -869,7 +880,15 @@ class PluginManager {
         // Remove symlink
         if let xPlanePath = xPlanePath {
             let linkURL = xPlanePath.appendingPathComponent("Custom Scenery").appendingPathComponent(item.folderName)
-            try? fileManager.removeItem(at: linkURL)
+            do {
+                if fileManager.fileExists(atPath: linkURL.path) {
+                    try fileManager.removeItem(at: linkURL)
+                }
+            } catch {
+                print("Error unlinking scenery \(item.name): \(error.localizedDescription)")
+                self.lastErrorMessage = "Failed to unlink scenery '\(item.name)': \(error.localizedDescription)"
+                return
+            }
         }
         
         // Update list

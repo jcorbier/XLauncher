@@ -244,5 +244,20 @@ struct ContentView: View {
                 }
             }
         }
+        .alert(
+            "Add-on Management Error",
+            isPresented: Binding(
+                get: { pluginManager.lastErrorMessage != nil },
+                set: { if !$0 { pluginManager.lastErrorMessage = nil } }
+            )
+        ) {
+            Button("OK") {
+                pluginManager.lastErrorMessage = nil
+            }
+        } message: {
+            if let errorMsg = pluginManager.lastErrorMessage {
+                Text(errorMsg)
+            }
+        }
     }
 }
