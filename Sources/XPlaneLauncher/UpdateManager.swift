@@ -27,6 +27,7 @@ import Observation
 @Observable
 class UpdateManager {
     private let fileManager = FileManager.default
+    private let pathService = PathService.shared
     private let defaults = UserDefaults.standard
 
     var automaticallyCheckSkunkCraftsUpdates: Bool {
@@ -87,12 +88,22 @@ class UpdateManager {
         }
     }
 
-    enum AddonCategory: String, Codable, Identifiable {
+    enum AddonCategory: String, Codable, Identifiable, CaseIterable {
         case aircraft = "Aircraft"
         case plugin = "Plugin"
         case scenery = "Scenery"
         case luaScript = "Lua Script"
         var id: String { rawValue }
+
+        /// Where this category's source add-ons live inside the central data folder.
+        var dataSubfolder: DataSubfolder {
+            switch self {
+            case .aircraft: return .aircraft
+            case .plugin: return .plugins
+            case .scenery: return .scenery
+            case .luaScript: return .luaScripts
+            }
+        }
     }
 
     struct UpdatableAddon: Identifiable, Equatable, Hashable {
@@ -198,15 +209,8 @@ class UpdateManager {
 
         var allAddons: [UpdatableAddon] = []
 
-        let categoryFolders: [(AddonCategory, String)] = [
-            (.aircraft, "Aircraft"),
-            (.plugin, "Plugins"),
-            (.scenery, "Scenery"),
-            (.luaScript, "LuaScripts")
-        ]
-
-        for (category, subFolder) in categoryFolders {
-            let folderURL = dataFolder.appendingPathComponent(subFolder)
+        for category in AddonCategory.allCases {
+            let folderURL = pathService.dataFolder(category.dataSubfolder, in: dataFolder)
             if fileManager.fileExists(atPath: folderURL.path) {
                 let addons = scanDirectoryForAddons(subFolderURL: folderURL, category: category)
                 allAddons.append(contentsOf: addons)

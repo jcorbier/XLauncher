@@ -74,19 +74,19 @@ class PluginManager {
     }
 
     var pluginsDataFolder: URL? {
-        launcherDataFolder?.appendingPathComponent("Plugins")
+        launcherDataFolder.map { pathService.dataFolder(.plugins, in: $0) }
     }
 
     var sceneryDataFolder: URL? {
-        launcherDataFolder?.appendingPathComponent("Scenery")
+        launcherDataFolder.map { pathService.dataFolder(.scenery, in: $0) }
     }
 
     var aircraftDataFolder: URL? {
-        launcherDataFolder?.appendingPathComponent("Aircraft")
+        launcherDataFolder.map { pathService.dataFolder(.aircraft, in: $0) }
     }
 
     var luaScriptsDataFolder: URL? {
-        launcherDataFolder?.appendingPathComponent("LuaScripts")
+        launcherDataFolder.map { pathService.dataFolder(.luaScripts, in: $0) }
     }
 
     var flyWithLuaScriptsFolder: URL? {

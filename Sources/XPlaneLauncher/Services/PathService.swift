@@ -22,6 +22,16 @@
 
 import Foundation
 
+/// The subfolders holding source add-ons inside the central data folder.
+/// These are launcher-side names and differ from the X-Plane target folders
+/// they are linked into (`Custom Scenery`, `Resources/plugins/FlyWithLua/Scripts`).
+enum DataSubfolder: String, CaseIterable, Sendable {
+    case aircraft = "Aircraft"
+    case plugins = "Plugins"
+    case scenery = "Scenery"
+    case luaScripts = "LuaScripts"
+}
+
 final class PathService: Sendable {
     static let shared = PathService()
 
@@ -31,10 +41,13 @@ final class PathService: Sendable {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?.appendingPathComponent("XPlaneLauncher")
     }
 
+    func dataFolder(_ subfolder: DataSubfolder, in launcherDataFolder: URL) -> URL {
+        launcherDataFolder.appendingPathComponent(subfolder.rawValue)
+    }
+
     func ensureDirectories(for launcherDataFolder: URL) {
-        let subfolders = ["Plugins", "Scenery", "Aircraft", "LuaScripts"]
-        for sub in subfolders {
-            let path = launcherDataFolder.appendingPathComponent(sub)
+        for subfolder in DataSubfolder.allCases {
+            let path = dataFolder(subfolder, in: launcherDataFolder)
             if !fileManager.fileExists(atPath: path.path) {
                 try? fileManager.createDirectory(at: path, withIntermediateDirectories: true)
             }
