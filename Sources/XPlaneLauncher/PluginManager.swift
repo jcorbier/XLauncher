@@ -1279,24 +1279,36 @@ class PluginManager {
     }
     
     private func executeShellScript(at path: String, profileName: String) {
-        print("Executing shell script at: \(path) for profile: \(profileName)")
+        guard fileManager.fileExists(atPath: path) else {
+            print("Failed to execute script: file does not exist at '\(path)'")
+            return
+        }
+        
+        print("Executing script at: \(path) for profile: \(profileName)")
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: path)
+        
+        let isExecutable = fileManager.isExecutableFile(atPath: path)
+        let isShellScript = path.hasSuffix(".sh") || path.hasSuffix(".zsh") || path.hasSuffix(".bash") || !isExecutable
+        
+        if isShellScript {
+            process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+            process.arguments = [path]
+        } else {
+            process.executableURL = URL(fileURLWithPath: path)
+        }
+        
+        process.currentDirectoryURL = URL(fileURLWithPath: path).deletingLastPathComponent()
         
         var env = ProcessInfo.processInfo.environment
         
         // 1. Global environment variables
-        for envVar in scriptEnvironment {
-            if !envVar.key.isEmpty {
-                env[envVar.key] = envVar.value
-            }
+        for envVar in scriptEnvironment where !envVar.key.isEmpty {
+            env[envVar.key] = envVar.value
         }
         
         // 2. Per-profile environment variables (overriding global keys)
-        for envVar in activeEnvironmentVariables {
-            if !envVar.key.isEmpty {
-                env[envVar.key] = envVar.value
-            }
+        for envVar in activeEnvironmentVariables where !envVar.key.isEmpty {
+            env[envVar.key] = envVar.value
         }
         
         // 3. System profile name variable
@@ -1307,7 +1319,7 @@ class PluginManager {
         do {
             try process.run()
         } catch {
-            print("Failed to run shell script: \(error)")
+            print("Failed to run script at '\(path)': \(error.localizedDescription)")
         }
     }
 }
