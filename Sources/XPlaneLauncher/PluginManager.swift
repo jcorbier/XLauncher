@@ -66,6 +66,7 @@ class PluginManager {
             guard !isLoading else { return }
             savePath()
             ensureLauncherDataDirectories()
+            repairStaleLinks()
             scanPlugins()
             scanScenery()
             scanAircraft()
@@ -280,6 +281,43 @@ class PluginManager {
 
     func saveSceneryGroups() {
         profileService.saveSceneryGroups(sceneryGroups)
+    }
+
+    // MARK: - Link Repair
+
+    /// Repoints add-on links that broke because their source folder moved, so a
+    /// changed central data folder keeps the current selection working instead of
+    /// leaving every enabled add-on dangling.
+    func repairStaleLinks() {
+        guard let xPlanePath = xPlanePath else { return }
+
+        if let dataFolder = pluginsDataFolder {
+            symlinkService.repairStaleLinks(
+                in: pathService.pluginsTargetFolder(for: xPlanePath),
+                using: symlinkService.linkSources(in: dataFolder)
+            )
+        }
+
+        if let dataFolder = aircraftDataFolder {
+            symlinkService.repairStaleLinks(
+                in: pathService.aircraftTargetFolder(for: xPlanePath),
+                using: symlinkService.linkSources(in: dataFolder)
+            )
+        }
+
+        if let dataFolder = sceneryDataFolder {
+            symlinkService.repairStaleLinks(
+                in: pathService.customSceneryFolder(for: xPlanePath),
+                using: symlinkService.linkSources(in: dataFolder)
+            )
+        }
+
+        if let dataFolder = luaScriptsDataFolder, let targetFolder = flyWithLuaScriptsFolder {
+            symlinkService.repairStaleLinks(
+                in: targetFolder,
+                using: symlinkService.luaScriptLinkSources(in: dataFolder)
+            )
+        }
     }
 
     // MARK: - Scanning
