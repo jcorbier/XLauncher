@@ -29,18 +29,15 @@ class UpdateManager {
     private let fileManager = FileManager.default
     private let defaults = UserDefaults.standard
     
-    private let autoCheckSkunkCraftsKey = "AutoCheckSkunkCraftsUpdates"
-    private let autoCheckXUpdaterKey = "AutoCheckXUpdaterUpdates"
-    
     var automaticallyCheckSkunkCraftsUpdates: Bool {
         didSet {
-            defaults.set(automaticallyCheckSkunkCraftsUpdates, forKey: autoCheckSkunkCraftsKey)
+            defaults.set(automaticallyCheckSkunkCraftsUpdates, forKey: .autoCheckSkunkCraftsUpdates)
         }
     }
     
     var automaticallyCheckXUpdaterUpdates: Bool {
         didSet {
-            defaults.set(automaticallyCheckXUpdaterUpdates, forKey: autoCheckXUpdaterKey)
+            defaults.set(automaticallyCheckXUpdaterUpdates, forKey: .autoCheckXUpdaterUpdates)
         }
     }
     
@@ -107,16 +104,16 @@ class UpdateManager {
     }
     
     init(launcherDataFolder: URL? = nil) {
-        if defaults.object(forKey: autoCheckSkunkCraftsKey) == nil {
+        if defaults.object(forKey: .autoCheckSkunkCraftsUpdates) == nil {
             self.automaticallyCheckSkunkCraftsUpdates = true
         } else {
-            self.automaticallyCheckSkunkCraftsUpdates = defaults.bool(forKey: autoCheckSkunkCraftsKey)
+            self.automaticallyCheckSkunkCraftsUpdates = defaults.bool(forKey: .autoCheckSkunkCraftsUpdates)
         }
         
-        if defaults.object(forKey: autoCheckXUpdaterKey) == nil {
+        if defaults.object(forKey: .autoCheckXUpdaterUpdates) == nil {
             self.automaticallyCheckXUpdaterUpdates = true
         } else {
-            self.automaticallyCheckXUpdaterUpdates = defaults.bool(forKey: autoCheckXUpdaterKey)
+            self.automaticallyCheckXUpdaterUpdates = defaults.bool(forKey: .autoCheckXUpdaterUpdates)
         }
         
         self.launcherDataFolder = launcherDataFolder

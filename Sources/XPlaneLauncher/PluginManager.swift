@@ -74,21 +74,21 @@ class PluginManager {
     var enableCSLSupport: Bool = false {
         didSet {
             guard !isLoading else { return }
-            defaults.set(enableCSLSupport, forKey: enableCSLSupportKey)
+            defaults.set(enableCSLSupport, forKey: .enableCSLSupport)
         }
     }
 
     var enableCSLXP12Lights: Bool = false {
         didSet {
             guard !isLoading else { return }
-            defaults.set(enableCSLXP12Lights, forKey: enableCSLXP12LightsKey)
+            defaults.set(enableCSLXP12Lights, forKey: .enableCSLXP12Lights)
         }
     }
 
     var hasCompletedWelcome: Bool = false {
         didSet {
             guard !isLoading else { return }
-            defaults.set(hasCompletedWelcome, forKey: hasCompletedWelcomeKey)
+            defaults.set(hasCompletedWelcome, forKey: .hasCompletedWelcome)
         }
     }
 
@@ -200,18 +200,8 @@ class PluginManager {
     
     private let fileManager = FileManager.default
     private let defaults = UserDefaults.standard
-    private let pathKey = "XPlanePath"
-    private let launcherDataFolderKey = "LauncherDataFolder"
 
     private let kXPlaneCustomSceneryFileName = "scenery_packs.ini"
-
-    private let profilesKey = "PluginProfiles"
-    private let selectedProfileIdKey = "SelectedProfileId"
-    private let scriptEnvironmentKey = "ScriptEnvVars"
-    private let sceneryGroupsKey = "SceneryGroups"
-    private let enableCSLSupportKey = "EnableCSLSupport"
-    private let enableCSLXP12LightsKey = "EnableCSLXP12Lights"
-    private let hasCompletedWelcomeKey = "HasCompletedWelcome"
     
     private var isApplyingProfile = false
     
@@ -237,7 +227,7 @@ class PluginManager {
             self.launcherDataFolder = defaultFolder
         }
 
-        if let savedDataPath = defaults.string(forKey: launcherDataFolderKey) {
+        if let savedDataPath = defaults.string(forKey: .launcherDataFolder) {
             let url = URL(fileURLWithPath: savedDataPath)
             var isDir: ObjCBool = false
             if fileManager.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
@@ -248,7 +238,7 @@ class PluginManager {
         ensureLauncherDataDirectories()
 
         // Load profiles
-        if let data = defaults.data(forKey: profilesKey),
+        if let data = defaults.data(forKey: .pluginProfiles),
            let savedProfiles = try? JSONDecoder().decode([PluginProfile].self, from: data) {
             self.profiles = savedProfiles
             
@@ -262,7 +252,7 @@ class PluginManager {
             }
         }
         
-        if let savedPath = defaults.string(forKey: pathKey) {
+        if let savedPath = defaults.string(forKey: .xPlanePath) {
             // Verify it exists
             let url = URL(fileURLWithPath: savedPath)
             var isDir: ObjCBool = false
@@ -270,7 +260,7 @@ class PluginManager {
                 self.xPlanePath = url
                 
                 // Validate preserved profile selection
-                if let savedIdString = defaults.string(forKey: selectedProfileIdKey),
+                if let savedIdString = defaults.string(forKey: .selectedProfileId),
                    let savedId = UUID(uuidString: savedIdString) {
                      isRestoringState = true
                      self.selectedProfileId = savedId
@@ -291,19 +281,19 @@ class PluginManager {
         scanAircraft()
         scanLuaScripts()
         
-        if let data = defaults.data(forKey: scriptEnvironmentKey),
+        if let data = defaults.data(forKey: .scriptEnvVars),
            let envData = try? JSONDecoder().decode([ScriptEnvVar].self, from: data) {
             self.scriptEnvironment = envData
         }
         
-        if let data = defaults.data(forKey: sceneryGroupsKey),
+        if let data = defaults.data(forKey: .sceneryGroups),
            let groups = try? JSONDecoder().decode([SceneryGroup].self, from: data) {
             self.sceneryGroups = groups
         }
         
-        self.enableCSLSupport = defaults.bool(forKey: enableCSLSupportKey)
-        self.enableCSLXP12Lights = defaults.bool(forKey: enableCSLXP12LightsKey)
-        self.hasCompletedWelcome = defaults.bool(forKey: hasCompletedWelcomeKey)
+        self.enableCSLSupport = defaults.bool(forKey: .enableCSLSupport)
+        self.enableCSLXP12Lights = defaults.bool(forKey: .enableCSLXP12Lights)
+        self.hasCompletedWelcome = defaults.bool(forKey: .hasCompletedWelcome)
         
         isLoading = false
     }
@@ -321,7 +311,7 @@ class PluginManager {
     var selectedProfileId: UUID? {
         didSet {
             if let id = selectedProfileId {
-                defaults.set(id.uuidString, forKey: selectedProfileIdKey)
+                defaults.set(id.uuidString, forKey: .selectedProfileId)
                 if let profile = profiles.first(where: { $0.id == id }) {
                     if !isRestoringState {
                          isApplyingProfile = true
@@ -330,7 +320,7 @@ class PluginManager {
                     }
                 }
             } else {
-                defaults.removeObject(forKey: selectedProfileIdKey)
+                defaults.removeObject(forKey: .selectedProfileId)
             }
         }
     }
@@ -365,25 +355,25 @@ class PluginManager {
     }
     func savePath() {
         if let path = xPlanePath {
-            defaults.set(path.path, forKey: pathKey)
+            defaults.set(path.path, forKey: .xPlanePath)
         }
         if let path = launcherDataFolder {
-            defaults.set(path.path, forKey: launcherDataFolderKey)
+            defaults.set(path.path, forKey: .launcherDataFolder)
         } else {
-            defaults.removeObject(forKey: launcherDataFolderKey)
+            defaults.removeObject(forKey: .launcherDataFolder)
         }
 
     }
     
     func saveScriptEnvironment() {
         if let data = try? JSONEncoder().encode(scriptEnvironment) {
-            defaults.set(data, forKey: scriptEnvironmentKey)
+            defaults.set(data, forKey: .scriptEnvVars)
         }
     }
 
     func saveSceneryGroups() {
         if let data = try? JSONEncoder().encode(sceneryGroups) {
-            defaults.set(data, forKey: sceneryGroupsKey)
+            defaults.set(data, forKey: .sceneryGroups)
         }
     }
     
@@ -1255,7 +1245,7 @@ class PluginManager {
     
     private func saveProfilesToDisk() {
         if let data = try? JSONEncoder().encode(profiles) {
-            defaults.set(data, forKey: profilesKey)
+            defaults.set(data, forKey: .pluginProfiles)
         }
     }
     

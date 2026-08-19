@@ -481,11 +481,10 @@ final class CSLUpdaterService: Sendable {
 final class CSLManager {
     private let fileManager = FileManager.default
     private let service = CSLUpdaterService.shared
-    private let autoCheckCSLKey = "AutoCheckCSLUpdates"
     
     var automaticallyCheckCSLUpdates: Bool {
         didSet {
-            UserDefaults.standard.set(automaticallyCheckCSLUpdates, forKey: autoCheckCSLKey)
+            UserDefaults.standard.set(automaticallyCheckCSLUpdates, forKey: .autoCheckCSLUpdates)
         }
     }
     
@@ -509,10 +508,10 @@ final class CSLManager {
     private var activeDownloadTasks: [String: Task<Void, Never>] = [:]
     
     init() {
-        if UserDefaults.standard.object(forKey: autoCheckCSLKey) == nil {
+        if UserDefaults.standard.object(forKey: .autoCheckCSLUpdates) == nil {
             self.automaticallyCheckCSLUpdates = true
         } else {
-            self.automaticallyCheckCSLUpdates = UserDefaults.standard.bool(forKey: autoCheckCSLKey)
+            self.automaticallyCheckCSLUpdates = UserDefaults.standard.bool(forKey: .autoCheckCSLUpdates)
         }
     }
     
@@ -782,7 +781,7 @@ final class CSLManager {
                 }
                 
                 // If XP12 lighting is enabled, apply it automatically to the newly updated package
-                if UserDefaults.standard.bool(forKey: "EnableCSLXP12Lights") {
+                if UserDefaults.standard.bool(forKey: .enableCSLXP12Lights) {
                     let pkgDir = folderURL.appendingPathComponent(pkgName)
                     CSLLightsUpdater.shared.processPackage(packageURL: pkgDir, flashingBeacons: true) { [weak self] msg in
                         Task { @MainActor in

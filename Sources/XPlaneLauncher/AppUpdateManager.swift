@@ -187,11 +187,6 @@ public struct AppRelease: Codable, Identifiable, Hashable, Sendable {
 final class AppUpdateManager {
     private let defaults = UserDefaults.standard
 
-    private let autoCheckKey = "AppUpdateAutoCheckOnLaunch"
-    private let includePrereleasesKey = "AppUpdateIncludePrereleases"
-    private let lastCheckDateKey = "AppUpdateLastCheckDate"
-    private let skippedVersionKey = "AppUpdateSkippedVersion"
-
     var isChecking: Bool = false
     var isUpdateAvailable: Bool = false
     var latestRelease: AppRelease? = nil
@@ -202,37 +197,37 @@ final class AppUpdateManager {
 
     var automaticallyCheckOnLaunch: Bool {
         didSet {
-            defaults.set(automaticallyCheckOnLaunch, forKey: autoCheckKey)
+            defaults.set(automaticallyCheckOnLaunch, forKey: .appUpdateAutoCheckOnLaunch)
         }
     }
 
     var includePrereleases: Bool {
         didSet {
-            defaults.set(includePrereleases, forKey: includePrereleasesKey)
+            defaults.set(includePrereleases, forKey: .appUpdateIncludePrereleases)
         }
     }
 
     var skippedVersion: String? {
         didSet {
             if let version = skippedVersion {
-                defaults.set(version, forKey: skippedVersionKey)
+                defaults.set(version, forKey: .appUpdateSkippedVersion)
             } else {
-                defaults.removeObject(forKey: skippedVersionKey)
+                defaults.removeObject(forKey: .appUpdateSkippedVersion)
             }
         }
     }
 
     init() {
-        if defaults.object(forKey: autoCheckKey) == nil {
+        if defaults.object(forKey: .appUpdateAutoCheckOnLaunch) == nil {
             self.automaticallyCheckOnLaunch = true
         } else {
-            self.automaticallyCheckOnLaunch = defaults.bool(forKey: autoCheckKey)
+            self.automaticallyCheckOnLaunch = defaults.bool(forKey: .appUpdateAutoCheckOnLaunch)
         }
 
-        self.includePrereleases = defaults.bool(forKey: includePrereleasesKey)
-        self.skippedVersion = defaults.string(forKey: skippedVersionKey)
+        self.includePrereleases = defaults.bool(forKey: .appUpdateIncludePrereleases)
+        self.skippedVersion = defaults.string(forKey: .appUpdateSkippedVersion)
 
-        if let savedDate = defaults.object(forKey: lastCheckDateKey) as? Date {
+        if let savedDate = defaults.object(forKey: .appUpdateLastCheckDate) as? Date {
             self.lastCheckDate = savedDate
         }
     }
@@ -265,7 +260,7 @@ final class AppUpdateManager {
 
                 let now = Date()
                 self.lastCheckDate = now
-                self.defaults.set(now, forKey: self.lastCheckDateKey)
+                self.defaults.set(now, forKey: .appUpdateLastCheckDate)
 
                 let currentVersionStr = AppInfo.version.trimmingCharacters(in: .whitespacesAndNewlines)
                 let currentSemVer = SemanticVersion(string: currentVersionStr)
