@@ -113,40 +113,8 @@ jobs:
 
       - name: Generate Changelog
         run: |
-          if [ "$IS_DRAFT" = "true" ]; then
-            # Get previous tag
-            PREVIOUS_TAG=$(git tag --sort=-version:refname | head -n 1 || true)
-            CURRENT_TAG="HEAD"
-
-            echo "# Draft Release" > RELEASE_CHANGELOG.md
-            echo "" >> RELEASE_CHANGELOG.md
-            echo "This is a rolling draft release generated from the latest commit on main." >> RELEASE_CHANGELOG.md
-            echo "" >> RELEASE_CHANGELOG.md
-            echo "## Changes since $PREVIOUS_TAG" >> RELEASE_CHANGELOG.md
-            echo "" >> RELEASE_CHANGELOG.md
-          elif [ "$IS_PRERELEASE" = "true" ]; then
-            # Pre-release: get immediately previous tag
-            PREVIOUS_TAG=$(git tag --sort=-version:refname | grep -v "^${TAG_NAME}$" | head -n 1 || true)
-            CURRENT_TAG=${TAG_NAME}
-
-            echo "# Changes in $CURRENT_TAG" > RELEASE_CHANGELOG.md
-            echo "" >> RELEASE_CHANGELOG.md
-          else
-            # Stable release: get previous non-prerelease tag (e.g. vX.Y.Z)
-            PREVIOUS_TAG=$(git tag --sort=-version:refname | grep -v "^${TAG_NAME}$" | grep -E '^v[0-9]+(\.[0-9]+)*$' | head -n 1 || true)
-            CURRENT_TAG=${TAG_NAME}
-            
-            echo "# Changes in $CURRENT_TAG" > RELEASE_CHANGELOG.md
-            echo "" >> RELEASE_CHANGELOG.md
-          fi
-
-          if [ -z "$PREVIOUS_TAG" ]; then
-            echo "No previous tag found, using initial commit"
-            PREVIOUS_TAG=$(git rev-list --max-parents=0 HEAD)
-          fi
-            
-          echo "Generating changelog from $PREVIOUS_TAG to $CURRENT_TAG"
-          git log --pretty=format:"- %s (%h)" $PREVIOUS_TAG..$CURRENT_TAG >> RELEASE_CHANGELOG.md
+          chmod +x generate_changelog.sh
+          ./generate_changelog.sh RELEASE_CHANGELOG.md
 
       - name: Delete Previous Draft Release
         env:
