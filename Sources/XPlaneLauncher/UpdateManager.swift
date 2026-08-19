@@ -259,9 +259,7 @@ class UpdateManager {
                         folderURL: addon.folderURL,
                         config: config,
                         logHandler: { [weak self] msg in
-                            Task { @MainActor in
-                                self?.log(msg)
-                            }
+                            self?.log(msg)
                         }
                     )
                     latestV = result.latestVersion
@@ -277,9 +275,7 @@ class UpdateManager {
                         folderURL: addon.folderURL,
                         config: config,
                         logHandler: { [weak self] msg in
-                            Task { @MainActor in
-                                self?.log(msg)
-                            }
+                            self?.log(msg)
                         }
                     )
                     latestV = result.latestVersion
@@ -324,15 +320,11 @@ class UpdateManager {
                         for: addon.folderURL,
                         config: config,
                         logHandler: { [weak self] msg in
-                            Task { @MainActor in
-                                self?.log(msg)
-                            }
+                            self?.log(msg)
                         },
                         progressHandler: { [weak self] message, progress in
-                            Task { @MainActor in
-                                if let i = self?.updatableAddons.firstIndex(where: { $0.id == addonId }) {
-                                    self?.updatableAddons[i].statusMessage = message
-                                }
+                            if let i = self?.updatableAddons.firstIndex(where: { $0.id == addonId }) {
+                                self?.updatableAddons[i].statusMessage = message
                             }
                         }
                     )
@@ -346,15 +338,11 @@ class UpdateManager {
                         for: addon.folderURL,
                         config: config,
                         logHandler: { [weak self] msg in
-                            Task { @MainActor in
-                                self?.log(msg)
-                            }
+                            self?.log(msg)
                         },
                         progressHandler: { [weak self] message, progress in
-                            Task { @MainActor in
-                                if let i = self?.updatableAddons.firstIndex(where: { $0.id == addonId }) {
-                                    self?.updatableAddons[i].statusMessage = message
-                                }
+                            if let i = self?.updatableAddons.firstIndex(where: { $0.id == addonId }) {
+                                self?.updatableAddons[i].statusMessage = message
                             }
                         }
                     )

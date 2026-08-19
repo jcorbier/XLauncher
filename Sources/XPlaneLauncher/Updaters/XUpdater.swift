@@ -293,7 +293,7 @@ final class XUpdaterService: Sendable {
         host: String,
         login: String,
         licenseKey: String,
-        logHandler: @Sendable @escaping (String) -> Void = { _ in }
+        logHandler: @Sendable @escaping @MainActor (String) -> Void = { _ in }
     ) async -> String? {
         var base = host.trimmingCharacters(in: .whitespaces)
         if !base.hasPrefix("http://") && !base.hasPrefix("https://") {
@@ -305,7 +305,7 @@ final class XUpdaterService: Sendable {
         let authURLString = base + "/api/v2/service/auth/consumers"
         guard let authURL = URL(string: authURLString) else { return nil }
 
-        logHandler("[X-Updater] Authenticating with server \(authURL.host ?? "") for user \(login)...")
+        await logHandler("[X-Updater] Authenticating with server \(authURL.host ?? "") for user \(login)...")
 
         var request = URLRequest(url: authURL)
         request.httpMethod = "POST"
@@ -322,14 +322,14 @@ final class XUpdaterService: Sendable {
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
-            logHandler("[X-Updater] Auth HTTP Response \(statusCode) (\(data.count) bytes)")
+            await logHandler("[X-Updater] Auth HTTP Response \(statusCode) (\(data.count) bytes)")
 
             if statusCode == 200, let token = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines), !token.isEmpty {
-                logHandler("[X-Updater] Successfully authenticated with X-Updater server.")
+                await logHandler("[X-Updater] Successfully authenticated with X-Updater server.")
                 return token
             }
         } catch {
-            logHandler("[X-Updater] Authentication request error: \(error.localizedDescription)")
+            await logHandler("[X-Updater] Authentication request error: \(error.localizedDescription)")
         }
 
         return nil
@@ -339,7 +339,7 @@ final class XUpdaterService: Sendable {
         filesURLString: String,
         since: Int? = nil,
         token: String,
-        logHandler: @Sendable @escaping (String) -> Void = { _ in }
+        logHandler: @Sendable @escaping @MainActor (String) -> Void = { _ in }
     ) async throws -> [XUpdaterFileItem] {
         var fullURLString = filesURLString
         if !fullURLString.hasPrefix("http://") && !fullURLString.hasPrefix("https://") {
@@ -360,7 +360,7 @@ final class XUpdaterService: Sendable {
 
         let (data, response) = try await URLSession.shared.data(for: request)
         let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
-        logHandler("[X-Updater] File list HTTP Response \(statusCode) (\(data.count) bytes)")
+        await logHandler("[X-Updater] File list HTTP Response \(statusCode) (\(data.count) bytes)")
 
         guard statusCode == 200,
               let jsonArray = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] else {
@@ -393,13 +393,13 @@ final class XUpdaterService: Sendable {
             ))
         }
 
-        logHandler("[X-Updater] Received \(items.count) files in update manifest.")
+        await logHandler("[X-Updater] Received \(items.count) files in update manifest.")
         return items
     }
 
     func checkRemoteVersion(
         config: XUpdaterConfig,
-        logHandler: @Sendable @escaping (String) -> Void = { _ in }
+        logHandler: @Sendable @escaping @MainActor (String) -> Void = { _ in }
     ) async throws -> (version: String?, snapshotNum: Int?, files: [XUpdaterFileItem]) {
         let host = config.remoteURL ?? Self.defaultXUpdaterHost
 
@@ -409,7 +409,7 @@ final class XUpdaterService: Sendable {
         }
 
         guard let token = authToken else {
-            logHandler("[X-Updater] Could not acquire authentication token for \(config.name)")
+            await logHandler("[X-Updater] Could not acquire authentication token for \(config.name)")
             return (nil, nil, [])
         }
 
@@ -426,7 +426,7 @@ final class XUpdaterService: Sendable {
             throw URLError(.badURL)
         }
 
-        logHandler("[X-Updater] Querying product updates from \(updatesURL.absoluteString)...")
+        await logHandler("[X-Updater] Querying product updates from \(updatesURL.absoluteString)...")
         var request = URLRequest(url: updatesURL)
         request.httpMethod = "GET"
         request.setValue("X-Updater-Java-Client/2.0", forHTTPHeaderField: "User-Agent")
@@ -436,10 +436,10 @@ final class XUpdaterService: Sendable {
 
         let (data, response) = try await URLSession.shared.data(for: request)
         let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
-        logHandler("[X-Updater] Updates API HTTP Response \(statusCode) (\(data.count) bytes)")
+        await logHandler("[X-Updater] Updates API HTTP Response \(statusCode) (\(data.count) bytes)")
 
         guard statusCode == 200 else {
-            logHandler("[X-Updater] Updates API returned non-200 status: \(statusCode)")
+            await logHandler("[X-Updater] Updates API returned non-200 status: \(statusCode)")
             return (nil, nil, [])
         }
 
@@ -457,7 +457,7 @@ final class XUpdaterService: Sendable {
         }
 
         guard !productList.isEmpty else {
-            logHandler("[X-Updater] Failed to parse product updates JSON")
+            await logHandler("[X-Updater] Failed to parse product updates JSON")
             return (nil, nil, [])
         }
 
@@ -478,12 +478,12 @@ final class XUpdaterService: Sendable {
         }
 
         guard let product = matchedProduct else {
-            logHandler("[X-Updater] No matching product found in account.")
+            await logHandler("[X-Updater] No matching product found in account.")
             return (nil, nil, [])
         }
 
         let productName = product["name"] as? String ?? config.name
-        logHandler("[X-Updater] Matched remote product: '\(productName)' (ID: \(product["id"] as? String ?? "unknown"))")
+        await logHandler("[X-Updater] Matched remote product: '\(productName)' (ID: \(product["id"] as? String ?? "unknown"))")
 
         var latestVersion: String? = nil
         var remoteSnapshotNum: Int? = nil
@@ -527,7 +527,7 @@ final class XUpdaterService: Sendable {
             }
         }
 
-        logHandler("[X-Updater] Detected remote version: \(latestVersion ?? "unknown") (Snapshot: \(remoteSnapshotNum.map(String.init) ?? "none"))")
+        await logHandler("[X-Updater] Detected remote version: \(latestVersion ?? "unknown") (Snapshot: \(remoteSnapshotNum.map(String.init) ?? "none"))")
 
         guard let filesHref = filesURLString else {
             return (latestVersion, remoteSnapshotNum, [])
@@ -601,7 +601,7 @@ final class XUpdaterService: Sendable {
     func checkAddonStatus(
         folderURL: URL,
         config: XUpdaterConfig,
-        logHandler: @Sendable @escaping (String) -> Void = { _ in }
+        logHandler: @Sendable @escaping @MainActor (String) -> Void = { _ in }
     ) async throws -> (latestVersion: String?, isUpdateAvailable: Bool, statusMessage: String) {
         var activeConfig = config
         if (activeConfig.login == nil || activeConfig.licenseKey == nil || activeConfig.snapshotNum == nil),
@@ -610,11 +610,11 @@ final class XUpdaterService: Sendable {
             activeConfig = fullConfig
         }
 
-        logHandler("[X-Updater] Checking '\(activeConfig.name)' (Local: \(activeConfig.version ?? "none"), Snapshot: \(activeConfig.snapshotNum.map(String.init) ?? "none"))")
+        await logHandler("[X-Updater] Checking '\(activeConfig.name)' (Local: \(activeConfig.version ?? "none"), Snapshot: \(activeConfig.snapshotNum.map(String.init) ?? "none"))")
         if let user = activeConfig.login {
-            logHandler("[X-Updater] User: \(user)")
+            await logHandler("[X-Updater] User: \(user)")
         } else {
-            logHandler("[X-Updater] Warning: No user credentials found for \(activeConfig.name)")
+            await logHandler("[X-Updater] Warning: No user credentials found for \(activeConfig.name)")
         }
 
         do {
@@ -622,7 +622,7 @@ final class XUpdaterService: Sendable {
             let latestVersion = remoteVersion ?? activeConfig.version
 
             if files.isEmpty && remoteVersion == nil {
-                logHandler("[X-Updater] No remote manifest returned; assuming \(activeConfig.name) is up to date.")
+                await logHandler("[X-Updater] No remote manifest returned; assuming \(activeConfig.name) is up to date.")
                 return (activeConfig.version, false, "Up to date")
             }
 
@@ -637,7 +637,7 @@ final class XUpdaterService: Sendable {
                     // For files marked to be deleted: only count if currently present locally
                     if fileManager.fileExists(atPath: localFileURL.path) {
                         deleteCount += 1
-                        logHandler("[X-Updater] Deprecated file to delete: \(item.path)")
+                        await logHandler("[X-Updater] Deprecated file to delete: \(item.path)")
                     }
                     continue
                 }
@@ -649,7 +649,7 @@ final class XUpdaterService: Sendable {
                     if !isDDSConversion, let remoteMD5 = item.md5?.lowercased(), !remoteMD5.isEmpty {
                         if let localMD5 = computeMD5(of: fileURL)?.lowercased(), localMD5 != remoteMD5 {
                             modifiedCount += 1
-                            logHandler("[X-Updater] Modified file: \(item.path) (local: \(localMD5), remote: \(remoteMD5))")
+                            await logHandler("[X-Updater] Modified file: \(item.path) (local: \(localMD5), remote: \(remoteMD5))")
                         }
                     }
                 } else if item.size == 0 && item.path.contains("marker") {
@@ -657,7 +657,7 @@ final class XUpdaterService: Sendable {
                     continue
                 } else {
                     missingCount += 1
-                    logHandler("[X-Updater] Missing file: \(item.path)")
+                    await logHandler("[X-Updater] Missing file: \(item.path)")
                 }
             }
 
@@ -673,7 +673,7 @@ final class XUpdaterService: Sendable {
                     } else {
                         statusMessage = "Update available (\(rVersion))"
                     }
-                    logHandler("[X-Updater] Update available: Local '\(activeConfig.version ?? "none")' vs Remote '\(rVersion)'")
+                    await logHandler("[X-Updater] Update available: Local '\(activeConfig.version ?? "none")' vs Remote '\(rVersion)'")
                 } else if totalChanges > 0 {
                     if missingCount > 0 && modifiedCount == 0 {
                         statusMessage = "Needs repair (\(missingCount) missing file\(missingCount > 1 ? "s" : ""))"
@@ -682,17 +682,17 @@ final class XUpdaterService: Sendable {
                     } else {
                         statusMessage = "Needs repair (\(totalChanges) changed files)"
                     }
-                    logHandler("[X-Updater] \(totalChanges) files modified, missing, or deprecated locally")
+                    await logHandler("[X-Updater] \(totalChanges) files modified, missing, or deprecated locally")
                 } else {
                     statusMessage = "Update available"
                 }
             } else {
-                logHandler("[X-Updater] \(activeConfig.name) is up to date.")
+                await logHandler("[X-Updater] \(activeConfig.name) is up to date.")
             }
 
             return (latestVersion, isUpdateAvailable, statusMessage)
         } catch {
-            logHandler("[X-Updater] Error checking remote endpoint for \(activeConfig.name): \(error.localizedDescription)")
+            await logHandler("[X-Updater] Error checking remote endpoint for \(activeConfig.name): \(error.localizedDescription)")
             return (activeConfig.version, false, "Check failed")
         }
     }
@@ -700,8 +700,8 @@ final class XUpdaterService: Sendable {
     func downloadAndApplyUpdates(
         for addonFolder: URL,
         config: XUpdaterConfig,
-        logHandler: @Sendable @escaping (String) -> Void = { _ in },
-        progressHandler: @Sendable @escaping (String, Double) -> Void
+        logHandler: @Sendable @escaping @MainActor (String) -> Void = { _ in },
+        progressHandler: @Sendable @escaping @MainActor (String, Double) -> Void
     ) async throws {
         var activeConfig = config
         if (activeConfig.login == nil || activeConfig.licenseKey == nil || activeConfig.snapshotNum == nil),
@@ -710,12 +710,12 @@ final class XUpdaterService: Sendable {
             activeConfig = fullConfig
         }
 
-        logHandler("[X-Updater] Starting update / repair for \(activeConfig.name)...")
+        await logHandler("[X-Updater] Starting update / repair for \(activeConfig.name)...")
         let (remoteVersion, remoteSnapshotNum, files) = try await checkRemoteVersion(config: activeConfig, logHandler: logHandler)
 
         if files.isEmpty {
-            logHandler("[X-Updater] No files returned in manifest.")
-            progressHandler("Up to date", 1.0)
+            await logHandler("[X-Updater] No files returned in manifest.")
+            await progressHandler("Up to date", 1.0)
             return
         }
 
@@ -748,37 +748,37 @@ final class XUpdaterService: Sendable {
 
         let totalActions = filesToDelete.count + filesToDownload.count
         if totalActions == 0 {
-            logHandler("[X-Updater] All files match expected hashes. Addon is already intact.")
-            progressHandler("Up to date", 1.0)
+            await logHandler("[X-Updater] All files match expected hashes. Addon is already intact.")
+            await progressHandler("Up to date", 1.0)
             return
         }
 
-        logHandler("[X-Updater] Processing \(totalActions) files (\(filesToDownload.count) to download, \(filesToDelete.count) to remove)...")
+        await logHandler("[X-Updater] Processing \(totalActions) files (\(filesToDownload.count) to download, \(filesToDelete.count) to remove)...")
         var currentAction = 0
 
         for item in filesToDelete {
             currentAction += 1
             let progress = Double(currentAction) / Double(totalActions)
-            progressHandler("Removing (\(currentAction)/\(totalActions)): \(item.path)", progress)
+            await progressHandler("Removing (\(currentAction)/\(totalActions)): \(item.path)", progress)
             let destinationURL = addonFolder.appendingPathComponent(item.path)
             if fileManager.fileExists(atPath: destinationURL.path) {
                 try? fileManager.removeItem(at: destinationURL)
-                logHandler("[X-Updater] Removed deprecated file \(item.path)")
+                await logHandler("[X-Updater] Removed deprecated file \(item.path)")
             }
         }
 
         for item in filesToDownload {
             currentAction += 1
             let progress = Double(currentAction) / Double(totalActions)
-            progressHandler("Downloading (\(currentAction)/\(totalActions)): \(item.path)", progress)
+            await progressHandler("Downloading (\(currentAction)/\(totalActions)): \(item.path)", progress)
 
             guard let downloadURLString = item.url ?? activeConfig.remoteURL,
                   let downloadURL = URL(string: downloadURLString) else { continue }
 
-            logHandler("[X-Updater] Fetching \(downloadURL.absoluteString)...")
+            await logHandler("[X-Updater] Fetching \(downloadURL.absoluteString)...")
             let (fileData, response) = try await URLSession.shared.data(from: downloadURL)
             guard (response as? HTTPURLResponse)?.statusCode == 200 else {
-                logHandler("[X-Updater] Failed download for \(item.path) (HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0))")
+                await logHandler("[X-Updater] Failed download for \(item.path) (HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0))")
                 continue
             }
 
@@ -791,7 +791,7 @@ final class XUpdaterService: Sendable {
             }
             let finalData = decompressGzip(data: fileData) ?? fileData
             try finalData.write(to: destinationURL, options: Data.WritingOptions.atomic)
-            logHandler("[X-Updater] Repaired/Updated \(item.path) (\(finalData.count) bytes)")
+            await logHandler("[X-Updater] Repaired/Updated \(item.path) (\(finalData.count) bytes)")
         }
 
         // Update snapshot_num in local settings.ini if available
@@ -799,8 +799,8 @@ final class XUpdaterService: Sendable {
             updateLocalSettings(in: addonFolder, newSnapshotNum: newSnapshot, newVersion: remoteVersion)
         }
 
-        logHandler("[X-Updater] Update / Repair completed successfully.")
-        progressHandler("Up to date", 1.0)
+        await logHandler("[X-Updater] Update / Repair completed successfully.")
+        await progressHandler("Up to date", 1.0)
     }
 
     private func updateLocalSettings(in addonFolder: URL, newSnapshotNum: Int, newVersion: String?) {

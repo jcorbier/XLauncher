@@ -498,7 +498,7 @@ final class CSLLightsUpdater: Sendable {
 
     // MARK: - Package Processing & Reverting
 
-    func processPackage(packageURL: URL, flashingBeacons: Bool = true, onLog: (@Sendable (String) -> Void)? = nil) {
+    func processPackage(packageURL: URL, flashingBeacons: Bool = true, onLog: ((String) -> Void)? = nil) {
         let xsbFile = packageURL.appendingPathComponent("xsb_aircraft.txt")
         guard fileManager.fileExists(atPath: xsbFile.path) else { return }
 
@@ -527,7 +527,7 @@ final class CSLLightsUpdater: Sendable {
         }
     }
 
-    func revertPackage(packageURL: URL, onLog: (@Sendable (String) -> Void)? = nil) {
+    func revertPackage(packageURL: URL, onLog: ((String) -> Void)? = nil) {
         removeXPMP2Files(in: packageURL)
 
         guard let enumerator = fileManager.enumerator(at: packageURL, includingPropertiesForKeys: nil) else { return }

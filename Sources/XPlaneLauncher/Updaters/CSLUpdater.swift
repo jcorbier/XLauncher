@@ -351,8 +351,8 @@ final class CSLUpdaterService: Sendable {
         package: CSLPackage,
         targetFolder: URL,
         serverBaseURL: String = defaultServerBaseURL,
-        onProgress: @Sendable @escaping (Double, Int64, String) -> Void,
-        onLog: @Sendable @escaping (String) -> Void,
+        onProgress: @Sendable @escaping @MainActor (Double, Int64, String) -> Void,
+        onLog: @Sendable @escaping @MainActor (String) -> Void,
         isCancelled: @Sendable @escaping () -> Bool
     ) async throws {
         let pkgDir = targetFolder.appendingPathComponent(package.name)
@@ -382,20 +382,20 @@ final class CSLUpdaterService: Sendable {
         }
 
         if filesToDownload.isEmpty {
-            onProgress(1.0, 0, "Complete")
+            await onProgress(1.0, 0, "Complete")
             return
         }
 
         let totalFiles = filesToDownload.count
         let totalBytes = filesToDownload.reduce(Int64(0)) { $0 + $1.sizeBytes }
-        onLog("[CSL] Starting download of \(package.name): \(totalFiles) files (\(ByteCountFormatter.string(fromByteCount: totalBytes, countStyle: .file)))")
+        await onLog("[CSL] Starting download of \(package.name): \(totalFiles) files (\(ByteCountFormatter.string(fromByteCount: totalBytes, countStyle: .file)))")
 
         var downloadedBytes: Int64 = 0
         let trimmedServer = serverBaseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
 
         for (index, file) in filesToDownload.enumerated() {
             if isCancelled() {
-                onLog("[CSL] Download cancelled for \(package.name)")
+                await onLog("[CSL] Download cancelled for \(package.name)")
                 throw CancellationError()
             }
 
@@ -407,7 +407,7 @@ final class CSLUpdaterService: Sendable {
             }
 
             let displayFileName = (relPath as NSString).lastPathComponent
-            onProgress(
+            await onProgress(
                 Double(downloadedBytes) / Double(max(totalBytes, 1)),
                 downloadedBytes,
                 "(\(index + 1)/\(totalFiles)) \(displayFileName)"
@@ -419,7 +419,7 @@ final class CSLUpdaterService: Sendable {
             }
             let fullURLString = "\(trimmedServer)/\(CSLUpdaterService.packageBaseRelativePath)/\(pathComponents.joined(separator: "/"))"
             guard let url = URL(string: fullURLString) else {
-                onLog("[CSL] Invalid URL for \(file.path)")
+                await onLog("[CSL] Invalid URL for \(file.path)")
                 continue
             }
 
@@ -458,7 +458,7 @@ final class CSLUpdaterService: Sendable {
                     if attempt < 3 {
                         try? await Task.sleep(nanoseconds: UInt64(attempt) * 500_000_000)
                     } else {
-                        onLog("[CSL] Failed downloading \(relPath): \(error.localizedDescription)")
+                        await onLog("[CSL] Failed downloading \(relPath): \(error.localizedDescription)")
                         throw error
                     }
                 }
@@ -469,8 +469,8 @@ final class CSLUpdaterService: Sendable {
             }
         }
 
-        onProgress(1.0, totalBytes, "Up to date")
-        onLog("[CSL] Successfully installed/updated \(package.name)")
+        await onProgress(1.0, totalBytes, "Up to date")
+        await onLog("[CSL] Successfully installed/updated \(package.name)")
     }
 }
 
@@ -753,18 +753,14 @@ final class CSLManager {
                     package: pkgToUpdate,
                     targetFolder: folderURL,
                     onProgress: { [weak self] progress, bytes, currentFile in
-                        Task { @MainActor in
-                            guard let self = self, let i = self.packages.firstIndex(where: { $0.name == pkgName }) else { return }
-                            self.packages[i].downloadProgress = progress
-                            self.packages[i].downloadedBytes = bytes
-                            self.packages[i].currentDownloadFile = currentFile
-                            self.packages[i].statusMessage = "Downloading \(currentFile)"
-                        }
+                        guard let self = self, let i = self.packages.firstIndex(where: { $0.name == pkgName }) else { return }
+                        self.packages[i].downloadProgress = progress
+                        self.packages[i].downloadedBytes = bytes
+                        self.packages[i].currentDownloadFile = currentFile
+                        self.packages[i].statusMessage = "Downloading \(currentFile)"
                     },
                     onLog: { [weak self] msg in
-                        Task { @MainActor in
-                            self?.log(msg)
-                        }
+                        self?.log(msg)
                     },
                     isCancelled: {
                         Task.isCancelled
@@ -784,9 +780,7 @@ final class CSLManager {
                 if UserDefaults.standard.bool(forKey: .enableCSLXP12Lights) {
                     let pkgDir = folderURL.appendingPathComponent(pkgName)
                     CSLLightsUpdater.shared.processPackage(packageURL: pkgDir, flashingBeacons: true) { [weak self] msg in
-                        Task { @MainActor in
-                            self?.log(msg)
-                        }
+                        self?.log(msg)
                     }
                 }
 
@@ -884,9 +878,7 @@ final class CSLManager {
             for pkg in installedPackages {
                 let pkgDir = folderURL.appendingPathComponent(pkg.name)
                 CSLLightsUpdater.shared.processPackage(packageURL: pkgDir, flashingBeacons: flashingBeacons) { [weak self] msg in
-                    Task { @MainActor in
-                        self?.log(msg)
-                    }
+                    self?.log(msg)
                 }
             }
             self.isApplyingLights = false
@@ -910,9 +902,7 @@ final class CSLManager {
             for pkg in installedPackages {
                 let pkgDir = folderURL.appendingPathComponent(pkg.name)
                 CSLLightsUpdater.shared.revertPackage(packageURL: pkgDir) { [weak self] msg in
-                    Task { @MainActor in
-                        self?.log(msg)
-                    }
+                    self?.log(msg)
                 }
             }
             self.isApplyingLights = false
