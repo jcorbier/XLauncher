@@ -693,7 +693,7 @@ final class XUpdaterService: Sendable {
             return (latestVersion, isUpdateAvailable, statusMessage)
         } catch {
             logHandler("[X-Updater] Error checking remote endpoint for \(activeConfig.name): \(error.localizedDescription)")
-            return (activeConfig.version, false, "Up to date")
+            return (activeConfig.version, false, "Check failed")
         }
     }
     

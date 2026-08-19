@@ -300,7 +300,8 @@ class UpdateManager {
                 self.log("[UpdateManager] Error checking \(addon.name): \(error.localizedDescription)")
                 if let i = self.updatableAddons.firstIndex(where: { $0.id == addonId }) {
                     self.updatableAddons[i].isChecking = false
-                    self.updatableAddons[i].statusMessage = "Up to date"
+                    self.updatableAddons[i].isUpdateAvailable = false
+                    self.updatableAddons[i].statusMessage = "Check failed"
                 }
             }
         }
