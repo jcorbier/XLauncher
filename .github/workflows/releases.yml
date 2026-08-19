@@ -84,8 +84,8 @@ jobs:
       - name: Create App Bundle
         run: |
           chmod +x package.sh
-          # Run package script to create structure
-          ./package.sh
+          # Run package script to create structure without rebuilding single arch
+          ./package.sh --skip-build
           
           # Overwrite with universal binary
           cp .build/universal/XPlaneLauncher XLauncher.app/Contents/MacOS/XLauncher

@@ -5,9 +5,20 @@ APP_NAME="XLauncher"
 SOURCE_NAME="XPlaneLauncher"
 BUILD_DIR=".build/release"
 APP_BUNDLE="${APP_NAME}.app"
+SKIP_BUILD=false
 
-echo "Building Release configuration..."
-swift build -c release
+for arg in "$@"; do
+    case $arg in
+        --skip-build)
+            SKIP_BUILD=true
+            ;;
+    esac
+done
+
+if [ "$SKIP_BUILD" = false ]; then
+    echo "Building Release configuration..."
+    swift build -c release
+fi
 
 echo "Creating App Bundle structure..."
 rm -rf "$APP_BUNDLE"
@@ -38,8 +49,10 @@ cat <<EOF > "$APP_BUNDLE/Contents/Info.plist"
 </plist>
 EOF
 
-echo "Copying binary..."
-cp "$BUILD_DIR/$SOURCE_NAME" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
+if [ -f "$BUILD_DIR/$SOURCE_NAME" ]; then
+    echo "Copying binary..."
+    cp "$BUILD_DIR/$SOURCE_NAME" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
+fi
 
 echo "Copying resources..."
 if [ -f "XLauncher.icns" ]; then
