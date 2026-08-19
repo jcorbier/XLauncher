@@ -76,6 +76,15 @@ class UpdateManager {
         case skunkcrafts = "SkunkCrafts"
         case xUpdater = "X-Updater"
         var id: String { rawValue }
+
+        var updater: any AddonUpdater {
+            switch self {
+            case .skunkcrafts:
+                return SkunkCraftsUpdaterService.shared
+            case .xUpdater:
+                return XUpdaterService.shared
+            }
+        }
     }
 
     enum AddonCategory: String, Codable, Identifiable {
@@ -242,52 +251,19 @@ class UpdateManager {
             return
         }
 
+        let updater = addon.updaterType.updater
+
         Task { @MainActor in
             do {
-                var latestV: String? = nil
-                var isAvailable = false
-                var statusMsg = "Up to date"
-
-                if addon.updaterType == .skunkcrafts {
-                    let config = SkunkCraftsConfig(
-                        name: addon.name,
-                        version: addon.currentVersion,
-                        remoteManifestURL: addon.remoteManifestURL,
-                        baseURL: nil
-                    )
-                    let result = try await SkunkCraftsUpdaterService.shared.checkAddonStatus(
-                        folderURL: addon.folderURL,
-                        config: config,
-                        logHandler: { [weak self] msg in
-                            self?.log(msg)
-                        }
-                    )
-                    latestV = result.latestVersion
-                    isAvailable = result.isUpdateAvailable
-                    statusMsg = result.statusMessage
-                } else if addon.updaterType == .xUpdater {
-                    let config = XUpdaterConfig(
-                        name: addon.name,
-                        version: addon.currentVersion,
-                        remoteURL: addon.remoteManifestURL
-                    )
-                    let result = try await XUpdaterService.shared.checkAddonStatus(
-                        folderURL: addon.folderURL,
-                        config: config,
-                        logHandler: { [weak self] msg in
-                            self?.log(msg)
-                        }
-                    )
-                    latestV = result.latestVersion
-                    isAvailable = result.isUpdateAvailable
-                    statusMsg = result.statusMessage
+                let result = try await updater.checkStatus(for: addon) { [weak self] msg in
+                    self?.log(msg)
                 }
 
                 if let i = self.updatableAddons.firstIndex(where: { $0.id == addonId }) {
                     self.updatableAddons[i].isChecking = false
-                    self.updatableAddons[i].latestVersion = latestV
-                    self.updatableAddons[i].isUpdateAvailable = isAvailable
-                    self.updatableAddons[i].statusMessage = statusMsg
+                    self.updatableAddons[i].latestVersion = result.latestVersion
+                    self.updatableAddons[i].isUpdateAvailable = result.isUpdateAvailable
+                    self.updatableAddons[i].statusMessage = result.statusMessage
                 }
             } catch {
                 self.log("[UpdateManager] Error checking \(addon.name): \(error.localizedDescription)")
@@ -307,46 +283,21 @@ class UpdateManager {
         updatableAddons[index].statusMessage = "Updating..."
 
         let addonId = addon.id
+        let updater = addon.updaterType.updater
+
         Task { @MainActor in
             do {
-                if addon.updaterType == .skunkcrafts {
-                    let config = SkunkCraftsConfig(
-                        name: addon.name,
-                        version: addon.latestVersion ?? addon.currentVersion,
-                        remoteManifestURL: addon.remoteManifestURL,
-                        baseURL: nil
-                    )
-                    try await SkunkCraftsUpdaterService.shared.downloadAndApplyUpdates(
-                        for: addon.folderURL,
-                        config: config,
-                        logHandler: { [weak self] msg in
-                            self?.log(msg)
-                        },
-                        progressHandler: { [weak self] message, progress in
-                            if let i = self?.updatableAddons.firstIndex(where: { $0.id == addonId }) {
-                                self?.updatableAddons[i].statusMessage = message
-                            }
+                try await updater.applyUpdates(
+                    for: addon,
+                    logHandler: { [weak self] msg in
+                        self?.log(msg)
+                    },
+                    progressHandler: { [weak self] message, progress in
+                        if let i = self?.updatableAddons.firstIndex(where: { $0.id == addonId }) {
+                            self?.updatableAddons[i].statusMessage = message
                         }
-                    )
-                } else if addon.updaterType == .xUpdater {
-                    let config = XUpdaterConfig(
-                        name: addon.name,
-                        version: addon.latestVersion ?? addon.currentVersion,
-                        remoteURL: addon.remoteManifestURL
-                    )
-                    try await XUpdaterService.shared.downloadAndApplyUpdates(
-                        for: addon.folderURL,
-                        config: config,
-                        logHandler: { [weak self] msg in
-                            self?.log(msg)
-                        },
-                        progressHandler: { [weak self] message, progress in
-                            if let i = self?.updatableAddons.firstIndex(where: { $0.id == addonId }) {
-                                self?.updatableAddons[i].statusMessage = message
-                            }
-                        }
-                    )
-                }
+                    }
+                )
 
                 if let i = self.updatableAddons.firstIndex(where: { $0.id == addonId }) {
                     if let latest = self.updatableAddons[i].latestVersion {

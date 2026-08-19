@@ -400,3 +400,44 @@ final class SkunkCraftsUpdaterService: Sendable {
         await progressHandler("Up to date", 1.0)
     }
 }
+
+// MARK: - AddonUpdater Conformance
+
+extension SkunkCraftsUpdaterService: AddonUpdater {
+    func checkStatus(
+        for addon: UpdateManager.UpdatableAddon,
+        logHandler: @Sendable @escaping @MainActor (String) -> Void = { _ in }
+    ) async throws -> AddonUpdateCheckResult {
+        let config = SkunkCraftsConfig(
+            name: addon.name,
+            version: addon.currentVersion,
+            remoteManifestURL: addon.remoteManifestURL,
+            baseURL: nil
+        )
+        let result = try await checkAddonStatus(folderURL: addon.folderURL, config: config, logHandler: logHandler)
+        return AddonUpdateCheckResult(
+            latestVersion: result.latestVersion,
+            isUpdateAvailable: result.isUpdateAvailable,
+            statusMessage: result.statusMessage
+        )
+    }
+
+    func applyUpdates(
+        for addon: UpdateManager.UpdatableAddon,
+        logHandler: @Sendable @escaping @MainActor (String) -> Void = { _ in },
+        progressHandler: @Sendable @escaping @MainActor (String, Double) -> Void
+    ) async throws {
+        let config = SkunkCraftsConfig(
+            name: addon.name,
+            version: addon.latestVersion ?? addon.currentVersion,
+            remoteManifestURL: addon.remoteManifestURL,
+            baseURL: nil
+        )
+        try await downloadAndApplyUpdates(
+            for: addon.folderURL,
+            config: config,
+            logHandler: logHandler,
+            progressHandler: progressHandler
+        )
+    }
+}

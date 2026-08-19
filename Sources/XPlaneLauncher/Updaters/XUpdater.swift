@@ -843,3 +843,42 @@ final class XUpdaterService: Sendable {
         }
     }
 }
+
+// MARK: - AddonUpdater Conformance
+
+extension XUpdaterService: AddonUpdater {
+    func checkStatus(
+        for addon: UpdateManager.UpdatableAddon,
+        logHandler: @Sendable @escaping @MainActor (String) -> Void = { _ in }
+    ) async throws -> AddonUpdateCheckResult {
+        let config = XUpdaterConfig(
+            name: addon.name,
+            version: addon.currentVersion,
+            remoteURL: addon.remoteManifestURL
+        )
+        let result = try await checkAddonStatus(folderURL: addon.folderURL, config: config, logHandler: logHandler)
+        return AddonUpdateCheckResult(
+            latestVersion: result.latestVersion,
+            isUpdateAvailable: result.isUpdateAvailable,
+            statusMessage: result.statusMessage
+        )
+    }
+
+    func applyUpdates(
+        for addon: UpdateManager.UpdatableAddon,
+        logHandler: @Sendable @escaping @MainActor (String) -> Void = { _ in },
+        progressHandler: @Sendable @escaping @MainActor (String, Double) -> Void
+    ) async throws {
+        let config = XUpdaterConfig(
+            name: addon.name,
+            version: addon.latestVersion ?? addon.currentVersion,
+            remoteURL: addon.remoteManifestURL
+        )
+        try await downloadAndApplyUpdates(
+            for: addon.folderURL,
+            config: config,
+            logHandler: logHandler,
+            progressHandler: progressHandler
+        )
+    }
+}
