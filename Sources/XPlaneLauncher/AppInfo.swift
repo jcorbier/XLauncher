@@ -27,15 +27,15 @@ enum AppInfo {
     static let author = "Jeremie Corbier"
     static let copyright = "Copyright © 2026 Jeremie Corbier"
     static let license = "MIT License"
-    
+
     static var version: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
     }
-    
+
     static var buildNumber: String {
         Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""
     }
-    
+
     static var displayVersion: String {
         let ver = version.trimmingCharacters(in: .whitespacesAndNewlines)
         if ver.isEmpty {
@@ -47,17 +47,17 @@ enum AppInfo {
         }
         return "Version \(ver)"
     }
-    
+
     static let githubURL = URL(string: "https://github.com/jcorbier/XLauncher")!
     static let releasesURL = URL(string: "https://github.com/jcorbier/XLauncher/releases")!
     static let latestReleaseAPIURL = URL(string: "https://api.github.com/repos/jcorbier/XLauncher/releases/latest")!
     static let allReleasesAPIURL = URL(string: "https://api.github.com/repos/jcorbier/XLauncher/releases")!
     static let issuesURL = URL(string: "https://github.com/jcorbier/XLauncher/issues")!
     static let authorURL = URL(string: "https://github.com/jcorbier")!
-    
+
     static var documentationURL: URL {
         let ver = version.trimmingCharacters(in: .whitespacesAndNewlines)
-        
+
         // If it's a tagged release (not empty and not a dev/draft build)
         if !ver.isEmpty && !ver.contains("draft") && !ver.contains("dev") && ver != "0.0.0" {
             let tag = ver.hasPrefix("v") ? ver : "v\(ver)"
@@ -65,10 +65,10 @@ enum AppInfo {
                 return url
             }
         }
-        
+
         return URL(string: "https://xlauncher.readthedocs.io/en/latest/")!
     }
-    
+
     static let licenseText = """
     Copyright (c) 2026 Jeremie Corbier
 

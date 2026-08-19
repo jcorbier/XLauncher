@@ -30,7 +30,7 @@ struct XPlaneLauncherApp: App {
     @State private var cslManager = CSLManager()
     @State private var appUpdateManager = AppUpdateManager()
     @State private var showWelcomeScreen = false
-    
+
     var body: some Scene {
         WindowGroup {
             ContentView(showWelcomeScreen: $showWelcomeScreen)

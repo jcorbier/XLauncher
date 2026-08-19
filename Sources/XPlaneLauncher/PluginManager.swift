@@ -105,20 +105,20 @@ class PluginManager {
         var key: String
         var value: String
     }
-    
+
     var scriptEnvironment: [ScriptEnvVar] = [] {
         didSet {
             saveScriptEnvironment()
         }
     }
-    
+
     // Profiles
     struct ProfileScript: Identifiable, Codable, Hashable {
         var id = UUID()
         var path: String
         var isEnabled: Bool
     }
-    
+
     struct PluginProfile: Identifiable, Codable, Hashable {
         var id = UUID()
         var name: String
@@ -159,14 +159,14 @@ class PluginManager {
             self.environmentVariables = try container.decodeIfPresent([ScriptEnvVar].self, forKey: .environmentVariables) ?? []
         }
     }
-    
+
     struct Aircraft: Identifiable, Equatable, Hashable {
         let id = UUID()
         let name: String
         var isEnabled: Bool
         let folderName: String
     }
-    
+
     struct LuaScript: Identifiable, Equatable, Hashable {
         let id = UUID()
         let name: String
@@ -174,17 +174,16 @@ class PluginManager {
         let folderName: String
         let isDirectory: Bool
     }
-    
+
     var profiles: [PluginProfile] = []
 
-    
     struct Plugin: Identifiable, Equatable {
         let id = UUID()
         let name: String
         var isEnabled: Bool
         let folderName: String // The actual folder name in managed plugins directory
     }
-    
+
     struct Scenery: Identifiable, Equatable, Hashable {
         let id = UUID()
         var name: String
@@ -197,29 +196,29 @@ class PluginManager {
             !folderName.hasPrefix("*")
         }
     }
-    
+
     private let fileManager = FileManager.default
     private let defaults = UserDefaults.standard
 
     private let kXPlaneCustomSceneryFileName = "scenery_packs.ini"
-    
+
     private var isApplyingProfile = false
-    
+
     struct SceneryGroup: Identifiable, Codable, Hashable {
         var id = UUID()
         var name: String
         var childFolderNames: [String] = []
         var isExpanded: Bool = true // UI state
     }
-    
+
     var sceneryGroups: [SceneryGroup] = [] {
         didSet {
             saveSceneryGroups()
         }
     }
-    
+
     var lastErrorMessage: String? = nil
-    
+
     init() {
         // Default Central Launcher Data Folder
         if let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
@@ -241,7 +240,7 @@ class PluginManager {
         if let data = defaults.data(forKey: .pluginProfiles),
            let savedProfiles = try? JSONDecoder().decode([PluginProfile].self, from: data) {
             self.profiles = savedProfiles
-            
+
             // Migration: Move shellScriptPath to scripts if needed
             for i in 0..<profiles.count {
                 if profiles[i].scripts.isEmpty,
@@ -251,14 +250,14 @@ class PluginManager {
                 }
             }
         }
-        
+
         if let savedPath = defaults.string(forKey: .xPlanePath) {
             // Verify it exists
             let url = URL(fileURLWithPath: savedPath)
             var isDir: ObjCBool = false
             if fileManager.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
                 self.xPlanePath = url
-                
+
                 // Validate preserved profile selection
                 if let savedIdString = defaults.string(forKey: .selectedProfileId),
                    let savedId = UUID(uuidString: savedIdString) {
@@ -272,29 +271,27 @@ class PluginManager {
                 }
             }
         }
-        
 
-        
         // Initial scan if paths are ready (xPlanePath is set above)
         scanPlugins()
         scanScenery()
         scanAircraft()
         scanLuaScripts()
-        
+
         if let data = defaults.data(forKey: .scriptEnvVars),
            let envData = try? JSONDecoder().decode([ScriptEnvVar].self, from: data) {
             self.scriptEnvironment = envData
         }
-        
+
         if let data = defaults.data(forKey: .sceneryGroups),
            let groups = try? JSONDecoder().decode([SceneryGroup].self, from: data) {
             self.sceneryGroups = groups
         }
-        
+
         self.enableCSLSupport = defaults.bool(forKey: .enableCSLSupport)
         self.enableCSLXP12Lights = defaults.bool(forKey: .enableCSLXP12Lights)
         self.hasCompletedWelcome = defaults.bool(forKey: .hasCompletedWelcome)
-        
+
         isLoading = false
     }
 
@@ -306,8 +303,7 @@ class PluginManager {
             try? fileManager.createDirectory(at: path, withIntermediateDirectories: true)
         }
     }
-    
-    
+
     var selectedProfileId: UUID? {
         didSet {
             if let id = selectedProfileId {
@@ -324,33 +320,33 @@ class PluginManager {
             }
         }
     }
-    
+
     private var isRestoringState = false
-    
+
     var isCurrentProfileModified: Bool {
         guard let selectedProfileId = selectedProfileId,
               let profile = profiles.first(where: { $0.id == selectedProfileId }) else {
             return false
         }
-        
+
         let currentEnabledPlugins = Set(plugins.filter { $0.isEnabled }.map { $0.folderName })
         let profileEnabledPlugins = Set(profile.pluginFolderNames)
-        
+
         let currentEnabledScenery = Set(scenery.filter { $0.isEnabled }.map { $0.folderName })
         let profileEnabledScenery = Set(profile.sceneryFolderNames)
-        
+
         let currentEnabledAircraft = Set(aircraft.filter { $0.isEnabled }.map { $0.folderName })
         let profileEnabledAircraft = Set(profile.aircraftFolderNames)
-        
+
         let currentEnabledLua = Set(luaScripts.filter { $0.isEnabled }.map { $0.folderName })
         let profileEnabledLua = Set(profile.luaScriptFolderNames)
-        
+
         let currentScripts = Set(activeScripts)
         let profileScripts = Set(profile.scripts)
-        
+
         let currentEnvVars = Set(activeEnvironmentVariables)
         let profileEnvVars = Set(profile.environmentVariables)
-        
+
         return currentEnabledPlugins != profileEnabledPlugins || currentEnabledScenery != profileEnabledScenery || currentEnabledAircraft != profileEnabledAircraft || currentEnabledLua != profileEnabledLua || currentScripts != profileScripts || currentEnvVars != profileEnvVars
     }
     func savePath() {
@@ -364,7 +360,7 @@ class PluginManager {
         }
 
     }
-    
+
     func saveScriptEnvironment() {
         if let data = try? JSONEncoder().encode(scriptEnvironment) {
             defaults.set(data, forKey: .scriptEnvVars)
@@ -376,17 +372,17 @@ class PluginManager {
             defaults.set(data, forKey: .sceneryGroups)
         }
     }
-    
+
     func scanPlugins() {
         guard let xPlanePath = xPlanePath,
               let pluginsURL = pluginsDataFolder else {
             plugins = []
             return
         }
-        
+
         // Define paths
         let pluginsURLTarget = xPlanePath.appendingPathComponent("Resources").appendingPathComponent("plugins")
-        
+
         // Check if directories exist
         var isDir: ObjCBool = false
         guard fileManager.fileExists(atPath: pluginsURL.path, isDirectory: &isDir), isDir.boolValue else {
@@ -394,97 +390,97 @@ class PluginManager {
             plugins = []
             return
         }
-        
+
         do {
             let contents = try fileManager.contentsOfDirectory(at: pluginsURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
-            
+
             // Filter only directories
             var newPlugins: [Plugin] = []
-            
+
             for folder in contents {
                 var isFolder: ObjCBool = false
                 if fileManager.fileExists(atPath: folder.path, isDirectory: &isFolder), isFolder.boolValue {
                     let folderName = folder.lastPathComponent
-                    
+
                     // Check if symlinked in 'plugins'
                     let targetLink = pluginsURLTarget.appendingPathComponent(folderName)
                     let isEnabled = fileManager.fileExists(atPath: targetLink.path)
-                    
+
                     newPlugins.append(Plugin(name: folderName, isEnabled: isEnabled, folderName: folderName))
                 }
             }
-            
+
             self.plugins = newPlugins.sorted { $0.name < $1.name }
-            
+
         } catch {
             print("Error scanning plugins: \(error)")
         }
     }
-    
+
     // MARK: - Aircraft Management
-    
+
     func scanAircraft() {
         guard let xPlanePath = xPlanePath,
               let aircraftFolder = aircraftDataFolder else {
             aircraft = []
             return
         }
-        
+
         let targetAircraftFolder = xPlanePath.appendingPathComponent("Aircraft")
-        
+
         var isDir: ObjCBool = false
         guard fileManager.fileExists(atPath: aircraftFolder.path, isDirectory: &isDir), isDir.boolValue else {
             aircraft = []
             return
         }
-        
+
         do {
             let contents = try fileManager.contentsOfDirectory(at: aircraftFolder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
             var newAircraft: [Aircraft] = []
-            
+
             for folder in contents {
                 var isFolder: ObjCBool = false
                 if fileManager.fileExists(atPath: folder.path, isDirectory: &isFolder), isFolder.boolValue {
                     let folderName = folder.lastPathComponent
                     let targetLink = targetAircraftFolder.appendingPathComponent(folderName)
                     let isEnabled = fileManager.fileExists(atPath: targetLink.path)
-                    
+
                     newAircraft.append(Aircraft(name: folderName, isEnabled: isEnabled, folderName: folderName))
                 }
             }
-            
+
             self.aircraft = newAircraft.sorted { $0.name < $1.name }
         } catch {
             print("Error scanning aircraft: \(error)")
         }
     }
-    
+
     // MARK: - FlyWithLua Script Management
-    
+
     func scanLuaScripts() {
         guard let luaScriptsFolder = luaScriptsDataFolder else {
             luaScripts = []
             return
         }
-        
+
         var isDir: ObjCBool = false
         guard fileManager.fileExists(atPath: luaScriptsFolder.path, isDirectory: &isDir), isDir.boolValue else {
             luaScripts = []
             return
         }
-        
+
         let targetFolder = flyWithLuaScriptsFolder
-        
+
         do {
             let contents = try fileManager.contentsOfDirectory(at: luaScriptsFolder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
             var newScripts: [LuaScript] = []
-            
+
             for item in contents {
                 var isFolder: ObjCBool = false
                 if fileManager.fileExists(atPath: item.path, isDirectory: &isFolder) {
                     let folderName = item.lastPathComponent
                     let isDirBool = isFolder.boolValue
-                    
+
                     var isEnabled = false
                     if let targetFolder = targetFolder {
                         if isDirBool {
@@ -498,19 +494,19 @@ class PluginManager {
                             isEnabled = fileManager.fileExists(atPath: targetLink.path)
                         }
                     }
-                    
+
                     newScripts.append(LuaScript(name: folderName, isEnabled: isEnabled, folderName: folderName, isDirectory: isDirBool))
                 }
             }
-            
+
             self.luaScripts = newScripts.sorted { $0.name < $1.name }
         } catch {
             print("Error scanning Lua scripts: \(error)")
         }
     }
-    
+
     // MARK: - Scenery Management
-    
+
     // Helper to get scenery_packs.ini URL
     private var sceneryPackIniURL: URL? {
         xPlanePath?.appendingPathComponent("Custom Scenery").appendingPathComponent(kXPlaneCustomSceneryFileName)
@@ -521,17 +517,17 @@ class PluginManager {
             scenery = []
             return
         }
-        
+
         let customSceneryURL = xPlanePath.appendingPathComponent("Custom Scenery")
         let managedSceneryURL = sceneryDataFolder
 
         // 1. Read scenery_packs.ini to establish order
         var iniItems: [(line: String, folderName: String, enabled: Bool)] = []
         var foundFolderNames: Set<String> = []
-        
+
         if let iniPath = sceneryPackIniURL,
            let content = try? String(contentsOf: iniPath, encoding: .utf8) {
-            
+
             let lines = content.components(separatedBy: .newlines)
             for line in lines {
                 let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -539,13 +535,13 @@ class PluginManager {
                     // Extract path
                     // Format: SCENERY_PACK Custom Scenery/FolderName/
                     //      or SCENERY_PACK_DISABLED Custom Scenery/FolderName/
-                    
+
                     let isEnabled = trimmed.starts(with: "SCENERY_PACK ") // space important to distinguish from DISABLED
-                    
+
                     // Remove prefix
                     let prefix = isEnabled ? "SCENERY_PACK " : "SCENERY_PACK_DISABLED "
                     let pathPart = String(trimmed.dropFirst(prefix.count))
-                    
+
                     // Normalize path to get folder name
                     // usually "Custom Scenery/XXX/"
                     let components = pathPart.split(separator: "/")
@@ -557,14 +553,14 @@ class PluginManager {
                 }
             }
         }
-        
+
         // 2. Scan "Custom Scenery" for items NOT in INI (newly added manually)
         var installedButNotInIni: [Scenery] = []
         do {
             let csContents = try fileManager.contentsOfDirectory(at: customSceneryURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
             for url in csContents {
                 if url.lastPathComponent == kXPlaneCustomSceneryFileName { continue }
-                
+
                 var isDir: ObjCBool = false
                 if fileManager.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
                     let name = url.lastPathComponent
@@ -574,7 +570,7 @@ class PluginManager {
                         // Check if it's a symlink
                         let attributes = try? fileManager.attributesOfItem(atPath: url.path)
                         let isSymlink = (attributes?[.type] as? String) == FileAttributeType.typeSymbolicLink.rawValue
-                        
+
                         installedButNotInIni.append(Scenery(name: name,
                                                             isEnabled: true,
                                                             folderName: name,
@@ -587,7 +583,7 @@ class PluginManager {
         } catch {
             print("Error scanning Custom Scenery: \(error)")
         }
-        
+
         // 3. Scan managed Scenery folder for uninstalled items
         var uninstalled: [Scenery] = []
         if let managedSceneryURL = managedSceneryURL, fileManager.fileExists(atPath: managedSceneryURL.path) {
@@ -597,10 +593,10 @@ class PluginManager {
                     var isDir: ObjCBool = false
                     if fileManager.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
                         let name = url.lastPathComponent
-                        
+
                         // Check if it's already installed (either in INI or simply in Custom Scenery)
                         let isInstalled = foundFolderNames.contains(name) || installedButNotInIni.contains(where: { $0.folderName == name })
-                        
+
                         if !isInstalled {
                             uninstalled.append(Scenery(name: name,
                                                        isEnabled: false,
@@ -615,20 +611,20 @@ class PluginManager {
                 print("Error scanning scenery: \(error)")
             }
         }
-        
+
         // 4. Construct final list
         var finalScenery: [Scenery] = []
-        
+
         // A. Installed but not in INI (Top priority, as X-Plane does)
         finalScenery.append(contentsOf: installedButNotInIni.sorted { $0.name < $1.name })
-        
+
         // B. INI Items (In Order)
         for item in iniItems {
             // Verify it still exists in Custom Scenery
             let path = customSceneryURL.appendingPathComponent(item.folderName)
             // Special handling for meta-packages like *GLOBAL_AIRPORTS*
             let isSpecialIdx = item.folderName.hasPrefix("*")
-            
+
             if isSpecialIdx || fileManager.fileExists(atPath: path.path) {
                 // Check if managed (symlink)
                 var isSymlink = false
@@ -648,29 +644,29 @@ class PluginManager {
                  print("Skipping missing scenery: \(item.folderName)")
             }
         }
-        
+
         // C. Uninstalled (In Central Data Folder)
         finalScenery.append(contentsOf: uninstalled.sorted { $0.name < $1.name })
-        
+
         self.scenery = finalScenery
     }
-    
+
     func saveSceneryOrder() {
         guard let iniURL = sceneryPackIniURL else { return }
-        
+
         var content = "I\n1000 Version\nSCENERY\n\n"
-        
+
         for item in scenery {
             let line: String
             let isSpecialIdx = item.folderName.hasPrefix("*")
             let prefix = item.isEnabled ? "SCENERY_PACK " : "SCENERY_PACK_DISABLED "
-            
+
             if isSpecialIdx {
                 line = "\(prefix)\(item.folderName)"
             } else {
                 line = "\(prefix)Custom Scenery/\(item.folderName)/"
             }
-            
+
             // Only write if physically present OR is special
             if isSpecialIdx {
                 content += line + "\n"
@@ -681,14 +677,14 @@ class PluginManager {
                  }
             }
         }
-        
+
         do {
             try content.write(to: iniURL, atomically: true, encoding: .utf8)
         } catch {
             print("Failed to save scenery_packs.ini: \(error)")
         }
     }
-    
+
     // Move items (drag and drop)
     func moveScenery(from source: IndexSet, to destination: Int) {
         scenery.move(fromOffsets: source, toOffset: destination)
@@ -698,14 +694,14 @@ class PluginManager {
     func togglePlugin(_ plugin: Plugin) {
         guard let xPlanePath = xPlanePath,
               let pluginsFolder = pluginsDataFolder else { return }
-        
+
         let pluginsURL = xPlanePath.appendingPathComponent("Resources").appendingPathComponent("plugins")
-        
+
         let sourceURL = pluginsFolder.appendingPathComponent(plugin.folderName)
         let linkURL = pluginsURL.appendingPathComponent(plugin.folderName)
-        
+
         print("Toggling \(plugin.name). Current state: \(plugin.isEnabled)")
-        
+
         do {
             if plugin.isEnabled {
                 // Remove symlink
@@ -716,7 +712,7 @@ class PluginManager {
                 // Create symlink
                 try fileManager.createSymbolicLink(at: linkURL, withDestinationURL: sourceURL)
             }
-            
+
             // Update model
             if let index = plugins.firstIndex(where: { $0.id == plugin.id }) {
                 plugins[index].isEnabled.toggle()
@@ -726,17 +722,17 @@ class PluginManager {
             self.lastErrorMessage = "Failed to \(plugin.isEnabled ? "disable" : "enable") plugin '\(plugin.name)': \(error.localizedDescription)"
         }
     }
-    
+
     func toggleAircraft(_ item: Aircraft) {
         guard let xPlanePath = xPlanePath,
               let aircraftFolder = aircraftDataFolder else { return }
-        
+
         let targetAircraftFolder = xPlanePath.appendingPathComponent("Aircraft")
         let sourceURL = aircraftFolder.appendingPathComponent(item.folderName)
         let linkURL = targetAircraftFolder.appendingPathComponent(item.folderName)
-        
+
         print("Toggling aircraft \(item.name). Current state: \(item.isEnabled)")
-        
+
         do {
             if item.isEnabled {
                 if fileManager.fileExists(atPath: linkURL.path) {
@@ -745,7 +741,7 @@ class PluginManager {
             } else {
                 try fileManager.createSymbolicLink(at: linkURL, withDestinationURL: sourceURL)
             }
-            
+
             if let index = aircraft.firstIndex(where: { $0.id == item.id }) {
                 aircraft[index].isEnabled.toggle()
             }
@@ -754,17 +750,17 @@ class PluginManager {
             self.lastErrorMessage = "Failed to \(item.isEnabled ? "disable" : "enable") aircraft '\(item.name)': \(error.localizedDescription)"
         }
     }
-    
+
     func toggleLuaScript(_ item: LuaScript) {
         guard let targetFolder = flyWithLuaScriptsFolder,
               let sourceRoot = luaScriptsDataFolder else { return }
-        
+
         let itemSourceURL = sourceRoot.appendingPathComponent(item.folderName)
-        
+
         if !item.isEnabled {
             try? fileManager.createDirectory(at: targetFolder, withIntermediateDirectories: true)
         }
-        
+
         do {
             if item.isEnabled {
                 // Disable -> remove symlinks
@@ -802,7 +798,7 @@ class PluginManager {
                     try fileManager.createSymbolicLink(at: linkURL, withDestinationURL: itemSourceURL)
                 }
             }
-            
+
             if let index = luaScripts.firstIndex(where: { $0.id == item.id }) {
                 luaScripts[index].isEnabled.toggle()
             }
@@ -811,26 +807,26 @@ class PluginManager {
             self.lastErrorMessage = "Failed to \(item.isEnabled ? "disable" : "enable") Lua script '\(item.name)': \(error.localizedDescription)"
         }
     }
-    
+
     func toggleScenery(_ item: Scenery) {
         // Find index
         guard let index = scenery.firstIndex(where: { $0.id == item.id }) else { return }
         guard item.isToggleable else { return }
-        
+
         // Logic:
         // 1. If currently Enabled -> Disable
         //    - Just set isEnabled = false (SCENERY_PACK_DISABLED)
         //    - Save INI.
         //    - Do NOT remove symlink automatically (user asked for "either", we default to INI disable).
-        
+
         // 2. If currently Disabled -> Enable
         //    - If physically missing (Uninstalled), create symlink first.
         //    - Set isEnabled = true
         //    - Save INI.
-        
+
         var newItem = scenery[index]
         let wasEnabled = newItem.isEnabled
-        
+
         if !wasEnabled {
              // Enable
              // Check if we need to link it
@@ -859,15 +855,15 @@ class PluginManager {
             // Disable
             newItem.isEnabled = false
         }
-        
+
         scenery[index] = newItem
         saveSceneryOrder()
     }
-    
+
     func unlinkScenery(_ item: Scenery) {
         guard let index = scenery.firstIndex(where: { $0.id == item.id }) else { return }
         guard item.isManaged else { return } // Can only unlink managed items
-        
+
         // Remove symlink
         if let xPlanePath = xPlanePath {
             let linkURL = xPlanePath.appendingPathComponent("Custom Scenery").appendingPathComponent(item.folderName)
@@ -881,14 +877,14 @@ class PluginManager {
                 return
             }
         }
-        
+
         // Update list
         // It becomes "Uninstalled" (Disabled, isInIni=false)
         var newItem = scenery[index]
         newItem.isEnabled = false
         newItem.isInIni = false
         scenery[index] = newItem
-        
+
         // Remove from any group
         if let groupIndex = sceneryGroups.firstIndex(where: { $0.childFolderNames.contains(item.folderName) }) {
             var group = sceneryGroups[groupIndex]
@@ -896,17 +892,17 @@ class PluginManager {
             sceneryGroups[groupIndex] = group
             // If group empty? Keep it or remove it? Let's keep it.
         }
-        
+
         saveSceneryOrder()
         scanScenery()
     }
-    
+
     // MARK: - Scenery Grouping
 
     func createGroup(name: String, with items: [Scenery]) {
         let folderNames = items.map { $0.folderName }
         let newGroup = SceneryGroup(name: name, childFolderNames: folderNames)
-        
+
         // Remove items from any existing groups
         for folder in folderNames {
              for (idx, _) in sceneryGroups.enumerated() {
@@ -915,35 +911,35 @@ class PluginManager {
                  }
              }
         }
-        
+
         sceneryGroups.append(newGroup)
-        
+
         // Reorder scenery list to group them physically
         // We place them after the first item's original position (or at top if none)
         if let firstItem = items.first,
            let firstIndex = scenery.firstIndex(where: { $0.folderName == firstItem.folderName }) {
-            
+
             // Remove all items from current positions
             var remaining = scenery.filter { !folderNames.contains($0.folderName) }
-            
+
             // Insert them back at firstIndex (clamped)
             let insertIndex = min(firstIndex, remaining.count)
             // We need to fetch the actual updated objects (scenery is value type)
             // But we can just use `items` if we trust they are fresh, better get from `scenery`
             let movingItems = scenery.filter { folderNames.contains($0.folderName) }
-            
+
             remaining.insert(contentsOf: movingItems, at: insertIndex)
             scenery = remaining
         }
-        
+
         saveSceneryOrder()
     }
-    
+
     func deleteGroup(_ group: SceneryGroup) {
         sceneryGroups.removeAll { $0.id == group.id }
         // Items remain in `scenery` list, just ungrouped.
     }
-    
+
     func toggleGroup(_ group: SceneryGroup, isEnabled: Bool) {
         // Toggle all children
         // We need to find them in `scenery`
@@ -956,38 +952,38 @@ class PluginManager {
             }
         }
     }
-    
+
     func renameGroup(_ group: SceneryGroup, newName: String) {
         if let index = sceneryGroups.firstIndex(where: { $0.id == group.id }) {
             sceneryGroups[index].name = newName
         }
     }
-    
+
     func moveSceneryToGroup(items: [Scenery], group: SceneryGroup) {
         guard !items.isEmpty else { return }
-        
+
         // 1. Identify current members (to determine insertion point)
         let currentMembers = scenery.filter { group.childFolderNames.contains($0.folderName) }
-        
+
         // 2. Remove items from old groups (metadata)
         let itemFolders = Set(items.map { $0.folderName })
         for (idx, _) in sceneryGroups.enumerated() {
             sceneryGroups[idx].childFolderNames.removeAll(where: { itemFolders.contains($0) })
         }
-        
+
         // 3. Add to new group (metadata)
         if let index = sceneryGroups.firstIndex(where: { $0.id == group.id }) {
             sceneryGroups[index].childFolderNames.append(contentsOf: itemFolders)
-            
+
             // 4. Physical Move
             var newScenery = scenery
-            
+
             // First, remove all moving items from the list
             newScenery.removeAll(where: { itemFolders.contains($0.folderName)})
-            
+
             // Determine insert index
             var insertAt = newScenery.count // Default to end
-            
+
             if let lastMember = currentMembers.last {
                  if let targetIndex = newScenery.firstIndex(where: { $0.id == lastMember.id }) {
                      insertAt = targetIndex + 1
@@ -998,7 +994,7 @@ class PluginManager {
                     insertAt = min(originalIndex, newScenery.count)
                 }
             }
-            
+
             // Insert
             newScenery.insert(contentsOf: items, at: insertAt)
             self.scenery = newScenery
@@ -1009,25 +1005,25 @@ class PluginManager {
     func moveSceneryToGroup(_ sceneryItem: Scenery, group: SceneryGroup) {
         // 1. Identify current members before addition (to find location)
         let currentMembers = scenery.filter { group.childFolderNames.contains($0.folderName) }
-        
+
         // 2. Remove from old group (metadata)
         removeFromGroup(sceneryItem)
-        
+
         // 3. Add to new group (metadata)
         if let index = sceneryGroups.firstIndex(where: { $0.id == group.id }) {
             sceneryGroups[index].childFolderNames.append(sceneryItem.folderName)
-            
+
             // 4. Physical Move
             // If group already has members, move this item to be after the last member.
             if let lastMember = currentMembers.last,
                let targetIndex = scenery.firstIndex(where: { $0.id == lastMember.id }),
                let currentIndex = scenery.firstIndex(where: { $0.id == sceneryItem.id }) {
-                
+
                 var newScenery = scenery
                 // Remove from old pos
                 let item = newScenery.remove(at: currentIndex)
-                
-                // Calculate insert index. 
+
+                // Calculate insert index.
                 // If currentIndex < targetIndex, removing shifts targetIndex down by 1.
                 var insertAt = targetIndex
                 if currentIndex < targetIndex {
@@ -1041,11 +1037,11 @@ class PluginManager {
                         insertAt = reFoundIndex + 1
                     }
                 }
-                
+
                 // Boundary check
                 insertAt = min(insertAt, newScenery.count)
                 newScenery.insert(item, at: insertAt)
-                
+
                 self.scenery = newScenery
                 saveSceneryOrder()
             } else {
@@ -1055,19 +1051,19 @@ class PluginManager {
             }
         }
     }
-    
+
     func moveScenery(items: [Scenery], relativeTo target: Scenery) {
         guard !items.isEmpty else { return }
-        
+
         let validItems = items.filter { $0.id != target.id }
         guard !validItems.isEmpty else { return }
-        
+
         // 1. Remove from all old groups (metadata)
         let itemFolders = Set(validItems.map { $0.folderName })
         for (idx, _) in sceneryGroups.enumerated() {
             sceneryGroups[idx].childFolderNames.removeAll(where: { itemFolders.contains($0) })
         }
-        
+
         // 2. Check target's group
         if let targetGroup = sceneryGroups.first(where: { $0.childFolderNames.contains(target.folderName) }) {
              // Target is in a group, add items to it
@@ -1075,19 +1071,19 @@ class PluginManager {
                  sceneryGroups[idx].childFolderNames.append(contentsOf: itemFolders)
              }
         }
-        
+
         // 3. Physical Move
         var newScenery = scenery
-        
+
         // Remove moving items
         newScenery.removeAll(where: { itemFolders.contains($0.folderName) })
-        
+
         // Re-find target index
         if let newTargetIndex = newScenery.firstIndex(where: { $0.id == target.id }) {
             // Insert after
             let insertIndex = min(newTargetIndex + 1, newScenery.count)
             newScenery.insert(contentsOf: validItems, at: insertIndex)
-            
+
             self.scenery = newScenery
             saveSceneryOrder()
         }
@@ -1095,10 +1091,10 @@ class PluginManager {
 
     func moveScenery(_ item: Scenery, relativeTo target: Scenery) {
         guard item.id != target.id else { return }
-        
+
         // 1. Remove from old group (metadata)
         removeFromGroup(item)
-        
+
         // 2. Check target's group
         if let targetGroup = sceneryGroups.first(where: { $0.childFolderNames.contains(target.folderName) }) {
              // Target is in a group, add item to it
@@ -1106,26 +1102,26 @@ class PluginManager {
                  sceneryGroups[idx].childFolderNames.append(item.folderName)
              }
         }
-        
+
         // 3. Physical Move
         if let _ = scenery.firstIndex(where: { $0.id == target.id }),
            let currentIndex = scenery.firstIndex(where: { $0.id == item.id }) {
-            
+
             var newScenery = scenery
             let movingItem = newScenery.remove(at: currentIndex)
-            
+
             // Re-find target index
             if let newTargetIndex = newScenery.firstIndex(where: { $0.id == target.id }) {
                 // Insert after
                 let insertIndex = min(newTargetIndex + 1, newScenery.count)
                 newScenery.insert(movingItem, at: insertIndex)
-                
+
                 self.scenery = newScenery
                 saveSceneryOrder()
             }
         }
     }
-    
+
     func removeFromGroup(_ sceneryItem: Scenery) {
          for (idx, _) in sceneryGroups.enumerated() {
              if let i = sceneryGroups[idx].childFolderNames.firstIndex(of: sceneryItem.folderName) {
@@ -1133,26 +1129,25 @@ class PluginManager {
              }
          }
     }
-    
+
     func launchXPlane() {
         guard let xPlanePath = xPlanePath else { return }
-        
+
         // Execute profile scripts
         if let selectedId = selectedProfileId,
            let profile = profiles.first(where: { $0.id == selectedId }) {
-            
+
             // Execute ACTIVE scripts (what the user sees in UI)
             for script in activeScripts where script.isEnabled {
                  executeShellScript(at: script.path, profileName: profile.name)
             }
         }
-        
+
         let appURL = xPlanePath.appendingPathComponent("X-Plane.app")
 
-        
         // Try opening the App likely
         let workspace = NSWorkspace.shared
-        
+
         // Check if .app exists
         if fileManager.fileExists(atPath: appURL.path) {
             // Launch
@@ -1172,9 +1167,9 @@ class PluginManager {
              print("X-Plane.app not found in \(xPlanePath.path)")
         }
     }
-    
+
     // MARK: - Profile Management
-    
+
     func saveProfile(name: String) {
         let enabledPlugins = plugins.filter { $0.isEnabled }.map { $0.folderName }
         let enabledScenery = scenery.filter { $0.isEnabled }.map { $0.folderName }
@@ -1185,7 +1180,7 @@ class PluginManager {
         saveProfilesToDisk()
         selectedProfileId = newProfile.id // Select it
     }
-    
+
     func updateProfile(_ profile: PluginProfile) {
         let enabledPlugins = plugins.filter { $0.isEnabled }.map { $0.folderName }
         let enabledScenery = scenery.filter { $0.isEnabled }.map { $0.folderName }
@@ -1199,12 +1194,12 @@ class PluginManager {
             profiles[index].luaScriptFolderNames = enabledLua
             profiles[index].scripts = activeScripts // Save active scripts
             profiles[index].environmentVariables = activeEnvironmentVariables // Save active environment variables
-            
+
             saveProfilesToDisk()
-            
+
         }
     }
-    
+
     func deleteProfile(_ profile: PluginProfile) {
         profiles.removeAll { $0.id == profile.id }
         saveProfilesToDisk()
@@ -1212,120 +1207,120 @@ class PluginManager {
             selectedProfileId = nil
         }
     }
-    
+
     var activeScripts: [ProfileScript] = []
     var activeEnvironmentVariables: [ScriptEnvVar] = []
 
     // MARK: - Script Management
-    
+
     func addScript(name: String, path: String) {
         // Operates on ACTIVE scripts (unsaved state)
         let newScript = ProfileScript(path: path, isEnabled: true)
         activeScripts.append(newScript)
         // Do NOT save to disk immediately.
     }
-    
+
     func deleteScript(_ script: ProfileScript) {
         activeScripts.removeAll { $0.id == script.id }
     }
-    
+
     func toggleScript(_ script: ProfileScript) {
         if let index = activeScripts.firstIndex(where: { $0.id == script.id }) {
             activeScripts[index].isEnabled.toggle()
         }
     }
-    
+
     func addProfileEnvVar(key: String = "NEW_VAR", value: String = "VALUE") {
         activeEnvironmentVariables.append(ScriptEnvVar(key: key, value: value))
     }
-    
+
     func deleteProfileEnvVar(id: UUID) {
         activeEnvironmentVariables.removeAll { $0.id == id }
     }
-    
+
     private func saveProfilesToDisk() {
         if let data = try? JSONEncoder().encode(profiles) {
             defaults.set(data, forKey: .pluginProfiles)
         }
     }
-    
+
     private func applyProfile(_ profile: PluginProfile) {
         // We need to iterate over all plugins and enable/disable them to match the profile
         // Note: scanPlugins() must have run first to populate 'plugins'
-        
+
         for plugin in plugins {
             let shouldBeEnabled = profile.pluginFolderNames.contains(plugin.folderName)
-            
+
             if plugin.isEnabled != shouldBeEnabled {
                 // Change state
                 togglePlugin(plugin)
             }
         }
-        
+
         for item in scenery {
             let shouldBeEnabled = profile.sceneryFolderNames.contains(item.folderName)
             if item.isEnabled != shouldBeEnabled {
                 toggleScenery(item)
             }
         }
-        
+
         for item in aircraft {
             let shouldBeEnabled = profile.aircraftFolderNames.contains(item.folderName)
             if item.isEnabled != shouldBeEnabled {
                 toggleAircraft(item)
             }
         }
-        
+
         for item in luaScripts {
             let shouldBeEnabled = profile.luaScriptFolderNames.contains(item.folderName)
             if item.isEnabled != shouldBeEnabled {
                 toggleLuaScript(item)
             }
         }
-        
+
         // Load scripts & env vars from profile into active state
         self.activeScripts = profile.scripts
         self.activeEnvironmentVariables = profile.environmentVariables
     }
-    
+
     private func executeShellScript(at path: String, profileName: String) {
         guard fileManager.fileExists(atPath: path) else {
             print("Failed to execute script: file does not exist at '\(path)'")
             return
         }
-        
+
         print("Executing script at: \(path) for profile: \(profileName)")
         let process = Process()
-        
+
         let isExecutable = fileManager.isExecutableFile(atPath: path)
         let isShellScript = path.hasSuffix(".sh") || path.hasSuffix(".zsh") || path.hasSuffix(".bash") || !isExecutable
-        
+
         if isShellScript {
             process.executableURL = URL(fileURLWithPath: "/bin/zsh")
             process.arguments = [path]
         } else {
             process.executableURL = URL(fileURLWithPath: path)
         }
-        
+
         process.currentDirectoryURL = URL(fileURLWithPath: path).deletingLastPathComponent()
-        
+
         var env = ProcessInfo.processInfo.environment
-        
+
         // 1. Global environment variables
         for envVar in scriptEnvironment where !envVar.key.isEmpty {
             env[envVar.key] = envVar.value
         }
-        
+
         // 2. Per-profile environment variables (overriding global keys)
         for envVar in activeEnvironmentVariables where !envVar.key.isEmpty {
             env[envVar.key] = envVar.value
         }
-        
+
         // 3. System profile name variable
         env["XLAUNCHER_PROFILE"] = profileName
-        
+
         process.environment = env
-        
+
         do {
             try process.run()
         } catch {

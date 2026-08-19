@@ -60,11 +60,11 @@ struct CSLPackage: Identifiable, Equatable, Hashable, Sendable {
     var downloadedBytes: Int64 = 0
     var currentDownloadFile: String = ""
     var files: [CSLFileItem] = []
-    
+
     var formattedTotalSize: String {
         ByteCountFormatter.string(fromByteCount: totalSizeBytes, countStyle: .file)
     }
-    
+
     var formattedUpdateSize: String {
         ByteCountFormatter.string(fromByteCount: updateSizeBytes, countStyle: .file)
     }
@@ -92,25 +92,25 @@ struct CSLRawPackage: Sendable {
 final class CSLIndexParser: Sendable {
     static func parseIndex(content: String) -> [CSLRawPackage] {
         var packageMap: [String: CSLRawPackage] = [:]
-        
+
         let lines = content.components(separatedBy: .newlines)
         for line in lines {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if trimmed.isEmpty || trimmed.hasPrefix("0 ") {
                 continue
             }
-            
+
             let parts = trimmed.components(separatedBy: "%")
             guard parts.count >= 6 else { continue }
             guard let entryType = Int(parts[0]), entryType == 10 || entryType == 11 else { continue }
-            
+
             let path = parts[1]
             let sizeBytes = Int64(parts[2]) ?? 0
             let rawMd5 = parts[3]
             let md5: String? = (entryType == 10 && !rawMd5.isEmpty && rawMd5 != "Reserve") ? rawMd5.lowercased() : nil
             let date = parts[4]
             let time = parts[5]
-            
+
             if entryType == 11 {
                 var pkg = packageMap[path] ?? CSLRawPackage(name: path, headerSize: 0, headerDate: "", headerTime: "", files: [])
                 pkg.headerSize = sizeBytes
@@ -131,7 +131,7 @@ final class CSLIndexParser: Sendable {
                 }
             }
         }
-        
+
         return packageMap.values.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 }
@@ -142,37 +142,37 @@ actor CSLCacheActor {
     private var cachedIndex: (timestamp: Date, content: String)?
     private var descCache: [String: String] = [:]
     private var md5Cache: [String: (size: Int64, mtime: TimeInterval, hash: String)] = [:]
-    
+
     func getCachedIndex() -> String? {
         if let cached = cachedIndex, Date().timeIntervalSince(cached.timestamp) < 300 {
             return cached.content
         }
         return nil
     }
-    
+
     func setCachedIndex(_ content: String) {
         cachedIndex = (Date(), content)
     }
-    
+
     func getCachedDescription(for name: String) -> String? {
         descCache[name]
     }
-    
+
     func setCachedDescription(_ desc: String, for name: String) {
         descCache[name] = desc
     }
-    
+
     func getCachedMD5(path: String, size: Int64, mtime: TimeInterval) -> String? {
         if let cached = md5Cache[path], cached.size == size, cached.mtime == mtime {
             return cached.hash
         }
         return nil
     }
-    
+
     func setCachedMD5(hash: String, path: String, size: Int64, mtime: TimeInterval) {
         md5Cache[path] = (size, mtime, hash)
     }
-    
+
     func invalidateMD5(path: String) {
         md5Cache.removeValue(forKey: path)
     }
@@ -184,13 +184,13 @@ final class CSLUpdaterService: Sendable {
     static let shared = CSLUpdaterService()
     private var fileManager: FileManager { .default }
     private let cache = CSLCacheActor()
-    
+
     static let defaultServerBaseURL = "https://x-csl.ru"
     static let indexRelativePath = "package/x-csl-indexes.idx"
     static let packageBaseRelativePath = "package"
-    
+
     // MARK: - MD5 Hashing with Cache
-    
+
     func computeMD5Cached(for fileURL: URL) async -> String? {
         let path = fileURL.path
         guard let attrs = try? fileManager.attributesOfItem(atPath: path),
@@ -199,20 +199,20 @@ final class CSLUpdaterService: Sendable {
             return nil
         }
         let mtime = modDate.timeIntervalSince1970
-        
+
         if let cached = await cache.getCachedMD5(path: path, size: size, mtime: mtime) {
             return cached
         }
-        
+
         guard let hash = computeFileMD5(fileURL: fileURL) else { return nil }
         await cache.setCachedMD5(hash: hash, path: path, size: size, mtime: mtime)
         return hash
     }
-    
+
     private func computeFileMD5(fileURL: URL) -> String? {
         guard let fileHandle = try? FileHandle(forReadingFrom: fileURL) else { return nil }
         defer { try? fileHandle.close() }
-        
+
         var hasher = Insecure.MD5()
         let bufferSize = 65536 // 64KB
         while true {
@@ -220,59 +220,59 @@ final class CSLUpdaterService: Sendable {
             if data.isEmpty { break }
             hasher.update(data: data)
         }
-        
+
         let digest = hasher.finalize()
         return digest.map { String(format: "%02x", $0) }.joined()
     }
-    
+
     // MARK: - Remote Index Fetching
-    
+
     func fetchRemoteIndex(serverBaseURL: String = defaultServerBaseURL) async throws -> String {
         if let cached = await cache.getCachedIndex() {
             return cached
         }
-        
+
         let trimmedServer = serverBaseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let fullURLString = "\(trimmedServer)/\(CSLUpdaterService.indexRelativePath)"
-        
+
         guard let url = URL(string: fullURLString) else {
             throw URLError(.badURL)
         }
-        
+
         var request = URLRequest(url: url)
         request.timeoutInterval = 30
         request.setValue("XPlaneLauncher", forHTTPHeaderField: "User-Agent")
-        
+
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
             throw URLError(.badServerResponse)
         }
-        
+
         guard let content = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .ascii) else {
             throw URLError(.cannotDecodeContentData)
         }
-        
+
         await cache.setCachedIndex(content)
         return content
     }
-    
+
     // MARK: - Package Description Fetching
-    
+
     func fetchPackageDescription(packageName: String, serverBaseURL: String = defaultServerBaseURL) async -> String? {
         if let cached = await cache.getCachedDescription(for: packageName) {
             return cached
         }
-        
+
         let trimmedServer = serverBaseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard let encodedName = packageName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
               let url = URL(string: "\(trimmedServer)/\(CSLUpdaterService.packageBaseRelativePath)/\(encodedName)/x-csl-info.info") else {
             return nil
         }
-        
+
         var request = URLRequest(url: url)
         request.timeoutInterval = 10
         request.setValue("XPlaneLauncher", forHTTPHeaderField: "User-Agent")
-        
+
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             if let http = response as? HTTPURLResponse, http.statusCode == 200,
@@ -285,52 +285,52 @@ final class CSLUpdaterService: Sendable {
         } catch {
             // Ignore description fetch failure
         }
-        
+
         return nil
     }
-    
+
     // MARK: - Package Comparison
-    
+
     func comparePackage(raw: CSLRawPackage, cslBaseFolder: URL) async -> (status: CSLPackageStatus, filesToUpdate: Int, updateSizeBytes: Int64, isInstalled: Bool) {
         let pkgDir = cslBaseFolder.appendingPathComponent(raw.name)
         var isDir: ObjCBool = false
         let isInstalled = fileManager.fileExists(atPath: pkgDir.path, isDirectory: &isDir) && isDir.boolValue
-        
+
         if !isInstalled {
             let totalBytes = raw.files.reduce(Int64(0)) { $0 + $1.sizeBytes }
             return (.notInstalled, raw.files.count, totalBytes, false)
         }
-        
+
         let prefix = "\(raw.name)/"
         var filesToUpdate = 0
         var updateSize: Int64 = 0
-        
+
         for file in raw.files {
             let relPath = file.path.hasPrefix(prefix) ? String(file.path.dropFirst(prefix.count)) : file.path
             let localFileURL = pkgDir.appendingPathComponent(relPath)
             let isObj = localFileURL.pathExtension.lowercased() == "obj"
             let bakFileURL = localFileURL.deletingPathExtension().appendingPathExtension(CSLLightsUpdater.backupExtension)
             let fileToCheck = (isObj && fileManager.fileExists(atPath: bakFileURL.path)) ? bakFileURL : localFileURL
-            
+
             guard fileManager.fileExists(atPath: fileToCheck.path) else {
                 filesToUpdate += 1
                 updateSize += file.sizeBytes
                 continue
             }
-            
+
             guard let attrs = try? fileManager.attributesOfItem(atPath: fileToCheck.path),
                   let localSize = attrs[.size] as? Int64 else {
                 filesToUpdate += 1
                 updateSize += file.sizeBytes
                 continue
             }
-            
+
             if localSize != file.sizeBytes {
                 filesToUpdate += 1
                 updateSize += file.sizeBytes
                 continue
             }
-            
+
             if let expectedMD5 = file.md5, !expectedMD5.isEmpty {
                 let localMD5 = await computeMD5Cached(for: fileToCheck)?.lowercased()
                 if localMD5 != expectedMD5 {
@@ -340,13 +340,13 @@ final class CSLUpdaterService: Sendable {
                 }
             }
         }
-        
+
         let status: CSLPackageStatus = (filesToUpdate == 0) ? .upToDate : .needsUpdate
         return (status, filesToUpdate, updateSize, true)
     }
-    
+
     // MARK: - File Download with Retry & Progress
-    
+
     func downloadPackage(
         package: CSLPackage,
         targetFolder: URL,
@@ -357,17 +357,17 @@ final class CSLUpdaterService: Sendable {
     ) async throws {
         let pkgDir = targetFolder.appendingPathComponent(package.name)
         try fileManager.createDirectory(at: pkgDir, withIntermediateDirectories: true)
-        
+
         let prefix = "\(package.name)/"
         var filesToDownload: [CSLFileItem] = []
-        
+
         for file in package.files {
             let relPath = file.path.hasPrefix(prefix) ? String(file.path.dropFirst(prefix.count)) : file.path
             let localFileURL = pkgDir.appendingPathComponent(relPath)
             let isObj = localFileURL.pathExtension.lowercased() == "obj"
             let bakFileURL = localFileURL.deletingPathExtension().appendingPathExtension(CSLLightsUpdater.backupExtension)
             let fileToCheck = (isObj && fileManager.fileExists(atPath: bakFileURL.path)) ? bakFileURL : localFileURL
-            
+
             if !fileManager.fileExists(atPath: fileToCheck.path) {
                 filesToDownload.append(file)
             } else if let attrs = try? fileManager.attributesOfItem(atPath: fileToCheck.path),
@@ -380,39 +380,39 @@ final class CSLUpdaterService: Sendable {
                 }
             }
         }
-        
+
         if filesToDownload.isEmpty {
             onProgress(1.0, 0, "Complete")
             return
         }
-        
+
         let totalFiles = filesToDownload.count
         let totalBytes = filesToDownload.reduce(Int64(0)) { $0 + $1.sizeBytes }
         onLog("[CSL] Starting download of \(package.name): \(totalFiles) files (\(ByteCountFormatter.string(fromByteCount: totalBytes, countStyle: .file)))")
-        
+
         var downloadedBytes: Int64 = 0
         let trimmedServer = serverBaseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        
+
         for (index, file) in filesToDownload.enumerated() {
             if isCancelled() {
                 onLog("[CSL] Download cancelled for \(package.name)")
                 throw CancellationError()
             }
-            
+
             let relPath = file.path.hasPrefix(prefix) ? String(file.path.dropFirst(prefix.count)) : file.path
             let localFileURL = pkgDir.appendingPathComponent(relPath)
             let parentDir = localFileURL.deletingLastPathComponent()
             if !fileManager.fileExists(atPath: parentDir.path) {
                 try fileManager.createDirectory(at: parentDir, withIntermediateDirectories: true)
             }
-            
+
             let displayFileName = (relPath as NSString).lastPathComponent
             onProgress(
                 Double(downloadedBytes) / Double(max(totalBytes, 1)),
                 downloadedBytes,
                 "(\(index + 1)/\(totalFiles)) \(displayFileName)"
             )
-            
+
             // Build escaped URL
             let pathComponents = file.path.split(separator: "/").map {
                 $0.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? String($0)
@@ -422,22 +422,22 @@ final class CSLUpdaterService: Sendable {
                 onLog("[CSL] Invalid URL for \(file.path)")
                 continue
             }
-            
+
             // Download with up to 3 retries
             var success = false
             for attempt in 1...3 {
                 if isCancelled() { throw CancellationError() }
-                
+
                 do {
                     var request = URLRequest(url: url)
                     request.timeoutInterval = 30
                     request.setValue("XPlaneLauncher", forHTTPHeaderField: "User-Agent")
-                    
+
                     let (tempLocalURL, response) = try await URLSession.shared.download(for: request)
                     guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
                         throw URLError(.badServerResponse)
                     }
-                    
+
                     // Atomic move and clean prior .bak
                     let bakURL = localFileURL.deletingPathExtension().appendingPathExtension(CSLLightsUpdater.backupExtension)
                     if fileManager.fileExists(atPath: bakURL.path) {
@@ -447,10 +447,10 @@ final class CSLUpdaterService: Sendable {
                         try fileManager.removeItem(at: localFileURL)
                     }
                     try fileManager.moveItem(at: tempLocalURL, to: localFileURL)
-                    
+
                     // Invalidate MD5 cache for this file
                     await cache.invalidateMD5(path: localFileURL.path)
-                    
+
                     downloadedBytes += file.sizeBytes
                     success = true
                     break
@@ -463,12 +463,12 @@ final class CSLUpdaterService: Sendable {
                     }
                 }
             }
-            
+
             if !success {
                 throw URLError(.cannotDecodeRawData)
             }
         }
-        
+
         onProgress(1.0, totalBytes, "Up to date")
         onLog("[CSL] Successfully installed/updated \(package.name)")
     }
@@ -481,15 +481,15 @@ final class CSLUpdaterService: Sendable {
 final class CSLManager {
     private let fileManager = FileManager.default
     private let service = CSLUpdaterService.shared
-    
+
     var automaticallyCheckCSLUpdates: Bool {
         didSet {
             UserDefaults.standard.set(automaticallyCheckCSLUpdates, forKey: .autoCheckCSLUpdates)
         }
     }
-    
+
     var hasFetchedRemoteIndex: Bool = false
-    
+
     var cslFolderURL: URL? {
         didSet {
             if cslFolderURL != oldValue {
@@ -499,14 +499,14 @@ final class CSLManager {
             }
         }
     }
-    
+
     var packages: [CSLPackage] = []
     var isChecking: Bool = false
     var isUpdating: Bool = false
     let logger = ConsoleLogger()
-    
+
     private var activeDownloadTasks: [String: Task<Void, Never>] = [:]
-    
+
     init() {
         if UserDefaults.standard.object(forKey: .autoCheckCSLUpdates) == nil {
             self.automaticallyCheckCSLUpdates = true
@@ -514,29 +514,29 @@ final class CSLManager {
             self.automaticallyCheckCSLUpdates = UserDefaults.standard.bool(forKey: .autoCheckCSLUpdates)
         }
     }
-    
+
     var isProcessing: Bool {
         isChecking || isUpdating || packages.contains { $0.status == .checking || $0.status == .updating }
     }
-    
+
     var updatesAvailableCount: Int {
         packages.filter { $0.isInstalled && $0.status == .needsUpdate }.count
     }
-    
+
     var installedCount: Int {
         packages.filter { $0.isInstalled }.count
     }
-    
+
     func log(_ message: String) {
         logger.log(message)
     }
-    
+
     func clearLogs() {
         logger.clear()
     }
-    
+
     // MARK: - Local Scanning
-    
+
     private func computeDirectoryStats(at dirURL: URL) -> (fileCount: Int, totalSize: Int64) {
         var fileCount = 0
         var totalSize: Int64 = 0
@@ -551,34 +551,34 @@ final class CSLManager {
         }
         return (fileCount, totalSize)
     }
-    
+
     func scanLocalPackages() {
         guard let folderURL = cslFolderURL else {
             packages = []
             return
         }
-        
+
         guard !hasFetchedRemoteIndex else { return }
-        
+
         guard fileManager.fileExists(atPath: folderURL.path) else {
             packages = []
             return
         }
-        
+
         guard let subdirs = try? fileManager.contentsOfDirectory(at: folderURL, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) else {
             packages = []
             return
         }
-        
+
         var localPackages: [CSLPackage] = []
         for dirURL in subdirs.sorted(by: { $0.lastPathComponent.localizedCaseInsensitiveCompare($1.lastPathComponent) == .orderedAscending }) {
             var isDir: ObjCBool = false
             guard fileManager.fileExists(atPath: dirURL.path, isDirectory: &isDir), isDir.boolValue else {
                 continue
             }
-            
+
             let pkgName = dirURL.lastPathComponent
-            
+
             // Check for local x-csl-info.info if present
             var title = pkgName
             let infoURL = dirURL.appendingPathComponent("x-csl-info.info")
@@ -589,9 +589,9 @@ final class CSLManager {
                     title = cleanDesc
                 }
             }
-            
+
             let stats = computeDirectoryStats(at: dirURL)
-            
+
             let pkg = CSLPackage(
                 name: pkgName,
                 title: title,
@@ -607,37 +607,37 @@ final class CSLManager {
             )
             localPackages.append(pkg)
         }
-        
+
         self.packages = localPackages
     }
-    
+
     // MARK: - Scanning & Update Checking
-    
+
     func scanAndCheck() {
         guard let folderURL = cslFolderURL else {
             packages = []
             return
         }
-        
+
         guard !isChecking else { return }
         isChecking = true
         log("[CSL] Checking X-CSL packages index...")
-        
+
         Task { @MainActor in
             do {
                 let indexContent = try await service.fetchRemoteIndex()
                 let rawPackages = CSLIndexParser.parseIndex(content: indexContent)
                 self.hasFetchedRemoteIndex = true
-                
+
                 log("[CSL] Remote index loaded: \(rawPackages.count) total packages available")
-                
+
                 var parsedPackages: [CSLPackage] = []
                 var processedNames: Set<String> = []
-                
+
                 for raw in rawPackages {
                     processedNames.insert(raw.name)
                     let comparison = await service.comparePackage(raw: raw, cslBaseFolder: folderURL)
-                    
+
                     let statusMsg: String
                     switch comparison.status {
                     case .upToDate:
@@ -655,10 +655,10 @@ final class CSLManager {
                     case .error:
                         statusMsg = "Error"
                     }
-                    
+
                     let headerDate = !raw.headerDate.isEmpty ? "\(raw.headerDate) \(raw.headerTime)" : ""
                     let totalSize = raw.headerSize > 0 ? raw.headerSize : raw.files.reduce(0) { $0 + $1.sizeBytes }
-                    
+
                     let pkg = CSLPackage(
                         name: raw.name,
                         title: raw.name,
@@ -674,7 +674,7 @@ final class CSLManager {
                     )
                     parsedPackages.append(pkg)
                 }
-                
+
                 // Include any local directories not in remote index
                 if let subdirs = try? self.fileManager.contentsOfDirectory(at: folderURL, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) {
                     for dirURL in subdirs {
@@ -682,9 +682,9 @@ final class CSLManager {
                         guard self.fileManager.fileExists(atPath: dirURL.path, isDirectory: &isDir), isDir.boolValue else { continue }
                         let pkgName = dirURL.lastPathComponent
                         guard !processedNames.contains(pkgName) else { continue }
-                        
+
                         let stats = self.computeDirectoryStats(at: dirURL)
-                        
+
                         let customPkg = CSLPackage(
                             name: pkgName,
                             title: pkgName,
@@ -701,14 +701,14 @@ final class CSLManager {
                         parsedPackages.append(customPkg)
                     }
                 }
-                
+
                 self.packages = parsedPackages.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
                 self.isChecking = false
-                
+
                 let needUpdate = self.updatesAvailableCount
                 let installed = self.installedCount
                 self.log("[CSL] Scan complete: \(installed) installed, \(needUpdate) update(s) available")
-                
+
                 // Fetch descriptions in background for installed or top packages
                 self.fetchDescriptionsInBackground()
             } catch {
@@ -717,7 +717,7 @@ final class CSLManager {
             }
         }
     }
-    
+
     private func fetchDescriptionsInBackground() {
         Task { @MainActor in
             for i in 0..<packages.count {
@@ -730,23 +730,23 @@ final class CSLManager {
             }
         }
     }
-    
+
     // MARK: - Package Actions
-    
+
     func updatePackage(_ package: CSLPackage) {
         guard let folderURL = cslFolderURL else {
             log("[CSL] Cannot update: CSL folder not set")
             return
         }
-        
+
         guard let index = packages.firstIndex(where: { $0.id == package.id }) else { return }
         packages[index].status = .updating
         packages[index].statusMessage = "Starting download..."
         packages[index].downloadProgress = 0.0
-        
+
         let pkgToUpdate = packages[index]
         let pkgName = pkgToUpdate.name
-        
+
         let task = Task { @MainActor in
             do {
                 try await service.downloadPackage(
@@ -770,7 +770,7 @@ final class CSLManager {
                         Task.isCancelled
                     }
                 )
-                
+
                 if let i = self.packages.firstIndex(where: { $0.name == pkgName }) {
                     self.packages[i].status = .upToDate
                     self.packages[i].isInstalled = true
@@ -779,7 +779,7 @@ final class CSLManager {
                     self.packages[i].downloadProgress = 1.0
                     self.packages[i].statusMessage = "Up to date"
                 }
-                
+
                 // If XP12 lighting is enabled, apply it automatically to the newly updated package
                 if UserDefaults.standard.bool(forKey: .enableCSLXP12Lights) {
                     let pkgDir = folderURL.appendingPathComponent(pkgName)
@@ -789,7 +789,7 @@ final class CSLManager {
                         }
                     }
                 }
-                
+
                 self.activeDownloadTasks.removeValue(forKey: pkgName)
                 self.isUpdating = !self.activeDownloadTasks.isEmpty
             } catch is CancellationError {
@@ -809,11 +809,11 @@ final class CSLManager {
                 self.isUpdating = !self.activeDownloadTasks.isEmpty
             }
         }
-        
+
         activeDownloadTasks[pkgName] = task
         isUpdating = true
     }
-    
+
     func cancelUpdate(_ package: CSLPackage) {
         if let task = activeDownloadTasks[package.name] {
             task.cancel()
@@ -826,7 +826,7 @@ final class CSLManager {
         }
         isUpdating = !activeDownloadTasks.isEmpty
     }
-    
+
     func updateAll() {
         let toUpdate = packages.filter { $0.isInstalled && $0.status == .needsUpdate }
         guard !toUpdate.isEmpty else { return }
@@ -835,20 +835,20 @@ final class CSLManager {
             updatePackage(pkg)
         }
     }
-    
+
     func verifyPackage(_ package: CSLPackage) {
         guard let folderURL = cslFolderURL else { return }
-        
+
         if package.files.isEmpty || !hasFetchedRemoteIndex {
             scanAndCheck()
             return
         }
-        
+
         guard let index = packages.firstIndex(where: { $0.id == package.id }) else { return }
-        
+
         packages[index].status = .checking
         packages[index].statusMessage = "Verifying files..."
-        
+
         let pkg = packages[index]
         Task { @MainActor in
             let raw = CSLRawPackage(
@@ -868,17 +868,17 @@ final class CSLManager {
             }
         }
     }
-    
+
     // MARK: - XP12 Lighting Batch Operations
-    
+
     var isApplyingLights: Bool = false
-    
+
     func applyXP12LightsToAll(flashingBeacons: Bool = true) {
         guard let folderURL = cslFolderURL else { return }
         guard !isApplyingLights else { return }
         isApplyingLights = true
         log("[XP12 Lights] Applying modern X-Plane 12 lighting to all installed CSL models...")
-        
+
         Task { @MainActor in
             let installedPackages = self.packages.filter { $0.isInstalled }
             for pkg in installedPackages {
@@ -898,13 +898,13 @@ final class CSLManager {
             }
         }
     }
-    
+
     func revertXP12LightsFromAll() {
         guard let folderURL = cslFolderURL else { return }
         guard !isApplyingLights else { return }
         isApplyingLights = true
         log("[XP12 Lights] Reverting all CSL models to original unmodified lighting...")
-        
+
         Task { @MainActor in
             let installedPackages = self.packages.filter { $0.isInstalled }
             for pkg in installedPackages {

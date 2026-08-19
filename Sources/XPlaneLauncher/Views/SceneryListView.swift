@@ -28,7 +28,7 @@ struct SceneryListView: View {
     @State private var selection = Set<UUID>()
     @State private var isCreatingGroup = false
     @State private var newGroupName = ""
-    
+
     var body: some View {
         NavigationStack {
             List(selection: $selection) {
@@ -43,7 +43,7 @@ struct SceneryListView: View {
                     }
                 }
                 .onMove(perform: moveDisplayItems)
-                
+
                 if pluginManager.scenery.isEmpty {
                     ContentUnavailableView {
                         Label("No Scenery Found", systemImage: "map")
@@ -74,13 +74,13 @@ struct SceneryListView: View {
             }
         }
     }
-    
+
     // MARK: - Data Source
-    
+
     enum DisplayItem: Identifiable {
         case simple(PluginManager.Scenery)
         case group(PluginManager.SceneryGroup, [PluginManager.Scenery])
-        
+
         var id: UUID {
             switch self {
             case .simple(let s): return s.id
@@ -88,11 +88,11 @@ struct SceneryListView: View {
             }
         }
     }
-    
+
     var displayItems: [DisplayItem] {
         var items: [DisplayItem] = []
         var processedGroups = Set<UUID>()
-        
+
         for item in pluginManager.scenery {
             // Check if item belongs to a group
             if let group = pluginManager.sceneryGroups.first(where: { $0.childFolderNames.contains(item.folderName) }) {
@@ -111,21 +111,21 @@ struct SceneryListView: View {
         }
         return items
     }
-    
+
     // MARK: - Actions
-    
+
     func createGroupFromSelection() {
         let selectedItems = pluginManager.scenery.filter { selection.contains($0.id) }
         guard !selectedItems.isEmpty else { return }
-        
+
         pluginManager.createGroup(name: newGroupName, with: selectedItems)
         selection.removeAll()
     }
-    
+
     func moveDisplayItems(from source: IndexSet, to destination: Int) {
         var currentDisplay = displayItems
         currentDisplay.move(fromOffsets: source, toOffset: destination)
-        
+
         var newScenery: [PluginManager.Scenery] = []
         for item in currentDisplay {
              switch item {
@@ -133,7 +133,7 @@ struct SceneryListView: View {
              case .group(_, let members): newScenery.append(contentsOf: members)
              }
         }
-        
+
         pluginManager.scenery = newScenery
         pluginManager.saveSceneryOrder()
     }
@@ -146,10 +146,10 @@ struct SceneryGroupSection: View {
     let group: PluginManager.SceneryGroup
     let members: [PluginManager.Scenery]
     let selection: Set<UUID>
-    
+
     @State private var isRenaming = false
     @State private var renameText = ""
-    
+
     var body: some View {
         DisclosureGroup(isExpanded: Binding(
             get: { group.isExpanded },
@@ -173,7 +173,7 @@ struct SceneryGroupSection: View {
                 Text(group.name)
                     .font(.headline)
                 Spacer()
-                
+
                 // Group Toggles
                 Toggle("", isOn: Binding(
                     get: { members.contains(where: { $0.isEnabled }) }, // On if any is on? Or all? User req: Toggle group toggles all.
@@ -205,25 +205,25 @@ struct SceneryGroupSection: View {
             }
         }
     }
-    
+
     func handleDrop(items: [String]) -> Bool {
         var didMove = false
         var itemsToMove: [PluginManager.Scenery] = []
         var potentialUUIDs = Set<UUID>()
-        
+
         // 1. Collect dropped UUIDs
         for uuidString in items {
             if let uuid = UUID(uuidString: uuidString) {
                 potentialUUIDs.insert(uuid)
             }
         }
-        
+
         // 2. Check overlap with selection
         // If the dropped items are part of the selection, move the whole selection
         if !selection.isDisjoint(with: potentialUUIDs) {
             potentialUUIDs.formUnion(selection)
         }
-        
+
         // 3. Resolve to Scenery objects
         for uuid in potentialUUIDs {
             if let sceneryItem = pluginManager.scenery.first(where: { $0.id == uuid }) {
@@ -233,7 +233,7 @@ struct SceneryGroupSection: View {
                 }
             }
         }
-        
+
         if !itemsToMove.isEmpty {
             DispatchQueue.main.async {
                 withAnimation {
@@ -242,28 +242,28 @@ struct SceneryGroupSection: View {
             }
             didMove = true
         }
-        
+
         return didMove
     }
-    
+
     func moveMembers(from source: IndexSet, to destination: Int) {
         // Reorder members within the group
         var currentMembers = members
         currentMembers.move(fromOffsets: source, toOffset: destination)
-        
+
         // Reconstruct global list
         if let firstOld = members.first,
            let insertIndex = pluginManager.scenery.firstIndex(where: { $0.id == firstOld.id }) {
-             
+
              var _ = pluginManager.scenery.filter { !group.childFolderNames.contains($0.folderName) }
-             
+
              var allScenery = pluginManager.scenery
              allScenery.removeAll { group.childFolderNames.contains($0.folderName) }
-             
+
              let safeIndex = min(insertIndex, allScenery.count)
-             
+
              allScenery.insert(contentsOf: currentMembers, at: safeIndex)
-             
+
              pluginManager.scenery = allScenery
              pluginManager.saveSceneryOrder()
         }
@@ -274,7 +274,7 @@ struct SceneryRow: View {
     @Environment(PluginManager.self) var pluginManager
     let item: PluginManager.Scenery
     let selection: Set<UUID>
-    
+
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: item.isEnabled ? "map.fill" : "map")
@@ -283,7 +283,7 @@ struct SceneryRow: View {
                 .frame(width: 32, height: 32)
                 .background(statusColor.opacity(0.12))
                 .clipShape(RoundedRectangle(cornerRadius: 6))
-            
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.name)
                     .font(.body)
@@ -302,9 +302,9 @@ struct SceneryRow: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            
+
             Spacer()
-            
+
             Text(item.isEnabled ? "Enabled" : (item.isInIni ? "Disabled" : "Available"))
                 .font(.caption2)
                 .fontWeight(.semibold)
@@ -313,7 +313,7 @@ struct SceneryRow: View {
                 .padding(.vertical, 3)
                 .background(statusColor.opacity(0.12))
                 .clipShape(Capsule())
-            
+
             if item.isEnabled || item.isInIni {
                 Toggle("", isOn: Binding(
                     get: { item.isEnabled },
@@ -349,26 +349,26 @@ struct SceneryRow: View {
         .dropDestination(for: String.self) { items, location in
             var itemsToMove: [PluginManager.Scenery] = []
             var potentialUUIDs = Set<UUID>()
-            
+
             // 1. Collect dropped UUIDs
             for uuidString in items {
                 if let uuid = UUID(uuidString: uuidString) {
                     potentialUUIDs.insert(uuid)
                 }
             }
-            
+
             // 2. Overlap with selection
             if !selection.isDisjoint(with: potentialUUIDs) {
                  potentialUUIDs.formUnion(selection)
             }
-            
+
             // 3. Resolve
             for uuid in potentialUUIDs {
                 if let sceneryItem = pluginManager.scenery.first(where: { $0.id == uuid }) {
                     itemsToMove.append(sceneryItem)
                 }
             }
-            
+
             if !itemsToMove.isEmpty {
                 DispatchQueue.main.async {
                     withAnimation {
@@ -380,7 +380,7 @@ struct SceneryRow: View {
             return false
         }
     }
-    
+
     var statusColor: Color {
         if item.isEnabled { return .green }
         if item.isInIni { return .orange }

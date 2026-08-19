@@ -27,7 +27,7 @@ struct AboutView: View {
     @Environment(AppUpdateManager.self) var appUpdateManager
     @State private var copiedLicense: Bool = false
     @State private var showReleaseNotesSheet: Bool = false
-    
+
     private var lastCheckedFormatted: String {
         guard let date = appUpdateManager.lastCheckDate else { return "Never" }
         let formatter = RelativeDateTimeFormatter()
@@ -35,7 +35,7 @@ struct AboutView: View {
         formatter.unitsStyle = .full
         return formatter.localizedString(for: date, relativeTo: Date())
     }
-    
+
     var body: some View {
         VStack(spacing: 0) {
             // Header Bar
@@ -44,7 +44,7 @@ struct AboutView: View {
                     .font(.title3)
                     .fontWeight(.bold)
                 Spacer()
-                
+
                 if appUpdateManager.isChecking {
                     HStack(spacing: 6) {
                         ProgressView()
@@ -64,9 +64,9 @@ struct AboutView: View {
             }
             .padding(12)
             .background(Color(NSColor.controlBackgroundColor))
-            
+
             Divider()
-            
+
             ScrollView {
                 VStack(spacing: 20) {
                     // Hero Header
@@ -88,24 +88,24 @@ struct AboutView: View {
                             }
                             .shadow(color: .black.opacity(0.15), radius: 6, x: 0, y: 3)
                         }
-                        
+
                         VStack(spacing: 4) {
                             Text(AppInfo.appName)
                                 .font(.title2)
                                 .fontWeight(.bold)
-                            
+
                             Text(AppInfo.displayVersion)
                                 .font(.subheadline)
                                 .fontWeight(.medium)
                                 .foregroundStyle(.secondary)
-                            
+
                             Text("A native macOS add-on manager and profile launcher for X-Plane 12.")
                                 .font(.callout)
                                 .foregroundStyle(.secondary)
                                 .multilineTextAlignment(.center)
                                 .padding(.top, 2)
                         }
-                        
+
                         // Update Banner / Status
                         if appUpdateManager.isUpdateAvailable, let release = appUpdateManager.latestRelease {
                             VStack(spacing: 10) {
@@ -113,7 +113,7 @@ struct AboutView: View {
                                     Image(systemName: "sparkles")
                                         .font(.title2)
                                         .foregroundStyle(.orange)
-                                    
+
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text("Update Available: \(release.displayTitle)")
                                             .font(.subheadline)
@@ -122,10 +122,10 @@ struct AboutView: View {
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
                                     }
-                                    
+
                                     Spacer()
                                 }
-                                
+
                                 HStack(spacing: 10) {
                                     Button(action: {
                                         showReleaseNotesSheet = true
@@ -133,7 +133,7 @@ struct AboutView: View {
                                         Label("What's New", systemImage: "doc.plaintext")
                                     }
                                     .controlSize(.small)
-                                    
+
                                     Button(action: {
                                         appUpdateManager.downloadLatestDMG()
                                     }) {
@@ -168,7 +168,7 @@ struct AboutView: View {
                         }
                     }
                     .padding(.top, 12)
-                    
+
                     // Links & Resources
                     GroupBox("Links & Resources") {
                         VStack(spacing: 8) {
@@ -178,18 +178,18 @@ struct AboutView: View {
                                 subtitle: "Source code, contributions, and discussions",
                                 url: AppInfo.githubURL
                             )
-                            
+
                             Divider()
-                            
+
                             LinkRow(
                                 icon: "tag",
                                 title: "Releases & Changelog",
                                 subtitle: "Download binary packages and view version release notes",
                                 url: AppInfo.releasesURL
                             )
-                            
+
                             Divider()
-                            
+
                             LinkRow(
                                 icon: "ladybug",
                                 title: "Issue Tracker",
@@ -199,7 +199,7 @@ struct AboutView: View {
                         }
                         .padding(8)
                     }
-                    
+
                     // Author & Copyright
                     GroupBox("Author & Credits") {
                         VStack(spacing: 8) {
@@ -212,9 +212,9 @@ struct AboutView: View {
                                         .font(.subheadline)
                                         .fontWeight(.semibold)
                                 }
-                                
+
                                 Spacer()
-                                
+
                                 Button(action: {
                                     NSWorkspace.shared.open(AppInfo.authorURL)
                                 }) {
@@ -227,24 +227,24 @@ struct AboutView: View {
                                 }
                                 .buttonStyle(.link)
                             }
-                            
+
                             Divider()
-                            
+
                             HStack {
                                 Text(AppInfo.copyright)
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                                 Spacer()
                             }
-                            
+
                             Divider()
-                            
+
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Special Thanks & Integrations")
                                     .font(.caption)
                                     .fontWeight(.medium)
                                     .foregroundStyle(.secondary)
-                                
+
                                 Text("Built for X-Plane 12 by Laminar Research. Integrates with SkunkCrafts Updater, X-Updater, and the X-CSL multiplayer aircraft library.")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
@@ -253,7 +253,7 @@ struct AboutView: View {
                         }
                         .padding(8)
                     }
-                    
+
                     // License
                     GroupBox("License") {
                         VStack(alignment: .leading, spacing: 10) {
@@ -261,9 +261,9 @@ struct AboutView: View {
                                 Label(AppInfo.license, systemImage: "doc.text")
                                     .font(.subheadline)
                                     .fontWeight(.semibold)
-                                
+
                                 Spacer()
-                                
+
                                 Button(action: {
                                     NSPasteboard.general.clearContents()
                                     NSPasteboard.general.setString(AppInfo.licenseText, forType: .string)
@@ -280,7 +280,7 @@ struct AboutView: View {
                                 }
                                 .controlSize(.small)
                             }
-                            
+
                             ScrollView(.vertical) {
                                 Text(AppInfo.licenseText)
                                     .font(.system(.caption2, design: .monospaced))
@@ -316,7 +316,7 @@ private struct LinkRow: View {
     let title: String
     let subtitle: String
     let url: URL
-    
+
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
@@ -327,9 +327,9 @@ private struct LinkRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            
+
             Spacer()
-            
+
             Button(action: {
                 NSWorkspace.shared.open(url)
             }) {

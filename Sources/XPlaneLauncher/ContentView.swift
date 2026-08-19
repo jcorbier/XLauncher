@@ -29,11 +29,11 @@ struct ContentView: View {
     @Environment(AppUpdateManager.self) var appUpdateManager
     @Binding var showWelcomeScreen: Bool
     @State private var selectedCategory: NavigationCategory? = .aircraft
-    
+
     init(showWelcomeScreen: Binding<Bool> = .constant(false)) {
         self._showWelcomeScreen = showWelcomeScreen
     }
-    
+
     enum NavigationCategory: String, CaseIterable, Identifiable {
         case aircraft = "Aircraft"
         case plugins = "Plugins"
@@ -44,9 +44,9 @@ struct ContentView: View {
         case updates = "Updates"
         case settings = "Settings"
         case about = "About"
-        
+
         var id: String { rawValue }
-        
+
         var systemImage: String {
             switch self {
             case .aircraft: return "airplane"
@@ -60,7 +60,7 @@ struct ContentView: View {
             case .about: return "info.circle"
             }
         }
-        
+
         static func mainCategories(cslEnabled: Bool) -> [NavigationCategory] {
             var list: [NavigationCategory] = [.aircraft, .plugins, .scenery, .luaScripts, .scripts]
             if cslEnabled {
@@ -68,20 +68,20 @@ struct ContentView: View {
             }
             return list
         }
-        
+
         static var systemCategories: [NavigationCategory] {
             [.updates, .settings]
         }
-        
+
         var isAddonCategory: Bool {
             self != .updates && self != .settings && self != .csl && self != .about
         }
     }
-    
+
     var availableUpdatesCount: Int {
         updateManager.updatableAddons.filter { $0.isUpdateAvailable }.count
     }
-    
+
     var body: some View {
         NavigationSplitView {
             List(selection: $selectedCategory) {
@@ -91,10 +91,10 @@ struct ContentView: View {
                             HStack(spacing: 8) {
                                 Label(category.rawValue, systemImage: category.systemImage)
                                     .font(.body)
-                                
+
                                 if category == .csl {
                                     Spacer()
-                                    
+
                                     if cslManager.isProcessing {
                                         ProgressView()
                                             .controlSize(.small)
@@ -113,22 +113,22 @@ struct ContentView: View {
                         }
                     }
                 }
-                
+
                 Section("System") {
                     ForEach(NavigationCategory.systemCategories) { category in
                         NavigationLink(value: category) {
                             HStack(spacing: 8) {
                                 Label(category.rawValue, systemImage: category.systemImage)
                                     .font(.body)
-                                
+
                                 if category == .updates {
                                     Spacer()
-                                    
+
                                     if updateManager.isProcessing {
                                         ProgressView()
                                             .controlSize(.small)
                                     }
-                                    
+
                                     if availableUpdatesCount > 0 {
                                         Text("\(availableUpdatesCount)")
                                             .font(.caption2)
@@ -143,7 +143,7 @@ struct ContentView: View {
                             }
                         }
                     }
-                    
+
                     Button(action: {
                         NSWorkspace.shared.open(AppInfo.documentationURL)
                     }) {
@@ -157,14 +157,14 @@ struct ContentView: View {
                         }
                     }
                     .buttonStyle(.plain)
-                    
+
                     NavigationLink(value: NavigationCategory.about) {
                         HStack(spacing: 8) {
                             Label(NavigationCategory.about.rawValue, systemImage: NavigationCategory.about.systemImage)
                                 .font(.body)
-                            
+
                             Spacer()
-                            
+
                             if appUpdateManager.isUpdateAvailable {
                                 let tag = appUpdateManager.latestRelease?.tagName ?? ""
                                 let badgeText = tag.isEmpty ? "NEW" : (tag.lowercased().hasPrefix("v") ? "NEW \(tag)" : "NEW v\(tag)")
@@ -189,10 +189,10 @@ struct ContentView: View {
                 if let category = selectedCategory, category.isAddonCategory {
                     ProfileSelectorView()
                         .padding(12)
-                    
+
                     Divider()
                 }
-                
+
                 // Active Category View
                 Group {
                     switch selectedCategory {
@@ -219,9 +219,9 @@ struct ContentView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                
+
                 Divider()
-                
+
                 // Persistent Launch Footer Bar (Always Visible)
                 HStack {
                     Spacer()

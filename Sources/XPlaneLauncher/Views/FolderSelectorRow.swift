@@ -27,7 +27,7 @@ struct FolderSelectorRow: View {
     let path: URL?
     let placeholder: String
     let action: () -> Void
-    
+
     var body: some View {
         HStack {
             VStack(alignment: .leading) {
@@ -46,9 +46,9 @@ struct FolderSelectorRow: View {
                         .italic()
                 }
             }
-            
+
             Spacer()
-            
+
             Button("Change...") {
                 action()
             }

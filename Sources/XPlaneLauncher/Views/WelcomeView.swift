@@ -28,18 +28,18 @@ struct WelcomeView: View {
     @Environment(UpdateManager.self) var updateManager
     @Environment(CSLManager.self) var cslManager
     @Environment(\.dismiss) private var dismiss
-    
+
     var onComplete: (() -> Void)? = nil
-    
+
     var isXPlaneDetected: Bool {
         guard let path = pluginManager.xPlanePath else { return false }
         let appURL = path.appendingPathComponent("X-Plane.app")
         return FileManager.default.fileExists(atPath: appURL.path)
     }
-    
+
     var body: some View {
         @Bindable var pluginManager = pluginManager
-        
+
         VStack(spacing: 0) {
             ScrollView {
                 VStack(spacing: 24) {
@@ -62,11 +62,11 @@ struct WelcomeView: View {
                             }
                             .shadow(color: .black.opacity(0.15), radius: 6, x: 0, y: 3)
                         }
-                        
+
                         VStack(spacing: 4) {
                             Text("Welcome to X-Plane Launcher")
                                 .font(.system(size: 22, weight: .bold))
-                            
+
                             Text("Organize add-ons with symlinks, switch flight profiles seamlessly, and launch X-Plane 12 with a clean setup.")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
@@ -75,7 +75,7 @@ struct WelcomeView: View {
                         }
                     }
                     .padding(.top, 24)
-                    
+
                     // How it Works Cards
                     VStack(spacing: 10) {
                         FeatureRow(
@@ -84,14 +84,14 @@ struct WelcomeView: View {
                             title: "Central Data Folder",
                             description: "Keep your add-ons organized in one place outside X-Plane. Subfolders for Plugins, Scenery, Aircraft, and LuaScripts are managed automatically."
                         )
-                        
+
                         FeatureRow(
                             icon: "arrow.triangle.swap",
                             color: .green,
                             title: "Profiles & Symlinks",
                             description: "Create profiles for different flying scenarios (e.g. VATSIM, Offline). The launcher dynamically links only active items into your simulator."
                         )
-                        
+
                         FeatureRow(
                             icon: "sparkles",
                             color: .orange,
@@ -100,16 +100,16 @@ struct WelcomeView: View {
                         )
                     }
                     .padding(.horizontal, 20)
-                    
+
                     Divider()
                         .padding(.horizontal, 20)
-                    
+
                     // Initial Setup Section
                     VStack(alignment: .leading, spacing: 16) {
                         Text("Initial Setup")
                             .font(.headline)
                             .padding(.horizontal, 4)
-                        
+
                         // X-Plane 12 Location
                         GroupBox {
                             VStack(alignment: .leading, spacing: 6) {
@@ -127,7 +127,7 @@ struct WelcomeView: View {
                                         pluginManager.xPlanePath = panel.url
                                     }
                                 }
-                                
+
                                 if pluginManager.xPlanePath != nil {
                                     HStack(spacing: 4) {
                                         Image(systemName: isXPlaneDetected ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
@@ -144,7 +144,7 @@ struct WelcomeView: View {
                             }
                             .padding(8)
                         }
-                        
+
                         // Central Data Folder
                         GroupBox {
                             VStack(alignment: .leading, spacing: 6) {
@@ -162,30 +162,30 @@ struct WelcomeView: View {
                                         pluginManager.launcherDataFolder = panel.url
                                     }
                                 }
-                                
+
                                 Text("Add-ons in this folder will be organized into Plugins, Scenery, Aircraft, and LuaScripts.")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
                             .padding(8)
                         }
-                        
+
                         // CSL Support
                         GroupBox {
                             VStack(alignment: .leading, spacing: 10) {
                                 Toggle("Enable X-CSL multiplayer models support", isOn: $pluginManager.enableCSLSupport)
                                     .font(.body)
-                                
+
                                 Text("Enables checking, installing, and updating CSL models for online networks (VATSIM, IVAO) from the X-CSL repository.")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
-                                
+
                                 if pluginManager.enableCSLSupport {
                                     Divider()
-                                    
+
                                     Toggle("Apply modern X-Plane 12 lighting to X-CSL models", isOn: $pluginManager.enableCSLXP12Lights)
                                         .font(.body)
-                                    
+
                                     Text("Enhances CSL aircraft with realistic parameterized lighting, dynamic strobe/beacon sequences, and ground spill effects.")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
@@ -199,9 +199,9 @@ struct WelcomeView: View {
                 }
                 .padding(.bottom, 20)
             }
-            
+
             Divider()
-            
+
             // Footer Action Bar
             HStack {
                 if pluginManager.hasCompletedWelcome || pluginManager.isConfigured {
@@ -210,9 +210,9 @@ struct WelcomeView: View {
                     }
                     .keyboardShortcut(.cancelAction)
                 }
-                
+
                 Spacer()
-                
+
                 Button(action: {
                     pluginManager.savePath()
                     pluginManager.ensureLauncherDataDirectories()
@@ -240,7 +240,7 @@ private struct FeatureRow: View {
     let color: Color
     let title: String
     let description: String
-    
+
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
             Image(systemName: icon)
@@ -249,18 +249,18 @@ private struct FeatureRow: View {
                 .frame(width: 32, height: 32)
                 .background(color.opacity(0.12))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
-            
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.subheadline)
                     .fontWeight(.semibold)
-                
+
                 Text(description)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            
+
             Spacer(minLength: 0)
         }
         .padding(10)

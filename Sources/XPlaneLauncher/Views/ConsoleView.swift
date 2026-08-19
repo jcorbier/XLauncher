@@ -26,9 +26,9 @@ import AppKit
 struct ConsoleView: View {
     let title: String
     let logger: ConsoleLogger
-    
+
     @State private var hasCopied: Bool = false
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             // Header Bar
@@ -37,9 +37,9 @@ struct ConsoleView: View {
                     .font(.caption)
                     .fontWeight(.bold)
                     .foregroundStyle(.secondary)
-                
+
                 Spacer()
-                
+
                 Button(action: copyAllLogs) {
                     HStack(spacing: 4) {
                         Image(systemName: hasCopied ? "checkmark" : "doc.on.doc")
@@ -50,11 +50,11 @@ struct ConsoleView: View {
                 .font(.caption)
                 .foregroundStyle(hasCopied ? Color.green : Color.secondary)
                 .disabled(logger.entries.isEmpty)
-                
+
                 Text("•")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
-                
+
                 Button("Clear") {
                     logger.clear()
                 }
@@ -65,7 +65,7 @@ struct ConsoleView: View {
             }
             .padding(.horizontal, 10)
             .padding(.top, 6)
-            
+
             // Console Output Scroll Area
             ScrollViewReader { proxy in
                 ScrollView {
@@ -108,26 +108,26 @@ struct ConsoleView: View {
                 copyAllLogs()
             }
             .disabled(logger.entries.isEmpty)
-            
+
             Divider()
-            
+
             Button("Clear Console") {
                 logger.clear()
             }
             .disabled(logger.entries.isEmpty)
         }
     }
-    
+
     private func copyAllLogs() {
         guard !logger.entries.isEmpty else { return }
         let text = logger.entries.joined(separator: "\n")
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
-        
+
         withAnimation {
             hasCopied = true
         }
-        
+
         Task {
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             await MainActor.run {
@@ -137,7 +137,7 @@ struct ConsoleView: View {
             }
         }
     }
-    
+
     private func scrollToBottom(proxy: ScrollViewProxy) {
         guard let lastIndex = logger.entries.indices.last else { return }
         DispatchQueue.main.async {

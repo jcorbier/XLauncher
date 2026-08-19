@@ -24,13 +24,13 @@ import SwiftUI
 
 struct AircraftListView: View {
     @Environment(PluginManager.self) var pluginManager
-    
+
     var body: some View {
         List {
             ForEach(pluginManager.aircraft) { item in
                 AircraftRow(aircraft: item)
             }
-            
+
             if pluginManager.aircraft.isEmpty {
                 ContentUnavailableView {
                     Label("No Aircraft Found", systemImage: "airplane")
@@ -47,7 +47,7 @@ struct AircraftListView: View {
 struct AircraftRow: View {
     @Environment(PluginManager.self) var pluginManager
     let aircraft: PluginManager.Aircraft
-    
+
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: "airplane")
@@ -56,7 +56,7 @@ struct AircraftRow: View {
                 .frame(width: 32, height: 32)
                 .background(aircraft.isEnabled ? Color.green.opacity(0.12) : Color.secondary.opacity(0.12))
                 .clipShape(RoundedRectangle(cornerRadius: 6))
-            
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(aircraft.name)
                     .font(.body)
@@ -65,9 +65,9 @@ struct AircraftRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            
+
             Spacer()
-            
+
             Text(aircraft.isEnabled ? "Enabled" : "Disabled")
                 .font(.caption2)
                 .fontWeight(.semibold)
@@ -76,7 +76,7 @@ struct AircraftRow: View {
                 .padding(.vertical, 3)
                 .background(aircraft.isEnabled ? Color.green.opacity(0.12) : Color.secondary.opacity(0.12))
                 .clipShape(Capsule())
-            
+
             Toggle("", isOn: Binding(
                 get: { aircraft.isEnabled },
                 set: { _ in pluginManager.toggleAircraft(aircraft) }

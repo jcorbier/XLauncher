@@ -24,13 +24,13 @@ import SwiftUI
 
 struct LuaScriptsListView: View {
     @Environment(PluginManager.self) var pluginManager
-    
+
     var body: some View {
         List {
             ForEach(pluginManager.luaScripts) { item in
                 LuaScriptRow(script: item)
             }
-            
+
             if pluginManager.luaScripts.isEmpty {
                 ContentUnavailableView {
                     Label("No FlyWithLua Scripts Found", systemImage: "scroll")
@@ -47,7 +47,7 @@ struct LuaScriptsListView: View {
 struct LuaScriptRow: View {
     @Environment(PluginManager.self) var pluginManager
     let script: PluginManager.LuaScript
-    
+
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: script.isDirectory ? "folder.fill" : "scroll")
@@ -56,13 +56,13 @@ struct LuaScriptRow: View {
                 .frame(width: 32, height: 32)
                 .background(script.isEnabled ? Color.green.opacity(0.12) : Color.secondary.opacity(0.12))
                 .clipShape(RoundedRectangle(cornerRadius: 6))
-            
+
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(script.name)
                         .font(.body)
                         .fontWeight(.medium)
-                    
+
                     if script.isDirectory {
                         Text("Folder")
                             .font(.caption2)
@@ -74,14 +74,14 @@ struct LuaScriptRow: View {
                             .clipShape(Capsule())
                     }
                 }
-                
+
                 Text(script.folderName)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            
+
             Spacer()
-            
+
             Text(script.isEnabled ? "Enabled" : "Disabled")
                 .font(.caption2)
                 .fontWeight(.semibold)
@@ -90,7 +90,7 @@ struct LuaScriptRow: View {
                 .padding(.vertical, 3)
                 .background(script.isEnabled ? Color.green.opacity(0.12) : Color.secondary.opacity(0.12))
                 .clipShape(Capsule())
-            
+
             Toggle("", isOn: Binding(
                 get: { script.isEnabled },
                 set: { _ in pluginManager.toggleLuaScript(script) }

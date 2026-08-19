@@ -26,19 +26,19 @@ struct ProfileSelectorView: View {
     @Environment(PluginManager.self) var pluginManager
     @State private var showingSaveProfileAlert = false
     @State private var newProfileName = ""
-    
+
     var body: some View {
         @Bindable var pluginManager = pluginManager
-        
+
         HStack(spacing: 12) {
             HStack(spacing: 8) {
                 Image(systemName: "person.crop.circle.fill")
                     .font(.title2)
                     .foregroundStyle(.blue)
-                
+
                 Text("Profile:")
                     .font(.headline)
-                
+
                 Picker("", selection: $pluginManager.selectedProfileId) {
                     Text("None / Custom").tag(UUID?.none)
                     Divider()
@@ -49,7 +49,7 @@ struct ProfileSelectorView: View {
                 .labelsHidden()
                 .frame(width: 180)
             }
-            
+
             if pluginManager.selectedProfileId != nil && pluginManager.isCurrentProfileModified {
                 HStack(spacing: 4) {
                     Circle()
@@ -65,9 +65,9 @@ struct ProfileSelectorView: View {
                 .background(Color.orange.opacity(0.15))
                 .clipShape(Capsule())
             }
-            
+
             Spacer()
-            
+
             HStack(spacing: 8) {
                 Button(action: {
                     if let selectedId = pluginManager.selectedProfileId,
@@ -79,7 +79,7 @@ struct ProfileSelectorView: View {
                 }
                 .disabled(pluginManager.selectedProfileId == nil || !pluginManager.isCurrentProfileModified)
                 .help("Update current profile with current selection")
-                
+
                 Button(action: {
                     newProfileName = ""
                     showingSaveProfileAlert = true
@@ -87,7 +87,7 @@ struct ProfileSelectorView: View {
                     Label("Save New", systemImage: "plus")
                 }
                 .help("Save current selection as a new profile")
-                
+
                 Button(action: {
                     if let selectedId = pluginManager.selectedProfileId,
                        let profile = pluginManager.profiles.first(where: { $0.id == selectedId }) {

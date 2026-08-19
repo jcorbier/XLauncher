@@ -30,7 +30,7 @@ struct SettingsView: View {
     @State private var selectedEnvVarId: PluginManager.ScriptEnvVar.ID?
     @State private var showWelcomeSheet: Bool = false
     @State private var showReleaseNotesSheet: Bool = false
-    
+
     private var lastCheckedFormatted: String {
         guard let date = appUpdateManager.lastCheckDate else { return "Never" }
         let formatter = RelativeDateTimeFormatter()
@@ -38,13 +38,13 @@ struct SettingsView: View {
         formatter.unitsStyle = .full
         return formatter.localizedString(for: date, relativeTo: Date())
     }
-    
+
     var body: some View {
         @Bindable var pluginManager = pluginManager
         @Bindable var appUpdateManager = appUpdateManager
         @Bindable var cslManager = cslManager
         @Bindable var updateManager = updateManager
-        
+
         VStack(spacing: 0) {
             // Header Bar
             HStack {
@@ -55,9 +55,9 @@ struct SettingsView: View {
             }
             .padding(12)
             .background(Color(NSColor.controlBackgroundColor))
-            
+
             Divider()
-            
+
             ScrollView {
                 VStack(spacing: 20) {
                     GroupBox("General") {
@@ -72,7 +72,7 @@ struct SettingsView: View {
                                     pluginManager.xPlanePath = panel.url
                                 }
                             }
-                            
+
                             Divider()
 
                             FolderSelectorRow(label: "Central Data Folder:", path: pluginManager.launcherDataFolder, placeholder: "Default (Application Support/XPlaneLauncher)") {
@@ -85,9 +85,9 @@ struct SettingsView: View {
                                     pluginManager.launcherDataFolder = panel.url
                                 }
                             }
-                            
+
                             Divider()
-                            
+
                             HStack {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text("Welcome Guide")
@@ -96,9 +96,9 @@ struct SettingsView: View {
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
-                                
+
                                 Spacer()
-                                
+
                                 Button("Show Welcome Screen...") {
                                     showWelcomeSheet = true
                                 }
@@ -106,23 +106,23 @@ struct SettingsView: View {
                         }
                         .padding(8)
                     }
-                    
+
                     GroupBox("Automatic Updates") {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("Configure which components automatically check for new versions on startup.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                            
+
                             VStack(alignment: .leading, spacing: 8) {
                                 Toggle("X-Plane Launcher application", isOn: $appUpdateManager.automaticallyCheckOnLaunch)
                                     .font(.body)
-                                
+
                                 Toggle("SkunkCrafts add-ons", isOn: $updateManager.automaticallyCheckSkunkCraftsUpdates)
                                     .font(.body)
-                                
+
                                 Toggle("X-Updater add-ons", isOn: $updateManager.automaticallyCheckXUpdaterUpdates)
                                     .font(.body)
-                                
+
                                 Toggle("X-CSL models", isOn: $cslManager.automaticallyCheckCSLUpdates)
                                     .font(.body)
                                     .disabled(!pluginManager.enableCSLSupport)
@@ -131,7 +131,7 @@ struct SettingsView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(8)
                     }
-                    
+
                     GroupBox("Application Updates") {
                         VStack(alignment: .leading, spacing: 12) {
                             Toggle("Include pre-release and beta versions", isOn: $appUpdateManager.includePrereleases)
@@ -139,9 +139,9 @@ struct SettingsView: View {
                                 .onChange(of: appUpdateManager.includePrereleases) { _, _ in
                                     appUpdateManager.checkForUpdates(manual: false)
                                 }
-                            
+
                             Divider()
-                            
+
                             HStack {
                                 VStack(alignment: .leading, spacing: 2) {
                                     HStack(spacing: 6) {
@@ -163,16 +163,16 @@ struct SettingsView: View {
                                                 .font(.subheadline)
                                         }
                                     }
-                                    
+
                                     if appUpdateManager.lastCheckDate != nil {
                                         Text("Last checked: \(lastCheckedFormatted)")
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
                                     }
                                 }
-                                
+
                                 Spacer()
-                                
+
                                 Button(action: {
                                     appUpdateManager.checkForUpdates(manual: true)
                                 }) {
@@ -180,10 +180,10 @@ struct SettingsView: View {
                                 }
                                 .disabled(appUpdateManager.isChecking)
                             }
-                            
+
                             if appUpdateManager.isUpdateAvailable, let release = appUpdateManager.latestRelease {
                                 Divider()
-                                
+
                                 HStack {
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text("New Version Available: \(release.displayTitle)")
@@ -193,14 +193,14 @@ struct SettingsView: View {
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
                                     }
-                                    
+
                                     Spacer()
-                                    
+
                                     Button("What's New") {
                                         showReleaseNotesSheet = true
                                     }
                                     .controlSize(.small)
-                                    
+
                                     Button(action: {
                                         appUpdateManager.downloadLatestDMG()
                                     }) {
@@ -220,27 +220,27 @@ struct SettingsView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(8)
                     }
-                    
+
                     GroupBox("X-CSL Models") {
                         VStack(alignment: .leading, spacing: 12) {
                             Toggle("Enable X-CSL support", isOn: $pluginManager.enableCSLSupport)
                                 .font(.body)
-                            
+
                             Text("When enabled, adds a CSL tab in the sidebar to check, install, and update CSL models in Resources/plugins/IVAO_CSL/CSL from the X-CSL repository.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                            
+
                             if pluginManager.enableCSLSupport {
                                 Divider()
-                                
+
                                 Toggle("Apply modern X-Plane 12 lighting to X-CSL models", isOn: $pluginManager.enableCSLXP12Lights)
                                     .font(.body)
                                     .disabled(cslManager.isApplyingLights == true)
-                                
+
                                 Text("Upgrades X-CSL aircraft lights to native X-Plane 12 parameterized lighting with realistic billboard and ground spill effects, gear retraction animations, and dynamic strobe/beacon sequences. Original files are backed up (.bak) and models remain synchronized with server updates.")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
-                                
+
                                 if cslManager.isApplyingLights == true {
                                     HStack(spacing: 6) {
                                         ProgressView()
@@ -256,7 +256,7 @@ struct SettingsView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(8)
                     }
-                    
+
                     GroupBox("Script Environment") {
                         VStack(spacing: 0) {
                             Table($pluginManager.scriptEnvironment, selection: $selectedEnvVarId) {
@@ -275,7 +275,7 @@ struct SettingsView: View {
                             .scrollContentBackground(.hidden)
                             .background(Color(NSColor.controlBackgroundColor))
                             .border(Color(NSColor.separatorColor), width: 1)
-                            
+
                             HStack {
                                 Button(action: {
                                     pluginManager.scriptEnvironment.append(PluginManager.ScriptEnvVar(key: "NEW_VAR", value: "VALUE"))
@@ -283,7 +283,7 @@ struct SettingsView: View {
                                     Image(systemName: "plus")
                                         .frame(width: 20, height: 20)
                                 }
-                                
+
                                 Button(action: {
                                     if let selectedId = selectedEnvVarId {
                                         pluginManager.scriptEnvironment.removeAll { $0.id == selectedId }
@@ -294,7 +294,7 @@ struct SettingsView: View {
                                         .frame(width: 20, height: 20)
                                 }
                                 .disabled(selectedEnvVarId == nil)
-                                
+
                                 Spacer()
                             }
                             .padding(.top, 8)

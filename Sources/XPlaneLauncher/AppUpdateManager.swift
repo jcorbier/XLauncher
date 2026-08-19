@@ -246,7 +246,7 @@ final class AppUpdateManager {
         Task { @MainActor in
             do {
                 let releases = try await fetchAllReleasesFromGitHub(includePrerelease: includePrereleases)
-                
+
                 guard let topRelease = releases.first else {
                     self.latestRelease = nil
                     self.newReleases = []
@@ -319,7 +319,7 @@ final class AppUpdateManager {
         var request = URLRequest(url: AppInfo.allReleasesAPIURL)
         request.httpMethod = "GET"
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        
+
         let appVer = AppInfo.version.isEmpty ? "dev" : AppInfo.version
         request.setValue("XPlaneLauncher/\(appVer)", forHTTPHeaderField: "User-Agent")
         request.timeoutInterval = 15

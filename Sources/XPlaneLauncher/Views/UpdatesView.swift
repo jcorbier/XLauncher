@@ -26,17 +26,17 @@ struct UpdatesView: View {
     @Environment(UpdateManager.self) var updateManager
     @State private var selectedFilter: AddonCategoryFilter = .all
     @State private var showDebugConsole: Bool = false
-    
+
     enum AddonCategoryFilter: String, CaseIterable, Identifiable {
         case all = "All"
         case aircraft = "Aircraft"
         case plugin = "Plugins"
         case scenery = "Scenery"
         case luaScript = "Lua Scripts"
-        
+
         var id: String { rawValue }
     }
-    
+
     var filteredAddons: [UpdateManager.UpdatableAddon] {
         switch selectedFilter {
         case .all:
@@ -51,11 +51,11 @@ struct UpdatesView: View {
             return updateManager.updatableAddons.filter { $0.addonCategory == .luaScript }
         }
     }
-    
+
     var hasAvailableUpdates: Bool {
         updateManager.updatableAddons.contains { $0.isUpdateAvailable }
     }
-    
+
     var body: some View {
         VStack(spacing: 0) {
             // Header Bar
@@ -63,9 +63,9 @@ struct UpdatesView: View {
                 Label("Addon Updates", systemImage: "arrow.triangle.2.circlepath")
                     .font(.title3)
                     .fontWeight(.bold)
-                
+
                 Spacer()
-                
+
                 Picker("Filter", selection: $selectedFilter) {
                     ForEach(AddonCategoryFilter.allCases) { filter in
                         Text(filter.rawValue).tag(filter)
@@ -73,7 +73,7 @@ struct UpdatesView: View {
                 }
                 .frame(width: 140)
                 .labelsHidden()
-                
+
                 Button(action: {
                     updateManager.scanUpdatableAddons()
                     updateManager.checkAllAddonUpdates()
@@ -81,7 +81,7 @@ struct UpdatesView: View {
                     Label("Check for Updates", systemImage: "arrow.clockwise")
                 }
                 .disabled(updateManager.isProcessing)
-                
+
                 Button(action: {
                     for addon in updateManager.updatableAddons where addon.isUpdateAvailable {
                         updateManager.updateAddon(addon)
@@ -90,7 +90,7 @@ struct UpdatesView: View {
                     Label("Update All", systemImage: "square.and.arrow.down")
                 }
                 .disabled(!hasAvailableUpdates || updateManager.isProcessing)
-                
+
                 Button(action: {
                     showDebugConsole.toggle()
                 }) {
@@ -99,9 +99,9 @@ struct UpdatesView: View {
             }
             .padding(12)
             .background(Color(NSColor.controlBackgroundColor))
-            
+
             Divider()
-            
+
             // List / Empty State
             if filteredAddons.isEmpty {
                 ContentUnavailableView {
@@ -119,7 +119,7 @@ struct UpdatesView: View {
                 .listStyle(.inset)
                 .scrollContentBackground(.hidden)
             }
-            
+
             if showDebugConsole {
                 Divider()
                 ConsoleView(title: "Live Console", logger: updateManager.logger)
@@ -131,7 +131,7 @@ struct UpdatesView: View {
 struct UpdatableAddonRow: View {
     @Environment(UpdateManager.self) var updateManager
     let addon: UpdateManager.UpdatableAddon
-    
+
     var categoryColor: Color {
         switch addon.addonCategory {
         case .aircraft: return .blue
@@ -140,7 +140,7 @@ struct UpdatableAddonRow: View {
         case .luaScript: return .purple
         }
     }
-    
+
     var statusColor: Color {
         if addon.isUpdateAvailable {
             return .orange
@@ -154,7 +154,7 @@ struct UpdatableAddonRow: View {
         }
         return .green
     }
-    
+
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: addon.updaterType == .skunkcrafts ? "gearshape.2.fill" : "arrow.down.circle.fill")
@@ -163,13 +163,13 @@ struct UpdatableAddonRow: View {
                 .frame(width: 36, height: 36)
                 .background(categoryColor.opacity(0.12))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
-            
+
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(addon.name)
                         .font(.body)
                         .fontWeight(.medium)
-                    
+
                     Text(addon.addonCategory.rawValue)
                         .font(.caption2)
                         .fontWeight(.semibold)
@@ -178,7 +178,7 @@ struct UpdatableAddonRow: View {
                         .padding(.vertical, 2)
                         .background(categoryColor.opacity(0.12))
                         .clipShape(Capsule())
-                    
+
                     Text(addon.updaterType.rawValue)
                         .font(.caption2)
                         .fontWeight(.semibold)
@@ -188,12 +188,12 @@ struct UpdatableAddonRow: View {
                         .background(Color.secondary.opacity(0.12))
                         .clipShape(Capsule())
                 }
-                
+
                 HStack(spacing: 8) {
                     Text(addon.folderName)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    
+
                     if let ver = addon.currentVersion {
                         Text("•  Version \(ver)")
                             .font(.caption)
@@ -201,9 +201,9 @@ struct UpdatableAddonRow: View {
                     }
                 }
             }
-            
+
             Spacer()
-            
+
             if addon.isChecking || addon.isUpdating {
                 HStack(spacing: 6) {
                     ProgressView()
@@ -222,7 +222,7 @@ struct UpdatableAddonRow: View {
                         .padding(.vertical, 4)
                         .background(statusColor.opacity(0.12))
                         .clipShape(Capsule())
-                    
+
                     if addon.isUpdateAvailable {
                         let isRepair = (addon.statusMessage.lowercased().contains("repair") || (addon.currentVersion != nil && addon.latestVersion != nil && addon.currentVersion == addon.latestVersion))
                         Button(isRepair ? "Repair" : "Update") {

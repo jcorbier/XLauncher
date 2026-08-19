@@ -25,23 +25,23 @@ import SwiftUI
 struct CSLListView: View {
     @Environment(PluginManager.self) var pluginManager
     @Environment(CSLManager.self) var cslManager
-    
+
     @State private var selectedFilter: CSLFilter = .all
     @State private var searchText: String = ""
     @State private var showDebugConsole: Bool = false
-    
+
     enum CSLFilter: String, CaseIterable, Identifiable {
         case all = "All"
         case installed = "Installed"
         case updates = "Updates"
         case notInstalled = "Available"
-        
+
         var id: String { rawValue }
     }
-    
+
     var filteredPackages: [CSLPackage] {
         var result = cslManager.packages
-        
+
         switch selectedFilter {
         case .all:
             break
@@ -52,7 +52,7 @@ struct CSLListView: View {
         case .notInstalled:
             result = result.filter { !$0.isInstalled }
         }
-        
+
         if !searchText.isEmpty {
             let query = searchText.lowercased()
             result = result.filter {
@@ -60,10 +60,10 @@ struct CSLListView: View {
                 $0.title.lowercased().contains(query)
             }
         }
-        
+
         return result
     }
-    
+
     var body: some View {
         VStack(spacing: 0) {
             // Header Bar
@@ -71,7 +71,7 @@ struct CSLListView: View {
                 Label("CSL Models", systemImage: "airplane.circle")
                     .font(.title3)
                     .fontWeight(.bold)
-                
+
                 if !cslManager.packages.isEmpty {
                     Text("\(cslManager.installedCount) Installed • \(cslManager.hasFetchedRemoteIndex ? "\(cslManager.updatesAvailableCount) Updates" : "Status Unknown")")
                         .font(.caption2)
@@ -81,9 +81,9 @@ struct CSLListView: View {
                         .background(Color.secondary.opacity(0.12))
                         .clipShape(Capsule())
                 }
-                
+
                 Spacer()
-                
+
                 // Search Field
                 HStack {
                     Image(systemName: "magnifyingglass")
@@ -103,7 +103,7 @@ struct CSLListView: View {
                 .background(Color(NSColor.controlBackgroundColor))
                 .clipShape(RoundedRectangle(cornerRadius: 6))
                 .frame(width: 180)
-                
+
                 // Filter Picker
                 Picker("Filter", selection: $selectedFilter) {
                     ForEach(CSLFilter.allCases) { filter in
@@ -112,7 +112,7 @@ struct CSLListView: View {
                 }
                 .frame(width: 120)
                 .labelsHidden()
-                
+
                 // Check for Updates Button
                 Button(action: {
                     cslManager.scanAndCheck()
@@ -128,7 +128,7 @@ struct CSLListView: View {
                     }
                 }
                 .disabled(cslManager.isProcessing)
-                
+
                 // Update All Button
                 Button(action: {
                     cslManager.updateAll()
@@ -143,7 +143,7 @@ struct CSLListView: View {
                     }
                 }
                 .disabled(cslManager.updatesAvailableCount == 0 || cslManager.isProcessing)
-                
+
                 // Open CSL Folder
                 if let folder = pluginManager.cslPath {
                     Button(action: {
@@ -156,7 +156,7 @@ struct CSLListView: View {
                     }
                     .help("Open CSL folder in Finder")
                 }
-                
+
                 // Debug Console Button
                 Button(action: {
                     showDebugConsole.toggle()
@@ -166,9 +166,9 @@ struct CSLListView: View {
             }
             .padding(12)
             .background(Color(NSColor.controlBackgroundColor))
-            
+
             Divider()
-            
+
             // Content
             if cslManager.isChecking && cslManager.packages.isEmpty {
                 VStack(spacing: 12) {
@@ -210,7 +210,7 @@ struct CSLListView: View {
                 .listStyle(.inset)
                 .scrollContentBackground(.hidden)
             }
-            
+
             // Console Drawer
             if showDebugConsole {
                 Divider()
@@ -234,7 +234,7 @@ struct CSLPackageRow: View {
     @Environment(PluginManager.self) var pluginManager
     @Environment(CSLManager.self) var cslManager
     let package: CSLPackage
-    
+
     var statusColor: Color {
         switch package.status {
         case .upToDate: return .green
@@ -244,7 +244,7 @@ struct CSLPackageRow: View {
         case .error: return .red
         }
     }
-    
+
     var body: some View {
         VStack(spacing: 8) {
             HStack(spacing: 12) {
@@ -255,20 +255,20 @@ struct CSLPackageRow: View {
                     .frame(width: 36, height: 36)
                     .background((package.isInstalled ? Color.accentColor : Color.secondary).opacity(0.12))
                     .clipShape(RoundedRectangle(cornerRadius: 8))
-                
+
                 // Package Info
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 8) {
                         Text(package.name)
                             .font(.body)
                             .fontWeight(.bold)
-                        
+
                         if package.title != package.name && !package.title.isEmpty {
                             Text(package.title)
                                 .font(.body)
                                 .foregroundStyle(.secondary)
                         }
-                        
+
                         if package.isInstalled {
                             Text("Installed")
                                 .font(.caption2)
@@ -280,16 +280,16 @@ struct CSLPackageRow: View {
                                 .clipShape(Capsule())
                         }
                     }
-                    
+
                     HStack(spacing: 8) {
                         Text("\(package.fileCount) files")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        
+
                         Text("•  \(package.formattedTotalSize)")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        
+
                         if !package.lastUpdated.isEmpty {
                             Text("•  Updated \(package.lastUpdated)")
                                 .font(.caption)
@@ -297,15 +297,15 @@ struct CSLPackageRow: View {
                         }
                     }
                 }
-                
+
                 Spacer()
-                
+
                 // Status & Actions
                 if package.status == .updating {
                     HStack(spacing: 8) {
                         ProgressView()
                             .controlSize(.small)
-                        
+
                         Button("Cancel") {
                             cslManager.cancelUpdate(package)
                         }
@@ -360,7 +360,7 @@ struct CSLPackageRow: View {
                                 .background(Color.red.opacity(0.12))
                                 .clipShape(Capsule())
                         }
-                        
+
                         // Action Buttons
                         if package.status == .needsUpdate {
                             Button("Update") {
@@ -407,22 +407,22 @@ struct CSLPackageRow: View {
                     }
                 }
             }
-            
+
             // Progress Bar (when downloading)
             if package.status == .updating {
                 VStack(alignment: .leading, spacing: 4) {
                     ProgressView(value: package.downloadProgress)
                         .progressViewStyle(.linear)
-                    
+
                     HStack {
                         Text(package.statusMessage)
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
-                        
+
                         Spacer()
-                        
+
                         Text("\(Int(package.downloadProgress * 100))%")
                             .font(.caption2)
                             .fontWeight(.medium)
@@ -460,16 +460,16 @@ struct CSLPackageRow: View {
                     cslManager.updatePackage(package)
                 }
             }
-            
+
             Divider()
-            
+
             if package.isInstalled, let cslFolder = pluginManager.cslPath {
                 let pkgDir = cslFolder.appendingPathComponent(package.name)
                 Button("Show in Finder") {
                     NSWorkspace.shared.activateFileViewerSelecting([pkgDir])
                 }
             }
-            
+
             Button("Copy Package Name") {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(package.name, forType: .string)

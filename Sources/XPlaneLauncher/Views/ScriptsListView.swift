@@ -26,10 +26,10 @@ struct ScriptsListView: View {
     @Environment(PluginManager.self) var pluginManager
     @State private var showingFileImporter = false
     @State private var selectedEnvVarId: PluginManager.ScriptEnvVar.ID?
-    
+
     var body: some View {
         @Bindable var pluginManager = pluginManager
-        
+
         VStack(spacing: 12) {
             if pluginManager.selectedProfileId != nil {
                 HSplitView {
@@ -41,7 +41,7 @@ struct ScriptsListView: View {
                                     ScriptRow(script: script)
                                 }
                                 .onDelete(perform: deleteItems)
-                                
+
                                 if pluginManager.activeScripts.isEmpty {
                                     ContentUnavailableView {
                                         Label("No Scripts", systemImage: "terminal")
@@ -52,7 +52,7 @@ struct ScriptsListView: View {
                             }
                             .listStyle(.inset)
                             .scrollContentBackground(.hidden)
-                            
+
                             HStack {
                                 Button(action: { showingFileImporter = true }) {
                                     Label("Add Script", systemImage: "plus")
@@ -64,7 +64,7 @@ struct ScriptsListView: View {
                         .padding(8)
                     }
                     .frame(minWidth: 250)
-                    
+
                     // Profile Environment Variables Column
                     GroupBox("Profile Environment Variables") {
                         VStack(spacing: 0) {
@@ -83,7 +83,7 @@ struct ScriptsListView: View {
                             .scrollContentBackground(.hidden)
                             .background(Color(NSColor.controlBackgroundColor))
                             .border(Color(NSColor.separatorColor), width: 1)
-                            
+
                             HStack {
                                 Button(action: {
                                     pluginManager.addProfileEnvVar()
@@ -91,7 +91,7 @@ struct ScriptsListView: View {
                                     Image(systemName: "plus")
                                         .frame(width: 20, height: 20)
                                 }
-                                
+
                                 Button(action: {
                                     if let selectedId = selectedEnvVarId {
                                         pluginManager.deleteProfileEnvVar(id: selectedId)
@@ -102,7 +102,7 @@ struct ScriptsListView: View {
                                         .frame(width: 20, height: 20)
                                 }
                                 .disabled(selectedEnvVarId == nil)
-                                
+
                                 Spacer()
                             }
                             .padding(.top, 8)
@@ -135,7 +135,7 @@ struct ScriptsListView: View {
             }
         }
     }
-    
+
     func deleteItems(at offsets: IndexSet) {
         offsets.forEach { index in
             let script = pluginManager.activeScripts[index]
@@ -147,12 +147,12 @@ struct ScriptsListView: View {
 struct ScriptRow: View {
     @Environment(PluginManager.self) var pluginManager
     let script: PluginManager.ProfileScript
-    
+
     var body: some View {
         HStack {
             Image(systemName: "terminal.fill")
                 .foregroundStyle(script.isEnabled ? .green : .secondary)
-            
+
             VStack(alignment: .leading) {
                 Text(URL(fileURLWithPath: script.path).lastPathComponent)
                     .font(.body)
@@ -162,9 +162,9 @@ struct ScriptRow: View {
                     .truncationMode(.middle)
                     .lineLimit(1)
             }
-            
+
             Spacer()
-            
+
             Toggle("", isOn: Binding(
                 get: { script.isEnabled },
                 set: { _ in pluginManager.toggleScript(script) }

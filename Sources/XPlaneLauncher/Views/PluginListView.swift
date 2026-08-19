@@ -24,15 +24,15 @@ import SwiftUI
 
 struct PluginListView: View {
     @Environment(PluginManager.self) var pluginManager
-    
+
     // Sort logic handled in manager, or here. Manager is cleaner.
-    
+
     var body: some View {
         List {
             ForEach(pluginManager.plugins) { plugin in
                 PluginRow(plugin: plugin)
             }
-            
+
             if pluginManager.plugins.isEmpty {
                 ContentUnavailableView {
                     Label("No Plugins Found", systemImage: "puzzlepiece.extension")
@@ -49,7 +49,7 @@ struct PluginListView: View {
 struct PluginRow: View {
     @Environment(PluginManager.self) var pluginManager
     let plugin: PluginManager.Plugin
-    
+
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: "puzzlepiece.extension.fill")
@@ -58,7 +58,7 @@ struct PluginRow: View {
                 .frame(width: 32, height: 32)
                 .background(plugin.isEnabled ? Color.green.opacity(0.12) : Color.secondary.opacity(0.12))
                 .clipShape(RoundedRectangle(cornerRadius: 6))
-            
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(plugin.name)
                     .font(.body)
@@ -67,9 +67,9 @@ struct PluginRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            
+
             Spacer()
-            
+
             Text(plugin.isEnabled ? "Enabled" : "Disabled")
                 .font(.caption2)
                 .fontWeight(.semibold)
@@ -78,7 +78,7 @@ struct PluginRow: View {
                 .padding(.vertical, 3)
                 .background(plugin.isEnabled ? Color.green.opacity(0.12) : Color.secondary.opacity(0.12))
                 .clipShape(Capsule())
-            
+
             Toggle("", isOn: Binding(
                 get: { plugin.isEnabled },
                 set: { _ in pluginManager.togglePlugin(plugin) }

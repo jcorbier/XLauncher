@@ -24,7 +24,7 @@ import SwiftUI
 
 struct LaunchButton: View {
     @Environment(PluginManager.self) var pluginManager
-    
+
     var body: some View {
         Button(action: {
             pluginManager.launchXPlane()

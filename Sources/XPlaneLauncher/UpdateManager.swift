@@ -28,19 +28,19 @@ import Observation
 class UpdateManager {
     private let fileManager = FileManager.default
     private let defaults = UserDefaults.standard
-    
+
     var automaticallyCheckSkunkCraftsUpdates: Bool {
         didSet {
             defaults.set(automaticallyCheckSkunkCraftsUpdates, forKey: .autoCheckSkunkCraftsUpdates)
         }
     }
-    
+
     var automaticallyCheckXUpdaterUpdates: Bool {
         didSet {
             defaults.set(automaticallyCheckXUpdaterUpdates, forKey: .autoCheckXUpdaterUpdates)
         }
     }
-    
+
     var launcherDataFolder: URL? {
         didSet {
             guard launcherDataFolder != oldValue else { return }
@@ -48,30 +48,30 @@ class UpdateManager {
             checkAutoUpdates()
         }
     }
-    
+
     var updatableAddons: [UpdatableAddon] = []
     let logger = ConsoleLogger()
-    
+
     var isCheckingUpdates: Bool {
         updatableAddons.contains { $0.isChecking }
     }
-    
+
     var isUpdatingAddons: Bool {
         updatableAddons.contains { $0.isUpdating }
     }
-    
+
     var isProcessing: Bool {
         updatableAddons.contains { $0.isChecking || $0.isUpdating }
     }
-    
+
     func log(_ message: String) {
         logger.log(message)
     }
-    
+
     func clearLogs() {
         logger.clear()
     }
-    
+
     enum UpdaterType: String, Codable, Identifiable {
         case skunkcrafts = "SkunkCrafts"
         case xUpdater = "X-Updater"
@@ -102,29 +102,29 @@ class UpdateManager {
         var statusMessage: String = "Unknown"
         var remoteManifestURL: String?
     }
-    
+
     init(launcherDataFolder: URL? = nil) {
         if defaults.object(forKey: .autoCheckSkunkCraftsUpdates) == nil {
             self.automaticallyCheckSkunkCraftsUpdates = true
         } else {
             self.automaticallyCheckSkunkCraftsUpdates = defaults.bool(forKey: .autoCheckSkunkCraftsUpdates)
         }
-        
+
         if defaults.object(forKey: .autoCheckXUpdaterUpdates) == nil {
             self.automaticallyCheckXUpdaterUpdates = true
         } else {
             self.automaticallyCheckXUpdaterUpdates = defaults.bool(forKey: .autoCheckXUpdaterUpdates)
         }
-        
+
         self.launcherDataFolder = launcherDataFolder
         if launcherDataFolder != nil && updatableAddons.isEmpty {
             scanUpdatableAddons()
             checkAutoUpdates()
         }
     }
-    
+
     // MARK: - Scanning & Parsing
-    
+
     private func findUpdaterConfig(in folderURL: URL) -> (type: UpdaterType, fileURL: URL)? {
         if let url = SkunkCraftsUpdaterService.shared.findConfig(in: folderURL) {
             return (.skunkcrafts, url)
@@ -134,7 +134,7 @@ class UpdateManager {
         }
         return nil
     }
-    
+
     private func parseUpdaterConfig(url: URL, type: UpdaterType, defaultName: String) -> (name: String, version: String?, remoteURL: String?) {
         if type == .skunkcrafts {
             if let config = SkunkCraftsUpdaterService.shared.parseConfig(at: url, defaultName: defaultName) {
@@ -147,20 +147,20 @@ class UpdateManager {
         }
         return (defaultName, nil, nil)
     }
-    
+
     private func scanDirectoryForAddons(subFolderURL: URL, category: AddonCategory, currentDepth: Int = 0, maxDepth: Int = 5) -> [UpdatableAddon] {
         var results: [UpdatableAddon] = []
         guard currentDepth <= maxDepth else { return results }
-        
+
         if let contents = try? fileManager.contentsOfDirectory(at: subFolderURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
             for itemURL in contents {
                 var isDir: ObjCBool = false
                 guard fileManager.fileExists(atPath: itemURL.path, isDirectory: &isDir), isDir.boolValue else { continue }
-                
+
                 if let updaterInfo = findUpdaterConfig(in: itemURL) {
                     let folderName = itemURL.lastPathComponent
                     let (parsedName, version, remoteURL) = parseUpdaterConfig(url: updaterInfo.fileURL, type: updaterInfo.type, defaultName: folderName)
-                    
+
                     results.append(UpdatableAddon(
                         name: parsedName,
                         addonCategory: category,
@@ -177,25 +177,25 @@ class UpdateManager {
                 }
             }
         }
-        
+
         return results
     }
-    
+
     func scanUpdatableAddons() {
         guard let dataFolder = launcherDataFolder else {
             updatableAddons = []
             return
         }
-        
+
         var allAddons: [UpdatableAddon] = []
-        
+
         let categoryFolders: [(AddonCategory, String)] = [
             (.aircraft, "Aircraft"),
             (.plugin, "Plugins"),
             (.scenery, "Custom Scenery"),
             (.luaScript, "FlyWithLua/Scripts")
         ]
-        
+
         for (category, subFolder) in categoryFolders {
             let folderURL = dataFolder.appendingPathComponent(subFolder)
             if fileManager.fileExists(atPath: folderURL.path) {
@@ -203,12 +203,12 @@ class UpdateManager {
                 allAddons.append(contentsOf: addons)
             }
         }
-        
+
         self.updatableAddons = allAddons
     }
-    
+
     // MARK: - Update Checking
-    
+
     func checkAutoUpdates() {
         for addon in updatableAddons where !addon.isChecking && !addon.isUpdating {
             if addon.updaterType == .skunkcrafts && !automaticallyCheckSkunkCraftsUpdates {
@@ -220,19 +220,19 @@ class UpdateManager {
             checkForUpdates(for: addon)
         }
     }
-    
+
     func checkAllAddonUpdates() {
         for addon in updatableAddons where !addon.isChecking && !addon.isUpdating {
             checkForUpdates(for: addon)
         }
     }
-    
+
     func checkForUpdates(for addon: UpdatableAddon) {
         guard let index = updatableAddons.firstIndex(where: { $0.id == addon.id }) else { return }
         guard !updatableAddons[index].isChecking && !updatableAddons[index].isUpdating else { return }
         updatableAddons[index].isChecking = true
         updatableAddons[index].statusMessage = "Checking..."
-        
+
         let addonId = addon.id
         guard let remoteURLString = addon.remoteManifestURL, !remoteURLString.isEmpty else {
             if let i = self.updatableAddons.firstIndex(where: { $0.id == addonId }) {
@@ -241,13 +241,13 @@ class UpdateManager {
             }
             return
         }
-        
+
         Task { @MainActor in
             do {
                 var latestV: String? = nil
                 var isAvailable = false
                 var statusMsg = "Up to date"
-                
+
                 if addon.updaterType == .skunkcrafts {
                     let config = SkunkCraftsConfig(
                         name: addon.name,
@@ -286,7 +286,7 @@ class UpdateManager {
                     isAvailable = result.isUpdateAvailable
                     statusMsg = result.statusMessage
                 }
-                
+
                 if let i = self.updatableAddons.firstIndex(where: { $0.id == addonId }) {
                     self.updatableAddons[i].isChecking = false
                     self.updatableAddons[i].latestVersion = latestV
@@ -303,13 +303,13 @@ class UpdateManager {
             }
         }
     }
-    
+
     func updateAddon(_ addon: UpdatableAddon) {
         guard let index = updatableAddons.firstIndex(where: { $0.id == addon.id }) else { return }
         guard !updatableAddons[index].isUpdating else { return }
         updatableAddons[index].isUpdating = true
         updatableAddons[index].statusMessage = "Updating..."
-        
+
         let addonId = addon.id
         Task { @MainActor in
             do {
@@ -359,7 +359,7 @@ class UpdateManager {
                         }
                     )
                 }
-                
+
                 if let i = self.updatableAddons.firstIndex(where: { $0.id == addonId }) {
                     if let latest = self.updatableAddons[i].latestVersion {
                         self.updatableAddons[i].currentVersion = latest

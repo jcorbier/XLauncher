@@ -28,11 +28,11 @@ import Observation
 class ConsoleLogger {
     var entries: [String] = []
     let maxEntries: Int
-    
+
     init(maxEntries: Int = 500) {
         self.maxEntries = maxEntries
     }
-    
+
     func log(_ message: String) {
         let timestamp = Date.now.formatted(date: .numeric, time: .standard)
         let entry = "[\(timestamp)] \(message)"
@@ -42,7 +42,7 @@ class ConsoleLogger {
             entries.removeFirst(entries.count - maxEntries)
         }
     }
-    
+
     func clear() {
         entries.removeAll()
     }
