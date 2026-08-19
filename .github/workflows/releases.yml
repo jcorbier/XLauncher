@@ -155,7 +155,7 @@ jobs:
           gh release delete rolling-draft --cleanup-tag -y || true
 
       - name: Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v3
         with:
           files: XLauncher.dmg
           body_path: RELEASE_CHANGELOG.md
