@@ -120,8 +120,8 @@ class UpdateManager {
         }
         
         self.launcherDataFolder = launcherDataFolder
-        scanUpdatableAddons()
-        if launcherDataFolder != nil {
+        if launcherDataFolder != nil && updatableAddons.isEmpty {
+            scanUpdatableAddons()
             checkAutoUpdates()
         }
     }
