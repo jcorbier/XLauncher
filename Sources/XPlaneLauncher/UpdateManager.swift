@@ -151,9 +151,9 @@ class UpdateManager {
         return (defaultName, nil, nil)
     }
     
-    private func scanDirectoryForAddons(subFolderURL: URL, category: AddonCategory, currentDepth: Int = 0) -> [UpdatableAddon] {
+    private func scanDirectoryForAddons(subFolderURL: URL, category: AddonCategory, currentDepth: Int = 0, maxDepth: Int = 5) -> [UpdatableAddon] {
         var results: [UpdatableAddon] = []
-        guard currentDepth <= 2 else { return results }
+        guard currentDepth <= maxDepth else { return results }
         
         if let contents = try? fileManager.contentsOfDirectory(at: subFolderURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
             for itemURL in contents {
@@ -175,7 +175,7 @@ class UpdateManager {
                         remoteManifestURL: remoteURL
                     ))
                 } else {
-                    let subResults = scanDirectoryForAddons(subFolderURL: itemURL, category: category, currentDepth: currentDepth + 1)
+                    let subResults = scanDirectoryForAddons(subFolderURL: itemURL, category: category, currentDepth: currentDepth + 1, maxDepth: maxDepth)
                     results.append(contentsOf: subResults)
                 }
             }
