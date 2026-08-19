@@ -21,7 +21,8 @@
 //
 
 import Foundation
-import SwiftUI
+import Observation
+import AppKit
 
 @MainActor
 @Observable

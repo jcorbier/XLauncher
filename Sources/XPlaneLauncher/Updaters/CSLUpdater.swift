@@ -21,7 +21,7 @@
 //
 
 import Foundation
-import SwiftUI
+import Observation
 import CryptoKit
 
 // MARK: - CSL Data Models

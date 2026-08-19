@@ -21,7 +21,7 @@
 //
 
 import Foundation
-import SwiftUI
+import Observation
 import AppKit
 
 // MARK: - Semantic Version
