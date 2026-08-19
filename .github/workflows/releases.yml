@@ -32,14 +32,17 @@ jobs:
             
             # Check if the tag represents a pre-release (e.g. v1.2.0-beta.1, v1.2.0-rc1, etc.)
             if [[ "$TAG_NAME" == *-* ]] || [[ "$TAG_NAME" =~ (beta|alpha|rc|preview) ]]; then
+              echo "IS_PRERELEASE=true" >> $GITHUB_ENV
               echo "prerelease=true" >> "$GITHUB_OUTPUT"
             else
+              echo "IS_PRERELEASE=false" >> $GITHUB_ENV
               echo "prerelease=false" >> "$GITHUB_OUTPUT"
             fi
             echo "release_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
             echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
           else
             echo "IS_DRAFT=true" >> $GITHUB_ENV
+            echo "IS_PRERELEASE=true" >> $GITHUB_ENV
             echo "VERSION=0.0.0-draft" >> $GITHUB_ENV
             echo "TAG_NAME=rolling-draft" >> $GITHUB_ENV
             
@@ -121,9 +124,16 @@ jobs:
             echo "" >> RELEASE_CHANGELOG.md
             echo "## Changes since $PREVIOUS_TAG" >> RELEASE_CHANGELOG.md
             echo "" >> RELEASE_CHANGELOG.md
-          else
-            # Get previous tag
+          elif [ "$IS_PRERELEASE" = "true" ]; then
+            # Pre-release: get immediately previous tag
             PREVIOUS_TAG=$(git tag --sort=-version:refname | grep -v "^${TAG_NAME}$" | head -n 1 || true)
+            CURRENT_TAG=${TAG_NAME}
+
+            echo "# Changes in $CURRENT_TAG" > RELEASE_CHANGELOG.md
+            echo "" >> RELEASE_CHANGELOG.md
+          else
+            # Stable release: get previous non-prerelease tag (e.g. vX.Y.Z)
+            PREVIOUS_TAG=$(git tag --sort=-version:refname | grep -v "^${TAG_NAME}$" | grep -E '^v[0-9]+(\.[0-9]+)*$' | head -n 1 || true)
             CURRENT_TAG=${TAG_NAME}
             
             echo "# Changes in $CURRENT_TAG" > RELEASE_CHANGELOG.md
