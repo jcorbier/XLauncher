@@ -82,6 +82,22 @@ struct LuaScriptRow: View {
 
             Spacer()
 
+            if pluginManager.isLuaScriptModified(script) {
+                HStack(spacing: 3) {
+                    Circle()
+                        .fill(Color.orange)
+                        .frame(width: 5, height: 5)
+                    Text("Modified")
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.orange)
+                }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(Color.orange.opacity(0.12))
+                .clipShape(Capsule())
+            }
+
             Text(script.isEnabled ? "Enabled" : "Disabled")
                 .font(.caption2)
                 .fontWeight(.semibold)

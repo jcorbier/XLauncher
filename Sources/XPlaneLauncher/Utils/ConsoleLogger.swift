@@ -24,6 +24,7 @@ import Foundation
 import Observation
 
 enum LogCategory: String, CaseIterable, Identifiable, Sendable {
+    case profiles = "Profiles"
     case general = "General"
     case plugins = "Plugins"
     case scenery = "Scenery"
@@ -38,6 +39,7 @@ enum LogCategory: String, CaseIterable, Identifiable, Sendable {
 
     var systemImage: String {
         switch self {
+        case .profiles: return "person.crop.circle"
         case .general: return "square.grid.2x2"
         case .plugins: return "puzzlepiece.extension"
         case .scenery: return "map"

@@ -68,6 +68,22 @@ struct AircraftRow: View {
 
             Spacer()
 
+            if pluginManager.isAircraftModified(aircraft) {
+                HStack(spacing: 3) {
+                    Circle()
+                        .fill(Color.orange)
+                        .frame(width: 5, height: 5)
+                    Text("Modified")
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.orange)
+                }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(Color.orange.opacity(0.12))
+                .clipShape(Capsule())
+            }
+
             Text(aircraft.isEnabled ? "Enabled" : "Disabled")
                 .font(.caption2)
                 .fontWeight(.semibold)

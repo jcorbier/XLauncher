@@ -166,6 +166,51 @@ class PluginManager {
         }
     }
 
+    var selectedProfile: PluginProfile? {
+        guard let id = selectedProfileId else { return nil }
+        return profiles.first(where: { $0.id == id })
+    }
+
+    func isPluginModified(_ plugin: Plugin) -> Bool {
+        guard let profile = selectedProfile else { return false }
+        let profileEnabled = profile.pluginFolderNames.contains(plugin.folderName)
+        return plugin.isEnabled != profileEnabled
+    }
+
+    func isSceneryModified(_ item: Scenery) -> Bool {
+        guard let profile = selectedProfile else { return false }
+        let profileEnabled = profile.sceneryFolderNames.contains(item.folderName)
+        return item.isEnabled != profileEnabled
+    }
+
+    func isAircraftModified(_ item: Aircraft) -> Bool {
+        guard let profile = selectedProfile else { return false }
+        let profileEnabled = profile.aircraftFolderNames.contains(item.folderName)
+        return item.isEnabled != profileEnabled
+    }
+
+    func isLuaScriptModified(_ item: LuaScript) -> Bool {
+        guard let profile = selectedProfile else { return false }
+        let profileEnabled = profile.luaScriptFolderNames.contains(item.folderName)
+        return item.isEnabled != profileEnabled
+    }
+
+    func isProfileScriptModified(_ item: ProfileScript) -> Bool {
+        guard let profile = selectedProfile else { return false }
+        guard let saved = profile.scripts.first(where: { $0.id == item.id || $0.path == item.path }) else {
+            return true
+        }
+        return item.isEnabled != saved.isEnabled
+    }
+
+    func isEnvVarModified(_ item: ScriptEnvVar) -> Bool {
+        guard let profile = selectedProfile else { return false }
+        guard let saved = profile.environmentVariables.first(where: { $0.id == item.id }) else {
+            return true
+        }
+        return item.key != saved.key || item.value != saved.value
+    }
+
     var isCurrentProfileModified: Bool {
         guard let selectedProfileId = selectedProfileId,
               let profile = profiles.first(where: { $0.id == selectedProfileId }) else {
@@ -196,6 +241,35 @@ class PluginManager {
             || currentEnabledLua != profileEnabledLua
             || currentScripts != profileScripts
             || currentEnvVars != profileEnvVars
+    }
+
+    func logProfileStartupState() {
+        guard let profile = selectedProfile else { return }
+
+        if isCurrentProfileModified {
+            ConsoleLogger.shared.log("Profile '\(profile.name)' has unsaved modifications on startup:", category: .profiles)
+            for p in plugins where isPluginModified(p) {
+                ConsoleLogger.shared.log("  - Plugin '\(p.name)': \(p.isEnabled ? "enabled" : "disabled") (saved: \(p.isEnabled ? "disabled" : "enabled"))", category: .profiles)
+            }
+            for s in scenery where isSceneryModified(s) {
+                ConsoleLogger.shared.log("  - Scenery '\(s.name)': \(s.isEnabled ? "enabled" : "disabled") (saved: \(s.isEnabled ? "disabled" : "enabled"))", category: .profiles)
+            }
+            for a in aircraft where isAircraftModified(a) {
+                ConsoleLogger.shared.log("  - Aircraft '\(a.name)': \(a.isEnabled ? "enabled" : "disabled") (saved: \(a.isEnabled ? "disabled" : "enabled"))", category: .profiles)
+            }
+            for l in luaScripts where isLuaScriptModified(l) {
+                ConsoleLogger.shared.log("  - Lua Script '\(l.name)': \(l.isEnabled ? "enabled" : "disabled") (saved: \(l.isEnabled ? "disabled" : "enabled"))", category: .profiles)
+            }
+            for sc in activeScripts where isProfileScriptModified(sc) {
+                let scriptName = URL(fileURLWithPath: sc.path).lastPathComponent
+                ConsoleLogger.shared.log("  - Script '\(scriptName)': modified", category: .profiles)
+            }
+            for ev in activeEnvironmentVariables where isEnvVarModified(ev) {
+                ConsoleLogger.shared.log("  - Env Var '\(ev.key)': modified", category: .profiles)
+            }
+        } else {
+            ConsoleLogger.shared.log("Profile '\(profile.name)' active (clean)", category: .profiles)
+        }
     }
 
     // MARK: - Initialization
@@ -253,6 +327,8 @@ class PluginManager {
         self.enableCSLSupport = defaults.bool(forKey: .enableCSLSupport)
         self.enableCSLXP12Lights = defaults.bool(forKey: .enableCSLXP12Lights)
         self.hasCompletedWelcome = defaults.bool(forKey: .hasCompletedWelcome)
+
+        logProfileStartupState()
 
         isLoading = false
     }
@@ -415,13 +491,20 @@ class PluginManager {
 
         let targetFolder = pathService.pluginsTargetFolder(for: xPlanePath)
         let newEnabled = !plugin.isEnabled
-
         do {
             try symlinkService.setPluginEnabled(folderName: plugin.folderName, enabled: newEnabled, dataFolder: pluginsFolder, targetFolder: targetFolder)
             if let index = plugins.firstIndex(where: { $0.id == plugin.id }) {
                 plugins[index].isEnabled = newEnabled
+                ConsoleLogger.shared.log("\(newEnabled ? "Enabled" : "Disabled") plugin '\(plugin.name)'", category: .plugins)
+
+                if let profile = selectedProfile {
+                    if isPluginModified(plugins[index]) {
+                        ConsoleLogger.shared.log("Profile '\(profile.name)': plugin '\(plugin.name)' is now \(newEnabled ? "enabled" : "disabled") (differs from saved profile)", category: .profiles)
+                    } else {
+                        ConsoleLogger.shared.log("Profile '\(profile.name)': plugin '\(plugin.name)' restored to saved profile state", category: .profiles)
+                    }
+                }
             }
-            ConsoleLogger.shared.log("\(newEnabled ? "Enabled" : "Disabled") plugin '\(plugin.name)'", category: .plugins)
         } catch {
             self.lastErrorMessage = "Failed to \(plugin.isEnabled ? "disable" : "enable") plugin '\(plugin.name)': \(error.localizedDescription)"
             ConsoleLogger.shared.log("Failed to \(plugin.isEnabled ? "disable" : "enable") plugin '\(plugin.name)': \(error.localizedDescription)", category: .plugins, level: .error)
@@ -439,8 +522,16 @@ class PluginManager {
             try symlinkService.setAircraftEnabled(folderName: item.folderName, enabled: newEnabled, dataFolder: aircraftFolder, targetFolder: targetFolder)
             if let index = aircraft.firstIndex(where: { $0.id == item.id }) {
                 aircraft[index].isEnabled = newEnabled
+                ConsoleLogger.shared.log("\(newEnabled ? "Enabled" : "Disabled") aircraft '\(item.name)'", category: .aircraft)
+
+                if let profile = selectedProfile {
+                    if isAircraftModified(aircraft[index]) {
+                        ConsoleLogger.shared.log("Profile '\(profile.name)': aircraft '\(item.name)' is now \(newEnabled ? "enabled" : "disabled") (differs from saved profile)", category: .profiles)
+                    } else {
+                        ConsoleLogger.shared.log("Profile '\(profile.name)': aircraft '\(item.name)' restored to saved profile state", category: .profiles)
+                    }
+                }
             }
-            ConsoleLogger.shared.log("\(newEnabled ? "Enabled" : "Disabled") aircraft '\(item.name)'", category: .aircraft)
         } catch {
             self.lastErrorMessage = "Failed to \(item.isEnabled ? "disable" : "enable") aircraft '\(item.name)': \(error.localizedDescription)"
             ConsoleLogger.shared.log("Failed to \(item.isEnabled ? "disable" : "enable") aircraft '\(item.name)': \(error.localizedDescription)", category: .aircraft, level: .error)
@@ -457,8 +548,16 @@ class PluginManager {
             try symlinkService.setLuaScriptEnabled(item: item, enabled: newEnabled, dataFolder: sourceRoot, targetFolder: targetFolder)
             if let index = luaScripts.firstIndex(where: { $0.id == item.id }) {
                 luaScripts[index].isEnabled = newEnabled
+                ConsoleLogger.shared.log("\(newEnabled ? "Enabled" : "Disabled") Lua script '\(item.name)'", category: .lua)
+
+                if let profile = selectedProfile {
+                    if isLuaScriptModified(luaScripts[index]) {
+                        ConsoleLogger.shared.log("Profile '\(profile.name)': Lua script '\(item.name)' is now \(newEnabled ? "enabled" : "disabled") (differs from saved profile)", category: .profiles)
+                    } else {
+                        ConsoleLogger.shared.log("Profile '\(profile.name)': Lua script '\(item.name)' restored to saved profile state", category: .profiles)
+                    }
+                }
             }
-            ConsoleLogger.shared.log("\(newEnabled ? "Enabled" : "Disabled") Lua script '\(item.name)'", category: .lua)
         } catch {
             self.lastErrorMessage = "Failed to \(item.isEnabled ? "disable" : "enable") Lua script '\(item.name)': \(error.localizedDescription)"
             ConsoleLogger.shared.log("Failed to \(item.isEnabled ? "disable" : "enable") Lua script '\(item.name)': \(error.localizedDescription)", category: .lua, level: .error)
@@ -493,6 +592,14 @@ class PluginManager {
 
         scenery[index] = newItem
         saveSceneryOrder()
+
+        if let profile = selectedProfile {
+            if isSceneryModified(newItem) {
+                ConsoleLogger.shared.log("Profile '\(profile.name)': scenery '\(newItem.name)' is now \(newItem.isEnabled ? "enabled" : "disabled") (differs from saved profile)", category: .profiles)
+            } else {
+                ConsoleLogger.shared.log("Profile '\(profile.name)': scenery '\(newItem.name)' restored to saved profile state", category: .profiles)
+            }
+        }
     }
 
     func unlinkScenery(_ item: Scenery) {
@@ -674,10 +781,14 @@ class PluginManager {
     }
 
     func removeFromGroup(_ sceneryItem: Scenery) {
-        self.sceneryGroups = sceneryService.removeFromGroup(sceneryItem: sceneryItem, existingGroups: sceneryGroups)
+        for (idx, group) in sceneryGroups.enumerated() {
+            if group.childFolderNames.contains(sceneryItem.folderName) {
+                sceneryGroups[idx].childFolderNames.removeAll(where: { $0 == sceneryItem.folderName })
+            }
+        }
     }
 
-    // MARK: - Profile Management
+    // MARK: - Profiles
 
     func saveProfile(name: String) {
         let enabledPlugins = plugins.filter { $0.isEnabled }.map { $0.folderName }
@@ -697,7 +808,7 @@ class PluginManager {
         profiles.append(newProfile)
         profileService.saveProfiles(profiles)
         selectedProfileId = newProfile.id
-        ConsoleLogger.shared.log("Saved new profile '\(name)'", category: .system)
+        ConsoleLogger.shared.log("Saved new profile '\(name)'", category: .profiles)
     }
 
     func updateProfile(_ profile: PluginProfile) {
@@ -718,7 +829,7 @@ class PluginManager {
                 environmentVariables: activeEnvironmentVariables
             )
             profileService.saveProfiles(profiles)
-            ConsoleLogger.shared.log("Updated profile '\(profile.name)'", category: .system)
+            ConsoleLogger.shared.log("Updated profile '\(profile.name)'", category: .profiles)
         }
     }
 
@@ -731,7 +842,7 @@ class PluginManager {
             }
         }
         profileService.saveProfiles(profiles)
-        ConsoleLogger.shared.log("Deleted profile '\(profile.name)'", category: .system)
+        ConsoleLogger.shared.log("Deleted profile '\(profile.name)'", category: .profiles)
     }
 
     func duplicateProfile(_ profile: PluginProfile) {
@@ -740,11 +851,11 @@ class PluginManager {
         profileService.saveProfiles(profiles)
         selectedProfileId = copy.id
         applyProfile(copy)
-        ConsoleLogger.shared.log("Duplicated profile '\(profile.name)' as '\(copy.name)'", category: .system)
+        ConsoleLogger.shared.log("Duplicated profile '\(profile.name)' as '\(copy.name)'", category: .profiles)
     }
 
     private func applyProfile(_ profile: PluginProfile) {
-        ConsoleLogger.shared.log("Applying profile '\(profile.name)'", category: .system)
+        ConsoleLogger.shared.log("Applying profile '\(profile.name)'", category: .profiles)
         for index in plugins.indices {
             let shouldBeEnabled = profile.pluginFolderNames.contains(plugins[index].folderName)
             if plugins[index].isEnabled != shouldBeEnabled {
@@ -782,24 +893,42 @@ class PluginManager {
     func addScript(name: String, path: String) {
         let newScript = ProfileScript(path: path, isEnabled: true)
         activeScripts.append(newScript)
+        if let profile = selectedProfile {
+            ConsoleLogger.shared.log("Profile '\(profile.name)': added script '\(name)'", category: .profiles)
+        }
     }
 
     func deleteScript(_ script: ProfileScript) {
+        let name = URL(fileURLWithPath: script.path).lastPathComponent
         activeScripts.removeAll { $0.id == script.id }
+        if let profile = selectedProfile {
+            ConsoleLogger.shared.log("Profile '\(profile.name)': removed script '\(name)'", category: .profiles)
+        }
     }
 
     func toggleScript(_ script: ProfileScript) {
         if let index = activeScripts.firstIndex(where: { $0.id == script.id }) {
             activeScripts[index].isEnabled.toggle()
+            let name = URL(fileURLWithPath: script.path).lastPathComponent
+            if let profile = selectedProfile {
+                ConsoleLogger.shared.log("Profile '\(profile.name)': script '\(name)' is now \(activeScripts[index].isEnabled ? "enabled" : "disabled")", category: .profiles)
+            }
         }
     }
 
     func addProfileEnvVar(key: String = "NEW_VAR", value: String = "VALUE") {
         activeEnvironmentVariables.append(ScriptEnvVar(key: key, value: value))
+        if let profile = selectedProfile {
+            ConsoleLogger.shared.log("Profile '\(profile.name)': added environment variable '\(key)'", category: .profiles)
+        }
     }
 
     func deleteProfileEnvVar(id: UUID) {
+        let key = activeEnvironmentVariables.first(where: { $0.id == id })?.key ?? "var"
         activeEnvironmentVariables.removeAll { $0.id == id }
+        if let profile = selectedProfile {
+            ConsoleLogger.shared.log("Profile '\(profile.name)': removed environment variable '\(key)'", category: .profiles)
+        }
     }
 
     // MARK: - Launch & Execution

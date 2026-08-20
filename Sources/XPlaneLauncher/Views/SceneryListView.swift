@@ -167,11 +167,28 @@ struct SceneryGroupSection: View {
             }
             .onMove(perform: moveMembers)
         } label: {
-            HStack {
+            HStack(spacing: 8) {
                 Image(systemName: "folder.fill")
                     .foregroundStyle(.blue)
                 Text(group.name)
                     .font(.headline)
+
+                if !group.isExpanded && members.contains(where: { pluginManager.isSceneryModified($0) }) {
+                    HStack(spacing: 3) {
+                        Circle()
+                            .fill(Color.orange)
+                            .frame(width: 5, height: 5)
+                        Text("Modified")
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.orange)
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.orange.opacity(0.12))
+                    .clipShape(Capsule())
+                }
+
                 Spacer()
 
                 // Group Toggles
@@ -304,6 +321,22 @@ struct SceneryRow: View {
             }
 
             Spacer()
+
+            if pluginManager.isSceneryModified(item) {
+                HStack(spacing: 3) {
+                    Circle()
+                        .fill(Color.orange)
+                        .frame(width: 5, height: 5)
+                    Text("Modified")
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.orange)
+                }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(Color.orange.opacity(0.12))
+                .clipShape(Capsule())
+            }
 
             Text(item.isEnabled ? "Enabled" : (item.isInIni ? "Disabled" : "Available"))
                 .font(.caption2)

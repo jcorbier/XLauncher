@@ -70,9 +70,17 @@ struct ScriptsListView: View {
                         VStack(spacing: 0) {
                             Table($pluginManager.activeEnvironmentVariables, selection: $selectedEnvVarId) {
                                 TableColumn("Key") { $envVar in
-                                    TextField("Key", text: $envVar.key)
-                                        .labelsHidden()
-                                        .textFieldStyle(.plain)
+                                    HStack(spacing: 6) {
+                                        if pluginManager.isEnvVarModified(envVar) {
+                                            Circle()
+                                                .fill(Color.orange)
+                                                .frame(width: 5, height: 5)
+                                                .help("Modified from saved profile")
+                                        }
+                                        TextField("Key", text: $envVar.key)
+                                            .labelsHidden()
+                                            .textFieldStyle(.plain)
+                                    }
                                 }
                                 TableColumn("Value") { $envVar in
                                     TextField("Value", text: $envVar.value)
@@ -164,6 +172,22 @@ struct ScriptRow: View {
             }
 
             Spacer()
+
+            if pluginManager.isProfileScriptModified(script) {
+                HStack(spacing: 3) {
+                    Circle()
+                        .fill(Color.orange)
+                        .frame(width: 5, height: 5)
+                    Text("Modified")
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.orange)
+                }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(Color.orange.opacity(0.12))
+                .clipShape(Capsule())
+            }
 
             Toggle("", isOn: Binding(
                 get: { script.isEnabled },

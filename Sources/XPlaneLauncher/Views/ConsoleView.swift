@@ -250,9 +250,10 @@ struct ConsoleView: View {
 
     private func categoryColor(for category: LogCategory) -> Color {
         switch category {
+        case .profiles: return .blue
         case .plugins: return .green
         case .scenery: return .yellow
-        case .aircraft: return .blue
+        case .aircraft: return .teal
         case .lua: return .purple
         case .updates: return .orange
         case .csl: return .cyan
