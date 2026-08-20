@@ -21,6 +21,11 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
+
+extension Notification.Name {
+    static let installAddonRequested = Notification.Name("installAddonRequested")
+}
 
 struct ContentView: View {
     @Environment(PluginManager.self) var pluginManager
@@ -29,6 +34,9 @@ struct ContentView: View {
     @Environment(AppUpdateManager.self) var appUpdateManager
     @Binding var showWelcomeScreen: Bool
     @State private var selectedCategory: NavigationCategory? = .aircraft
+    @State private var installerAnalysis: AddonPackageAnalysis? = nil
+    @State private var isDropTargeted: Bool = false
+    @State private var isShowingFileImporter: Bool = false
 
     init(showWelcomeScreen: Binding<Bool> = .constant(false)) {
         self._showWelcomeScreen = showWelcomeScreen
@@ -233,6 +241,55 @@ struct ContentView: View {
                 .background(Material.bar)
             }
             .background(Color(NSColor.windowBackgroundColor))
+            .overlay {
+                if isDropTargeted {
+                    ZStack {
+                        Color.black.opacity(0.4)
+                        VStack(spacing: 12) {
+                            Image(systemName: "square.and.arrow.down.fill")
+                                .font(.system(size: 48))
+                                .foregroundStyle(.white)
+                            Text("Drop Add-on Package to Install")
+                                .font(.title2)
+                                .fontWeight(.bold)
+                                .foregroundStyle(.white)
+                            Text("Supports .zip archives, folders, and .lua scripts")
+                                .font(.subheadline)
+                                .foregroundStyle(.white.opacity(0.8))
+                        }
+                        .padding(32)
+                        .background(.ultraThinMaterial)
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                        .shadow(radius: 20)
+                    }
+                    .allowsHitTesting(false)
+                }
+            }
+        }
+        .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
+            handleDrop(providers: providers)
+        }
+        .sheet(item: $installerAnalysis) { analysis in
+            AddonInstallerView(analysis: analysis)
+        }
+        .fileImporter(
+            isPresented: $isShowingFileImporter,
+            allowedContentTypes: [.zip, .folder, .item],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                if let url = urls.first {
+                    Task { @MainActor in
+                        await analyzeAndPresentInstaller(url: url)
+                    }
+                }
+            case .failure(let error):
+                pluginManager.lastErrorMessage = "Failed to select file: \(error.localizedDescription)"
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .installAddonRequested)) { _ in
+            isShowingFileImporter = true
         }
         .sheet(isPresented: $showWelcomeScreen) {
             WelcomeView {
@@ -258,6 +315,38 @@ struct ContentView: View {
             if let errorMsg = pluginManager.lastErrorMessage {
                 Text(errorMsg)
             }
+        }
+    }
+
+    private func handleDrop(providers: [NSItemProvider]) -> Bool {
+        guard let provider = providers.first(where: { $0.hasItemConformingToTypeIdentifier("public.file-url") }) else {
+            return false
+        }
+
+        provider.loadItem(forTypeIdentifier: "public.file-url", options: nil) { item, _ in
+            var targetURL: URL?
+
+            if let data = item as? Data {
+                targetURL = URL(dataRepresentation: data, relativeTo: nil)
+            } else if let url = item as? URL {
+                targetURL = url
+            }
+
+            guard let url = targetURL else { return }
+
+            Task { @MainActor in
+                await analyzeAndPresentInstaller(url: url)
+            }
+        }
+        return true
+    }
+
+    private func analyzeAndPresentInstaller(url: URL) async {
+        do {
+            let analysis = try await AddonInstallerService.shared.analyze(url: url)
+            self.installerAnalysis = analysis
+        } catch {
+            pluginManager.lastErrorMessage = "Failed to analyze package: \(error.localizedDescription)"
         }
     }
 }

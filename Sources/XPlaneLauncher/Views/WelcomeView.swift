@@ -93,6 +93,13 @@ struct WelcomeView: View {
                         )
 
                         FeatureRow(
+                            icon: "square.and.arrow.down",
+                            color: .purple,
+                            title: "Add-on Package Installer",
+                            description: "Drag & drop ZIP files, folders, or Lua scripts onto the window to automatically identify their category and install them into your data folder."
+                        )
+
+                        FeatureRow(
                             icon: "sparkles",
                             color: .orange,
                             title: "Updates & X-CSL Models",

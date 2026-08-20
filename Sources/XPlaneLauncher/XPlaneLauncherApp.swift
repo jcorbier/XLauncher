@@ -81,7 +81,12 @@ struct XPlaneLauncherApp: App {
         .windowResizability(.contentSize)
         .windowStyle(.hiddenTitleBar) // Modern look
         .commands {
-            CommandGroup(replacing: .newItem) { }
+            CommandGroup(replacing: .newItem) {
+                Button("Install Add-on...") {
+                    NotificationCenter.default.post(name: .installAddonRequested, object: nil)
+                }
+                .keyboardShortcut("i", modifiers: .command)
+            }
             CommandGroup(replacing: .saveItem) { }
             CommandGroup(replacing: .printItem) { }
             CommandGroup(replacing: .importExport) { }

@@ -31,6 +31,10 @@ Keep your X-Plane directory tidy. Add-ons remain in a central directory and are 
 Reorder `scenery_packs.ini` with drag-and-drop, group related scenery entries, and toggle packages without moving files.
 :::
 
+:::{grid-item-card} Add-on Installer
+Drag and drop `.zip` archives, folders, or `.lua` scripts onto the launcher to automatically detect and install add-ons.
+:::
+
 :::{grid-item-card} Add-on Updates
 Check and install updates for add-ons that use SkunkCrafts Updater or X-Updater directly from the application.
 :::
@@ -97,6 +101,7 @@ user-guide/pre-launch-scripts
 :maxdepth: 2
 :caption: Advanced Features
 
+features/addon-installer
 features/updates
 features/csl-models
 ```
