@@ -201,8 +201,8 @@ class UpdateManager {
         let categoryFolders: [(AddonCategory, String)] = [
             (.aircraft, "Aircraft"),
             (.plugin, "Plugins"),
-            (.scenery, "Custom Scenery"),
-            (.luaScript, "FlyWithLua/Scripts")
+            (.scenery, "Scenery"),
+            (.luaScript, "LuaScripts")
         ]
 
         for (category, subFolder) in categoryFolders {
