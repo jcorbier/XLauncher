@@ -66,6 +66,7 @@ class PluginManager {
             guard !isLoading else { return }
             savePath()
             ensureLauncherDataDirectories()
+            repairStaleLinks()
             scanPlugins()
             scanScenery()
             scanAircraft()
@@ -74,19 +75,19 @@ class PluginManager {
     }
 
     var pluginsDataFolder: URL? {
-        launcherDataFolder?.appendingPathComponent("Plugins")
+        launcherDataFolder.map { pathService.dataFolder(.plugins, in: $0) }
     }
 
     var sceneryDataFolder: URL? {
-        launcherDataFolder?.appendingPathComponent("Scenery")
+        launcherDataFolder.map { pathService.dataFolder(.scenery, in: $0) }
     }
 
     var aircraftDataFolder: URL? {
-        launcherDataFolder?.appendingPathComponent("Aircraft")
+        launcherDataFolder.map { pathService.dataFolder(.aircraft, in: $0) }
     }
 
     var luaScriptsDataFolder: URL? {
-        launcherDataFolder?.appendingPathComponent("LuaScripts")
+        launcherDataFolder.map { pathService.dataFolder(.luaScripts, in: $0) }
     }
 
     var flyWithLuaScriptsFolder: URL? {
@@ -280,6 +281,43 @@ class PluginManager {
 
     func saveSceneryGroups() {
         profileService.saveSceneryGroups(sceneryGroups)
+    }
+
+    // MARK: - Link Repair
+
+    /// Repoints add-on links that broke because their source folder moved, so a
+    /// changed central data folder keeps the current selection working instead of
+    /// leaving every enabled add-on dangling.
+    func repairStaleLinks() {
+        guard let xPlanePath = xPlanePath else { return }
+
+        if let dataFolder = pluginsDataFolder {
+            symlinkService.repairStaleLinks(
+                in: pathService.pluginsTargetFolder(for: xPlanePath),
+                using: symlinkService.linkSources(in: dataFolder)
+            )
+        }
+
+        if let dataFolder = aircraftDataFolder {
+            symlinkService.repairStaleLinks(
+                in: pathService.aircraftTargetFolder(for: xPlanePath),
+                using: symlinkService.linkSources(in: dataFolder)
+            )
+        }
+
+        if let dataFolder = sceneryDataFolder {
+            symlinkService.repairStaleLinks(
+                in: pathService.customSceneryFolder(for: xPlanePath),
+                using: symlinkService.linkSources(in: dataFolder)
+            )
+        }
+
+        if let dataFolder = luaScriptsDataFolder, let targetFolder = flyWithLuaScriptsFolder {
+            symlinkService.repairStaleLinks(
+                in: targetFolder,
+                using: symlinkService.luaScriptLinkSources(in: dataFolder)
+            )
+        }
     }
 
     // MARK: - Scanning

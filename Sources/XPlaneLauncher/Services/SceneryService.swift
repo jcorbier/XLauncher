@@ -28,6 +28,30 @@ final class SceneryService: Sendable {
     private var fileManager: FileManager { FileManager.default }
     private let kXPlaneCustomSceneryFileName = "scenery_packs.ini"
 
+    // MARK: - Filesystem Helpers
+
+    /// Reports whether a directory entry exists, without resolving symbolic links.
+    /// `FileManager.fileExists` follows links, so a link whose target moved away
+    /// reads as "missing" even though the entry is still there.
+    private func entryExists(at url: URL) -> Bool {
+        (try? fileManager.attributesOfItem(atPath: url.path)) != nil
+    }
+
+    private func isSymlink(at url: URL) -> Bool {
+        let attributes = try? fileManager.attributesOfItem(atPath: url.path)
+        return (attributes?[.type] as? String) == FileAttributeType.typeSymbolicLink.rawValue
+    }
+
+    /// A real directory, or a symbolic link that is meant to point at one —
+    /// including links whose target is currently unavailable.
+    private func isDirectoryOrLink(at url: URL) -> Bool {
+        var isDir: ObjCBool = false
+        if fileManager.fileExists(atPath: url.path, isDirectory: &isDir) {
+            return isDir.boolValue
+        }
+        return isSymlink(at: url)
+    }
+
     func scanScenery(
         customSceneryFolder: URL,
         managedSceneryFolder: URL?,
@@ -63,18 +87,14 @@ final class SceneryService: Sendable {
             for url in csContents {
                 if url.lastPathComponent == kXPlaneCustomSceneryFileName { continue }
 
-                var isDir: ObjCBool = false
-                if fileManager.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
+                if isDirectoryOrLink(at: url) {
                     let name = url.lastPathComponent
                     if !foundFolderNames.contains(name) {
-                        let attributes = try? fileManager.attributesOfItem(atPath: url.path)
-                        let isSymlink = (attributes?[.type] as? String) == FileAttributeType.typeSymbolicLink.rawValue
-
                         installedButNotInIni.append(Scenery(
                             name: name,
                             isEnabled: true,
                             folderName: name,
-                            isManaged: isSymlink,
+                            isManaged: isSymlink(at: url),
                             isInIni: false,
                             iniLine: "SCENERY_PACK Custom Scenery/\(name)/"
                         ))
@@ -88,10 +108,12 @@ final class SceneryService: Sendable {
         if let managedURL = managedSceneryFolder, fileManager.fileExists(atPath: managedURL.path) {
             let contents = try fileManager.contentsOfDirectory(at: managedURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
             for url in contents {
-                var isDir: ObjCBool = false
-                if fileManager.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
+                if isDirectoryOrLink(at: url) {
                     let name = url.lastPathComponent
-                    let isInstalled = foundFolderNames.contains(name) || installedButNotInIni.contains(where: { $0.folderName == name })
+                    // Installed means "Custom Scenery has an entry for it". Being listed in
+                    // the INI is not enough: the entry may have been removed, in which case
+                    // the package still has to show up as available from the data folder.
+                    let isInstalled = entryExists(at: customSceneryFolder.appendingPathComponent(name))
 
                     if !isInstalled {
                         uninstalled.append(Scenery(
@@ -115,18 +137,12 @@ final class SceneryService: Sendable {
             let path = customSceneryFolder.appendingPathComponent(item.folderName)
             let isSpecialIdx = item.folderName.hasPrefix("*")
 
-            if isSpecialIdx || fileManager.fileExists(atPath: path.path) {
-                var isSymlink = false
-                if !isSpecialIdx {
-                    let attributes = try? fileManager.attributesOfItem(atPath: path.path)
-                    isSymlink = (attributes?[.type] as? String) == FileAttributeType.typeSymbolicLink.rawValue
-                }
-
+            if isSpecialIdx || entryExists(at: path) {
                 finalScenery.append(Scenery(
                     name: item.folderName,
                     isEnabled: item.enabled,
                     folderName: item.folderName,
-                    isManaged: isSymlink,
+                    isManaged: !isSpecialIdx && isSymlink(at: path),
                     isInIni: true,
                     iniLine: item.line
                 ))
@@ -155,7 +171,7 @@ final class SceneryService: Sendable {
                 content += line + "\n"
             } else {
                 let path = customSceneryFolder.appendingPathComponent(item.folderName)
-                if fileManager.fileExists(atPath: path.path) {
+                if entryExists(at: path) {
                     content += line + "\n"
                 }
             }
@@ -172,14 +188,22 @@ final class SceneryService: Sendable {
             throw AppError.pathNotFound(sourceURL.path)
         }
 
-        if !fileManager.fileExists(atPath: linkURL.path) {
-            try fileManager.createSymbolicLink(at: linkURL, withDestinationURL: sourceURL)
+        if isSymlink(at: linkURL) {
+            // Stale link, e.g. left behind after the central data folder moved.
+            try fileManager.removeItem(at: linkURL)
+        } else if entryExists(at: linkURL) {
+            // A real directory lives here — never replace unmanaged user content.
+            return
         }
+
+        try fileManager.createSymbolicLink(at: linkURL, withDestinationURL: sourceURL)
     }
 
     func unlinkScenery(folderName: String, customSceneryFolder: URL) throws {
         let linkURL = customSceneryFolder.appendingPathComponent(folderName)
-        if fileManager.fileExists(atPath: linkURL.path) {
+        // Only ever remove the link itself, never a real scenery directory.
+        // `isSymlink` also matches stale links, which `fileExists` would miss.
+        if isSymlink(at: linkURL) {
             try fileManager.removeItem(at: linkURL)
         }
     }

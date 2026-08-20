@@ -27,6 +27,104 @@ final class SymlinkService: Sendable {
 
     private var fileManager: FileManager { FileManager.default }
 
+    // MARK: - Link Management
+
+    /// Reports whether a directory entry exists, without resolving symbolic links.
+    /// `FileManager.fileExists` follows links, so a link whose target moved away
+    /// reads as "missing" even though the entry is still there.
+    private func entryExists(at url: URL) -> Bool {
+        (try? fileManager.attributesOfItem(atPath: url.path)) != nil
+    }
+
+    private func isSymlink(at url: URL) -> Bool {
+        let attributes = try? fileManager.attributesOfItem(atPath: url.path)
+        return (attributes?[.type] as? String) == FileAttributeType.typeSymbolicLink.rawValue
+    }
+
+    /// Points `linkURL` at `sourceURL`, replacing a link left over from an earlier
+    /// data folder location. Real directories are never touched: they hold add-ons
+    /// the launcher does not manage.
+    private func createOrReplaceLink(at linkURL: URL, to sourceURL: URL) throws {
+        if isSymlink(at: linkURL) {
+            try fileManager.removeItem(at: linkURL)
+        } else if entryExists(at: linkURL) {
+            return
+        }
+
+        try fileManager.createSymbolicLink(at: linkURL, withDestinationURL: sourceURL)
+    }
+
+    /// Removes a managed link. Unmanaged content stays where it is.
+    private func removeLink(at linkURL: URL) throws {
+        if isSymlink(at: linkURL) {
+            try fileManager.removeItem(at: linkURL)
+        }
+    }
+
+    // MARK: - Link Repair
+
+    /// Source add-ons available for repair, keyed by the name they are linked under.
+    func linkSources(in dataFolder: URL) -> [String: URL] {
+        guard let contents = try? fileManager.contentsOfDirectory(at: dataFolder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else {
+            return [:]
+        }
+        return Dictionary(uniqueKeysWithValues: contents.map { ($0.lastPathComponent, $0) })
+    }
+
+    /// Lua bundles are linked child by child, so the children are the repair sources.
+    func luaScriptLinkSources(in dataFolder: URL) -> [String: URL] {
+        guard let contents = try? fileManager.contentsOfDirectory(at: dataFolder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else {
+            return [:]
+        }
+
+        var sources: [String: URL] = [:]
+        for item in contents {
+            var isDir: ObjCBool = false
+            guard fileManager.fileExists(atPath: item.path, isDirectory: &isDir) else { continue }
+
+            if isDir.boolValue {
+                let children = (try? fileManager.contentsOfDirectory(at: item, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+                for child in children {
+                    sources[child.lastPathComponent] = child
+                }
+            } else {
+                sources[item.lastPathComponent] = item
+            }
+        }
+        return sources
+    }
+
+    /// Repoints links that no longer resolve at a source of the same name, which is
+    /// what an add-on left behind after its source folder moved looks like.
+    ///
+    /// Deliberately conservative: intact links keep pointing where they point, real
+    /// directories are never touched, and a link without a matching source is left
+    /// in place rather than guessed at or deleted. Returns the repaired names.
+    @discardableResult
+    func repairStaleLinks(in targetFolder: URL, using sources: [String: URL]) -> [String] {
+        guard !sources.isEmpty,
+              let contents = try? fileManager.contentsOfDirectory(at: targetFolder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else {
+            return []
+        }
+
+        var repaired: [String] = []
+        for linkURL in contents {
+            let name = linkURL.lastPathComponent
+            guard isSymlink(at: linkURL),
+                  !fileManager.fileExists(atPath: linkURL.path),  // resolves the link: false means the target is gone
+                  let sourceURL = sources[name] else { continue }
+
+            do {
+                try fileManager.removeItem(at: linkURL)
+                try fileManager.createSymbolicLink(at: linkURL, withDestinationURL: sourceURL)
+                repaired.append(name)
+            } catch {
+                continue
+            }
+        }
+        return repaired.sorted()
+    }
+
     // MARK: - Plugins
 
     func scanPlugins(dataFolder: URL, targetFolder: URL) throws -> [Plugin] {
@@ -56,13 +154,9 @@ final class SymlinkService: Sendable {
         let linkURL = targetFolder.appendingPathComponent(folderName)
 
         if enabled {
-            if !fileManager.fileExists(atPath: linkURL.path) {
-                try fileManager.createSymbolicLink(at: linkURL, withDestinationURL: sourceURL)
-            }
+            try createOrReplaceLink(at: linkURL, to: sourceURL)
         } else {
-            if fileManager.fileExists(atPath: linkURL.path) {
-                try fileManager.removeItem(at: linkURL)
-            }
+            try removeLink(at: linkURL)
         }
     }
 
@@ -95,13 +189,9 @@ final class SymlinkService: Sendable {
         let linkURL = targetFolder.appendingPathComponent(folderName)
 
         if enabled {
-            if !fileManager.fileExists(atPath: linkURL.path) {
-                try fileManager.createSymbolicLink(at: linkURL, withDestinationURL: sourceURL)
-            }
+            try createOrReplaceLink(at: linkURL, to: sourceURL)
         } else {
-            if fileManager.fileExists(atPath: linkURL.path) {
-                try fileManager.removeItem(at: linkURL)
-            }
+            try removeLink(at: linkURL)
         }
     }
 
@@ -152,33 +242,23 @@ final class SymlinkService: Sendable {
                 let children = try fileManager.contentsOfDirectory(at: itemSourceURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
                 for child in children {
                     let linkURL = targetFolder.appendingPathComponent(child.lastPathComponent)
-                    if fileManager.fileExists(atPath: linkURL.path) {
-                        try fileManager.removeItem(at: linkURL)
-                    }
-                    try fileManager.createSymbolicLink(at: linkURL, withDestinationURL: child)
+                    try createOrReplaceLink(at: linkURL, to: child)
                 }
             } else {
                 let linkURL = targetFolder.appendingPathComponent(item.folderName)
-                if fileManager.fileExists(atPath: linkURL.path) {
-                    try fileManager.removeItem(at: linkURL)
-                }
-                try fileManager.createSymbolicLink(at: linkURL, withDestinationURL: itemSourceURL)
+                try createOrReplaceLink(at: linkURL, to: itemSourceURL)
             }
         } else {
             if item.isDirectory {
                 if let children = try? fileManager.contentsOfDirectory(at: itemSourceURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
                     for child in children {
                         let linkURL = targetFolder.appendingPathComponent(child.lastPathComponent)
-                        if fileManager.fileExists(atPath: linkURL.path) {
-                            try fileManager.removeItem(at: linkURL)
-                        }
+                        try removeLink(at: linkURL)
                     }
                 }
             } else {
                 let linkURL = targetFolder.appendingPathComponent(item.folderName)
-                if fileManager.fileExists(atPath: linkURL.path) {
-                    try fileManager.removeItem(at: linkURL)
-                }
+                try removeLink(at: linkURL)
             }
         }
     }
