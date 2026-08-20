@@ -214,7 +214,8 @@ struct CSLListView: View {
             // Console Drawer
             if showDebugConsole {
                 Divider()
-                ConsoleView(title: "CSL Console", logger: cslManager.logger)
+                ConsoleView(title: "CSL Console", logger: cslManager.logger, initialCategory: .csl)
+                    .frame(height: 180)
             }
         }
         .onAppear {

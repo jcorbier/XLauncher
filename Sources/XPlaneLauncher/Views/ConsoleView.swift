@@ -27,18 +27,102 @@ struct ConsoleView: View {
     let title: String
     let logger: ConsoleLogger
 
+    @State private var selectedCategory: LogCategory?
+    @State private var searchText: String = ""
     @State private var hasCopied: Bool = false
+
+    init(title: String = "Live Console", logger: ConsoleLogger = .shared, initialCategory: LogCategory? = nil) {
+        self.title = title
+        self.logger = logger
+        self._selectedCategory = State(initialValue: initialCategory)
+    }
+
+    private var filteredEntries: [LogEntry] {
+        logger.filteredEntries(category: selectedCategory, searchText: searchText)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             // Header Bar
             HStack(spacing: 8) {
-                Label("\(title) (\(logger.entries.count) entries)", systemImage: "terminal")
+                Label("\(title) (\(filteredEntries.count))", systemImage: "terminal")
                     .font(.caption)
                     .fontWeight(.bold)
                     .foregroundStyle(.secondary)
 
                 Spacer()
+
+                // Subsystem Category Filter Menu
+                Menu {
+                    Button {
+                        selectedCategory = nil
+                    } label: {
+                        HStack {
+                            Text("All Subsystems")
+                            if selectedCategory == nil {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+
+                    Divider()
+
+                    ForEach(LogCategory.allCases) { category in
+                        Button {
+                            selectedCategory = category
+                        } label: {
+                            HStack {
+                                Label(category.rawValue, systemImage: category.systemImage)
+                                if selectedCategory == category {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: selectedCategory?.systemImage ?? "line.3.horizontal.decrease.circle")
+                        Text(selectedCategory?.rawValue ?? "All Subsystems")
+                            .font(.caption2)
+                    }
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+
+                // Filter / Search Field
+                HStack(spacing: 4) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+
+                    TextField("Filter...", text: $searchText)
+                        .textFieldStyle(.plain)
+                        .font(.caption2)
+                        .frame(width: 90)
+
+                    if !searchText.isEmpty {
+                        Button {
+                            searchText = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(Color(NSColor.textBackgroundColor))
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(Color.secondary.opacity(0.3), lineWidth: 0.5)
+                )
+
+                Text("•")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
 
                 Button(action: copyAllLogs) {
                     HStack(spacing: 4) {
@@ -49,18 +133,27 @@ struct ConsoleView: View {
                 .buttonStyle(.plain)
                 .font(.caption)
                 .foregroundStyle(hasCopied ? Color.green : Color.secondary)
-                .disabled(logger.entries.isEmpty)
+                .disabled(filteredEntries.isEmpty)
 
                 Text("•")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
 
-                Button("Clear") {
-                    logger.clear()
+                Menu {
+                    if let category = selectedCategory {
+                        Button("Clear \(category.rawValue) Logs") {
+                            logger.clear(category: category)
+                        }
+                    }
+                    Button("Clear All Logs") {
+                        logger.clear()
+                    }
+                } label: {
+                    Text("Clear")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                .buttonStyle(.plain)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .menuStyle(.borderlessButton)
                 .disabled(logger.entries.isEmpty)
             }
             .padding(.horizontal, 10)
@@ -69,23 +162,18 @@ struct ConsoleView: View {
             // Console Output Scroll Area
             ScrollViewReader { proxy in
                 ScrollView {
-                    if logger.entries.isEmpty {
-                        Text("Console is empty.")
+                    if filteredEntries.isEmpty {
+                        Text(logger.entries.isEmpty ? "Console is empty." : "No logs matching current filter.")
                             .font(.system(.caption2, design: .monospaced))
                             .foregroundStyle(Color.gray)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(8)
                     } else {
-                        LazyVStack(alignment: .leading, spacing: 3) {
-                            ForEach(Array(logger.entries.enumerated()), id: \.offset) { index, log in
-                                Text(log)
-                                    .font(.system(.caption2, design: .monospaced))
-                                    .foregroundStyle(Color.green)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .id(index)
-                            }
-                        }
-                        .padding(8)
+                        Text(attributedLogText)
+                            .font(.system(.caption2, design: .monospaced))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(8)
+                            .id("bottom")
                     }
                 }
                 .textSelection(.enabled)
@@ -96,31 +184,105 @@ struct ConsoleView: View {
                 .onAppear {
                     scrollToBottom(proxy: proxy)
                 }
-                .onChange(of: logger.entries.count) { _, _ in
+                .onChange(of: filteredEntries.count) { _, _ in
                     scrollToBottom(proxy: proxy)
                 }
             }
         }
-        .frame(height: 180)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(NSColor.controlBackgroundColor))
         .contextMenu {
-            Button("Copy All Logs") {
+            Button("Copy Filtered Logs") {
                 copyAllLogs()
+            }
+            .disabled(filteredEntries.isEmpty)
+
+            Button("Copy All Logs") {
+                copyEntireLogHistory()
             }
             .disabled(logger.entries.isEmpty)
 
             Divider()
 
-            Button("Clear Console") {
+            if let category = selectedCategory {
+                Button("Clear \(category.rawValue) Logs") {
+                    logger.clear(category: category)
+                }
+            }
+
+            Button("Clear All Logs") {
                 logger.clear()
             }
             .disabled(logger.entries.isEmpty)
         }
     }
 
+    private var attributedLogText: AttributedString {
+        var combined = AttributedString()
+        for (index, entry) in filteredEntries.enumerated() {
+            if index > 0 {
+                combined.append(AttributedString("\n"))
+            }
+
+            var timeAttr = AttributedString("[\(entry.timestampString)] ")
+            timeAttr.foregroundColor = .gray
+
+            var catAttr = AttributedString("[\(entry.category.rawValue)] ")
+            catAttr.foregroundColor = categoryColor(for: entry.category)
+            catAttr.inlinePresentationIntent = .stronglyEmphasized
+
+            combined.append(timeAttr)
+            combined.append(catAttr)
+
+            if entry.level != .info {
+                var levelAttr = AttributedString("[\(entry.level.rawValue)] ")
+                levelAttr.foregroundColor = levelColor(for: entry.level)
+                levelAttr.inlinePresentationIntent = .stronglyEmphasized
+                combined.append(levelAttr)
+            }
+
+            var msgAttr = AttributedString(entry.message)
+            msgAttr.foregroundColor = entryColor(for: entry)
+            combined.append(msgAttr)
+        }
+        return combined
+    }
+
+    private func categoryColor(for category: LogCategory) -> Color {
+        switch category {
+        case .plugins: return .green
+        case .scenery: return .yellow
+        case .aircraft: return .blue
+        case .lua: return .purple
+        case .updates: return .orange
+        case .csl: return .cyan
+        case .launch: return .mint
+        case .system: return .indigo
+        case .general: return .gray
+        }
+    }
+
+    private func levelColor(for level: LogLevel) -> Color {
+        switch level {
+        case .error: return .red
+        case .warn: return .yellow
+        case .info: return .secondary
+        case .debug: return .purple
+        }
+    }
+
+    private func entryColor(for entry: LogEntry) -> Color {
+        switch entry.level {
+        case .error: return .red
+        case .warn: return .yellow
+        case .debug: return .secondary
+        case .info: return Color.green
+        }
+    }
+
     private func copyAllLogs() {
-        guard !logger.entries.isEmpty else { return }
-        let text = logger.entries.joined(separator: "\n")
+        guard !filteredEntries.isEmpty else { return }
+        let text = filteredEntries.map(\.formatted).joined(separator: "\n")
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
 
@@ -138,10 +300,17 @@ struct ConsoleView: View {
         }
     }
 
+    private func copyEntireLogHistory() {
+        guard !logger.entries.isEmpty else { return }
+        let text = logger.entries.map(\.formatted).joined(separator: "\n")
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
     private func scrollToBottom(proxy: ScrollViewProxy) {
-        guard let lastIndex = logger.entries.indices.last else { return }
+        guard !filteredEntries.isEmpty else { return }
         DispatchQueue.main.async {
-            proxy.scrollTo(lastIndex, anchor: .bottom)
+            proxy.scrollTo("bottom", anchor: .bottom)
         }
     }
 }

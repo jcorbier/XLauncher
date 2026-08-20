@@ -25,6 +25,7 @@ import SwiftUI
 @main
 struct XPlaneLauncherApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    @Environment(\.openWindow) private var openWindow
     @State private var pluginManager = PluginManager()
     @State private var updateManager = UpdateManager()
     @State private var cslManager = CSLManager()
@@ -93,9 +94,19 @@ struct XPlaneLauncherApp: App {
                     showWelcomeScreen = true
                 }
             }
+            CommandGroup(after: .windowList) {
+                Button("Logs...") {
+                    openWindow(id: "logs-window")
+                }
+                .keyboardShortcut("l", modifiers: [.command, .option])
+            }
             CommandGroup(replacing: .help) {
                 Button("Show Welcome Screen...") {
                     showWelcomeScreen = true
+                }
+                Divider()
+                Button("Show Logs...") {
+                    openWindow(id: "logs-window")
                 }
                 Divider()
                 Button("X-Plane Launcher Documentation") {
@@ -103,6 +114,12 @@ struct XPlaneLauncherApp: App {
                 }
             }
         }
+
+        Window("Application Logs", id: "logs-window") {
+            LogsDialogView()
+        }
+        .defaultSize(width: 800, height: 500)
+        .windowResizability(.contentMinSize)
     }
 }
 

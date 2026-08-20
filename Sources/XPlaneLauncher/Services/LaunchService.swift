@@ -23,7 +23,8 @@
 import AppKit
 import Foundation
 
-final class LaunchService: Sendable {
+@MainActor
+final class LaunchService {
     static let shared = LaunchService()
 
     private var fileManager: FileManager { FileManager.default }
@@ -67,27 +68,35 @@ final class LaunchService: Sendable {
         env["XLAUNCHER_PROFILE"] = profileName
 
         process.environment = env
+        ConsoleLogger.shared.log("Executing shell script at '\(path)' (profile: \(profileName))", category: .launch)
         try process.run()
     }
 
     func launchXPlane(
         at xPlanePath: URL,
-        onSuccess: @Sendable @escaping () -> Void,
-        onFailure: @Sendable @escaping (Error) -> Void
+        onSuccess: @escaping @MainActor () -> Void,
+        onFailure: @escaping @MainActor (Error) -> Void
     ) {
         let appURL = xPlanePath.appendingPathComponent("X-Plane.app")
         guard fileManager.fileExists(atPath: appURL.path) else {
+            ConsoleLogger.shared.log("X-Plane.app not found in \(xPlanePath.path)", category: .launch, level: .error)
             onFailure(AppError.xPlaneNotFound(appURL))
             return
         }
 
+        ConsoleLogger.shared.log("Launching X-Plane from \(appURL.path)", category: .launch)
+
         let workspace = NSWorkspace.shared
         let config = NSWorkspace.OpenConfiguration()
         workspace.openApplication(at: appURL, configuration: config) { _, error in
-            if let error = error {
-                onFailure(error)
-            } else {
-                onSuccess()
+            Task { @MainActor in
+                if let error = error {
+                    ConsoleLogger.shared.log("Failed to launch X-Plane: \(error.localizedDescription)", category: .launch, level: .error)
+                    onFailure(error)
+                } else {
+                    ConsoleLogger.shared.log("Launched X-Plane successfully", category: .launch)
+                    onSuccess()
+                }
             }
         }
     }

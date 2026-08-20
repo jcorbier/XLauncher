@@ -332,8 +332,10 @@ class PluginManager {
         let targetFolder = pathService.pluginsTargetFolder(for: xPlanePath)
         do {
             self.plugins = try symlinkService.scanPlugins(dataFolder: pluginsURL, targetFolder: targetFolder)
+            ConsoleLogger.shared.log("Scanned \(self.plugins.count) plugins (\(self.plugins.filter { $0.isEnabled }.count) enabled)", category: .plugins)
         } catch {
             self.lastErrorMessage = "Error scanning plugins: \(error.localizedDescription)"
+            ConsoleLogger.shared.log("Error scanning plugins: \(error.localizedDescription)", category: .plugins, level: .error)
         }
     }
 
@@ -347,8 +349,10 @@ class PluginManager {
         let targetFolder = pathService.aircraftTargetFolder(for: xPlanePath)
         do {
             self.aircraft = try symlinkService.scanAircraft(dataFolder: aircraftFolder, targetFolder: targetFolder)
+            ConsoleLogger.shared.log("Scanned \(self.aircraft.count) aircraft (\(self.aircraft.filter { $0.isEnabled }.count) enabled)", category: .aircraft)
         } catch {
             self.lastErrorMessage = "Error scanning aircraft: \(error.localizedDescription)"
+            ConsoleLogger.shared.log("Error scanning aircraft: \(error.localizedDescription)", category: .aircraft, level: .error)
         }
     }
 
@@ -361,8 +365,10 @@ class PluginManager {
         let targetFolder = flyWithLuaScriptsFolder
         do {
             self.luaScripts = try symlinkService.scanLuaScripts(dataFolder: luaScriptsFolder, targetFolder: targetFolder)
+            ConsoleLogger.shared.log("Scanned \(self.luaScripts.count) Lua scripts (\(self.luaScripts.filter { $0.isEnabled }.count) enabled)", category: .lua)
         } catch {
             self.lastErrorMessage = "Error scanning Lua scripts: \(error.localizedDescription)"
+            ConsoleLogger.shared.log("Error scanning Lua scripts: \(error.localizedDescription)", category: .lua, level: .error)
         }
     }
 
@@ -380,8 +386,10 @@ class PluginManager {
                 managedSceneryFolder: sceneryDataFolder,
                 iniURL: iniURL
             )
+            ConsoleLogger.shared.log("Scanned \(self.scenery.count) scenery packs (\(self.scenery.filter { $0.isEnabled }.count) enabled)", category: .scenery)
         } catch {
             self.lastErrorMessage = "Error scanning Custom Scenery: \(error.localizedDescription)"
+            ConsoleLogger.shared.log("Error scanning Custom Scenery: \(error.localizedDescription)", category: .scenery, level: .error)
         }
     }
 
@@ -392,8 +400,10 @@ class PluginManager {
 
         do {
             try sceneryService.saveSceneryOrder(scenery: scenery, customSceneryFolder: customSceneryURL, iniURL: iniURL)
+            ConsoleLogger.shared.log("Saved scenery_packs.ini order with \(scenery.count) packs", category: .scenery)
         } catch {
             self.lastErrorMessage = "Failed to save scenery_packs.ini: \(error.localizedDescription)"
+            ConsoleLogger.shared.log("Failed to save scenery_packs.ini: \(error.localizedDescription)", category: .scenery, level: .error)
         }
     }
 
@@ -411,8 +421,10 @@ class PluginManager {
             if let index = plugins.firstIndex(where: { $0.id == plugin.id }) {
                 plugins[index].isEnabled = newEnabled
             }
+            ConsoleLogger.shared.log("\(newEnabled ? "Enabled" : "Disabled") plugin '\(plugin.name)'", category: .plugins)
         } catch {
             self.lastErrorMessage = "Failed to \(plugin.isEnabled ? "disable" : "enable") plugin '\(plugin.name)': \(error.localizedDescription)"
+            ConsoleLogger.shared.log("Failed to \(plugin.isEnabled ? "disable" : "enable") plugin '\(plugin.name)': \(error.localizedDescription)", category: .plugins, level: .error)
         }
     }
 
@@ -428,8 +440,10 @@ class PluginManager {
             if let index = aircraft.firstIndex(where: { $0.id == item.id }) {
                 aircraft[index].isEnabled = newEnabled
             }
+            ConsoleLogger.shared.log("\(newEnabled ? "Enabled" : "Disabled") aircraft '\(item.name)'", category: .aircraft)
         } catch {
             self.lastErrorMessage = "Failed to \(item.isEnabled ? "disable" : "enable") aircraft '\(item.name)': \(error.localizedDescription)"
+            ConsoleLogger.shared.log("Failed to \(item.isEnabled ? "disable" : "enable") aircraft '\(item.name)': \(error.localizedDescription)", category: .aircraft, level: .error)
         }
     }
 
@@ -444,8 +458,10 @@ class PluginManager {
             if let index = luaScripts.firstIndex(where: { $0.id == item.id }) {
                 luaScripts[index].isEnabled = newEnabled
             }
+            ConsoleLogger.shared.log("\(newEnabled ? "Enabled" : "Disabled") Lua script '\(item.name)'", category: .lua)
         } catch {
             self.lastErrorMessage = "Failed to \(item.isEnabled ? "disable" : "enable") Lua script '\(item.name)': \(error.localizedDescription)"
+            ConsoleLogger.shared.log("Failed to \(item.isEnabled ? "disable" : "enable") Lua script '\(item.name)': \(error.localizedDescription)", category: .lua, level: .error)
         }
     }
 
@@ -464,12 +480,15 @@ class PluginManager {
                     newItem.isManaged = true
                 } catch {
                     self.lastErrorMessage = "Failed to enable scenery '\(newItem.name)': \(error.localizedDescription)"
+                    ConsoleLogger.shared.log("Failed to enable scenery '\(newItem.name)': \(error.localizedDescription)", category: .scenery, level: .error)
                     return
                 }
             }
             newItem.isEnabled = true
+            ConsoleLogger.shared.log("Enabled scenery '\(newItem.name)'", category: .scenery)
         } else {
             newItem.isEnabled = false
+            ConsoleLogger.shared.log("Disabled scenery '\(newItem.name)'", category: .scenery)
         }
 
         scenery[index] = newItem
@@ -678,6 +697,7 @@ class PluginManager {
         profiles.append(newProfile)
         profileService.saveProfiles(profiles)
         selectedProfileId = newProfile.id
+        ConsoleLogger.shared.log("Saved new profile '\(name)'", category: .system)
     }
 
     func updateProfile(_ profile: PluginProfile) {
@@ -698,6 +718,7 @@ class PluginManager {
                 environmentVariables: activeEnvironmentVariables
             )
             profileService.saveProfiles(profiles)
+            ConsoleLogger.shared.log("Updated profile '\(profile.name)'", category: .system)
         }
     }
 
@@ -710,6 +731,7 @@ class PluginManager {
             }
         }
         profileService.saveProfiles(profiles)
+        ConsoleLogger.shared.log("Deleted profile '\(profile.name)'", category: .system)
     }
 
     func duplicateProfile(_ profile: PluginProfile) {
@@ -718,9 +740,11 @@ class PluginManager {
         profileService.saveProfiles(profiles)
         selectedProfileId = copy.id
         applyProfile(copy)
+        ConsoleLogger.shared.log("Duplicated profile '\(profile.name)' as '\(copy.name)'", category: .system)
     }
 
     private func applyProfile(_ profile: PluginProfile) {
+        ConsoleLogger.shared.log("Applying profile '\(profile.name)'", category: .system)
         for index in plugins.indices {
             let shouldBeEnabled = profile.pluginFolderNames.contains(plugins[index].folderName)
             if plugins[index].isEnabled != shouldBeEnabled {
@@ -784,6 +808,8 @@ class PluginManager {
         guard let xPlanePath = xPlanePath else { return }
 
         let profileName = profiles.first(where: { $0.id == selectedProfileId })?.name ?? "Default"
+        ConsoleLogger.shared.log("Initiating launch sequence with profile '\(profileName)'", category: .launch)
+
         for script in activeScripts where script.isEnabled {
             do {
                 try launchService.executeShellScript(
@@ -793,21 +819,19 @@ class PluginManager {
                     profileEnv: activeEnvironmentVariables
                 )
             } catch {
-                self.lastErrorMessage = AppError.scriptExecutionFailed(path: script.path, underlyingError: error.localizedDescription).localizedDescription
+                let err = AppError.scriptExecutionFailed(path: script.path, underlyingError: error.localizedDescription).localizedDescription
+                self.lastErrorMessage = err
+                ConsoleLogger.shared.log("Profile script failed: \(err)", category: .launch, level: .error)
             }
         }
 
         launchService.launchXPlane(
             at: xPlanePath,
             onSuccess: {
-                DispatchQueue.main.async {
-                    NSApp.terminate(nil)
-                }
+                NSApp.terminate(nil)
             },
             onFailure: { [weak self] error in
-                DispatchQueue.main.async {
-                    self?.lastErrorMessage = "Failed to launch X-Plane: \(error.localizedDescription)"
-                }
+                self?.lastErrorMessage = "Failed to launch X-Plane: \(error.localizedDescription)"
             }
         )
     }

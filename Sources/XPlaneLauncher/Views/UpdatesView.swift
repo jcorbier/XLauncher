@@ -122,7 +122,8 @@ struct UpdatesView: View {
 
             if showDebugConsole {
                 Divider()
-                ConsoleView(title: "Live Console", logger: updateManager.logger)
+                ConsoleView(title: "Updates Console", logger: updateManager.logger, initialCategory: .updates)
+                    .frame(height: 180)
             }
         }
     }

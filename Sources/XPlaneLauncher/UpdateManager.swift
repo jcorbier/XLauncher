@@ -51,7 +51,7 @@ class UpdateManager {
     }
 
     var updatableAddons: [UpdatableAddon] = []
-    let logger = ConsoleLogger()
+    var logger: ConsoleLogger { ConsoleLogger.shared }
 
     var isCheckingUpdates: Bool {
         updatableAddons.contains { $0.isChecking }
@@ -65,12 +65,12 @@ class UpdateManager {
         updatableAddons.contains { $0.isChecking || $0.isUpdating }
     }
 
-    func log(_ message: String) {
-        logger.log(message)
+    func log(_ message: String, level: LogLevel = .info) {
+        ConsoleLogger.shared.log(message, category: .updates, level: level)
     }
 
     func clearLogs() {
-        logger.clear()
+        ConsoleLogger.shared.clear(category: .updates)
     }
 
     enum UpdaterType: String, Codable, Identifiable {
@@ -270,7 +270,7 @@ class UpdateManager {
                     self.updatableAddons[i].statusMessage = result.statusMessage
                 }
             } catch {
-                self.log("[UpdateManager] Error checking \(addon.name): \(error.localizedDescription)")
+                self.log("Error checking \(addon.name): \(error.localizedDescription)", level: .error)
                 if let i = self.updatableAddons.firstIndex(where: { $0.id == addonId }) {
                     self.updatableAddons[i].isChecking = false
                     self.updatableAddons[i].isUpdateAvailable = false
@@ -312,7 +312,7 @@ class UpdateManager {
                     self.updatableAddons[i].statusMessage = "Up to date"
                 }
             } catch {
-                self.log("[UpdateManager] Update failed for \(addon.name): \(error.localizedDescription)")
+                self.log("Update failed for \(addon.name): \(error.localizedDescription)", level: .error)
                 if let i = self.updatableAddons.firstIndex(where: { $0.id == addonId }) {
                     self.updatableAddons[i].isUpdating = false
                     self.updatableAddons[i].statusMessage = "Update failed: \(error.localizedDescription)"

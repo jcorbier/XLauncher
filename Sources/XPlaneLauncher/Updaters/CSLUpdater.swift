@@ -388,14 +388,14 @@ final class CSLUpdaterService: Sendable {
 
         let totalFiles = filesToDownload.count
         let totalBytes = filesToDownload.reduce(Int64(0)) { $0 + $1.sizeBytes }
-        await onLog("[CSL] Starting download of \(package.name): \(totalFiles) files (\(ByteCountFormatter.string(fromByteCount: totalBytes, countStyle: .file)))")
+        await onLog("Starting download of \(package.name): \(totalFiles) files (\(ByteCountFormatter.string(fromByteCount: totalBytes, countStyle: .file)))")
 
         var downloadedBytes: Int64 = 0
         let trimmedServer = serverBaseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
 
         for (index, file) in filesToDownload.enumerated() {
             if isCancelled() {
-                await onLog("[CSL] Download cancelled for \(package.name)")
+                await onLog("Download cancelled for \(package.name)")
                 throw CancellationError()
             }
 
@@ -419,7 +419,7 @@ final class CSLUpdaterService: Sendable {
             }
             let fullURLString = "\(trimmedServer)/\(CSLUpdaterService.packageBaseRelativePath)/\(pathComponents.joined(separator: "/"))"
             guard let url = URL(string: fullURLString) else {
-                await onLog("[CSL] Invalid URL for \(file.path)")
+                await onLog("Invalid URL for \(file.path)")
                 continue
             }
 
@@ -458,7 +458,7 @@ final class CSLUpdaterService: Sendable {
                     if attempt < 3 {
                         try? await Task.sleep(nanoseconds: UInt64(attempt) * 500_000_000)
                     } else {
-                        await onLog("[CSL] Failed downloading \(relPath): \(error.localizedDescription)")
+                        await onLog("Failed downloading \(relPath): \(error.localizedDescription)")
                         throw error
                     }
                 }
@@ -470,7 +470,7 @@ final class CSLUpdaterService: Sendable {
         }
 
         await onProgress(1.0, totalBytes, "Up to date")
-        await onLog("[CSL] Successfully installed/updated \(package.name)")
+        await onLog("Successfully installed/updated \(package.name)")
     }
 }
 
@@ -503,7 +503,7 @@ final class CSLManager {
     var packages: [CSLPackage] = []
     var isChecking: Bool = false
     var isUpdating: Bool = false
-    let logger = ConsoleLogger()
+    var logger: ConsoleLogger { ConsoleLogger.shared }
 
     private var activeDownloadTasks: [String: Task<Void, Never>] = [:]
 
@@ -527,12 +527,12 @@ final class CSLManager {
         packages.filter { $0.isInstalled }.count
     }
 
-    func log(_ message: String) {
-        logger.log(message)
+    func log(_ message: String, level: LogLevel = .info) {
+        ConsoleLogger.shared.log(message, category: .csl, level: level)
     }
 
     func clearLogs() {
-        logger.clear()
+        ConsoleLogger.shared.clear(category: .csl)
     }
 
     // MARK: - Local Scanning
@@ -621,7 +621,7 @@ final class CSLManager {
 
         guard !isChecking else { return }
         isChecking = true
-        log("[CSL] Checking X-CSL packages index...")
+        log("Checking X-CSL packages index...")
 
         Task { @MainActor in
             do {
@@ -629,7 +629,7 @@ final class CSLManager {
                 let rawPackages = CSLIndexParser.parseIndex(content: indexContent)
                 self.hasFetchedRemoteIndex = true
 
-                log("[CSL] Remote index loaded: \(rawPackages.count) total packages available")
+                log("Remote index loaded: \(rawPackages.count) total packages available")
 
                 var parsedPackages: [CSLPackage] = []
                 var processedNames: Set<String> = []
@@ -707,13 +707,13 @@ final class CSLManager {
 
                 let needUpdate = self.updatesAvailableCount
                 let installed = self.installedCount
-                self.log("[CSL] Scan complete: \(installed) installed, \(needUpdate) update(s) available")
+                self.log("Scan complete: \(installed) installed, \(needUpdate) update(s) available")
 
                 // Fetch descriptions in background for installed or top packages
                 self.fetchDescriptionsInBackground()
             } catch {
                 self.isChecking = false
-                self.log("[CSL] Error fetching index: \(error.localizedDescription)")
+                self.log("Error fetching index: \(error.localizedDescription)", level: .error)
             }
         }
     }
@@ -735,7 +735,7 @@ final class CSLManager {
 
     func updatePackage(_ package: CSLPackage) {
         guard let folderURL = cslFolderURL else {
-            log("[CSL] Cannot update: CSL folder not set")
+            log("Cannot update: CSL folder not set", level: .warn)
             return
         }
 
@@ -798,7 +798,7 @@ final class CSLManager {
                     self.packages[i].status = .error
                     self.packages[i].statusMessage = "Update failed: \(error.localizedDescription)"
                 }
-                self.log("[CSL] Update failed for \(pkgName): \(error.localizedDescription)")
+                self.log("Update failed for \(pkgName): \(error.localizedDescription)", level: .error)
                 self.activeDownloadTasks.removeValue(forKey: pkgName)
                 self.isUpdating = !self.activeDownloadTasks.isEmpty
             }
@@ -824,7 +824,7 @@ final class CSLManager {
     func updateAll() {
         let toUpdate = packages.filter { $0.isInstalled && $0.status == .needsUpdate }
         guard !toUpdate.isEmpty else { return }
-        log("[CSL] Starting Update All for \(toUpdate.count) packages")
+        log("Starting Update All for \(toUpdate.count) packages")
         for pkg in toUpdate {
             updatePackage(pkg)
         }
