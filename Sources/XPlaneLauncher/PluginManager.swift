@@ -888,6 +888,138 @@ class PluginManager {
         self.activeEnvironmentVariables = profile.environmentVariables
     }
 
+    // MARK: - Add-on Deletion
+
+    private func removeAddonFromAllProfiles(folderName: String, category: AddonCategory) {
+        var modified = false
+        for i in 0..<profiles.count {
+            switch category {
+            case .plugins:
+                if profiles[i].pluginFolderNames.contains(folderName) {
+                    profiles[i].pluginFolderNames.removeAll { $0 == folderName }
+                    modified = true
+                }
+            case .aircraft:
+                if profiles[i].aircraftFolderNames.contains(folderName) {
+                    profiles[i].aircraftFolderNames.removeAll { $0 == folderName }
+                    modified = true
+                }
+            case .scenery:
+                if profiles[i].sceneryFolderNames.contains(folderName) {
+                    profiles[i].sceneryFolderNames.removeAll { $0 == folderName }
+                    modified = true
+                }
+            case .luaScripts:
+                if profiles[i].luaScriptFolderNames.contains(folderName) {
+                    profiles[i].luaScriptFolderNames.removeAll { $0 == folderName }
+                    modified = true
+                }
+            }
+        }
+        if modified {
+            profileService.saveProfiles(profiles)
+        }
+    }
+
+    func deletePlugin(_ plugin: Plugin) {
+        guard let dataFolder = pluginsDataFolder else { return }
+        do {
+            if let xPlanePath = xPlanePath {
+                let targetFolder = pathService.pluginsTargetFolder(for: xPlanePath)
+                try? symlinkService.setPluginEnabled(folderName: plugin.folderName, enabled: false, dataFolder: dataFolder, targetFolder: targetFolder)
+            }
+
+            let cleanName = try PathSecurity.sanitizePathComponent(plugin.folderName)
+            let sourceURL = try PathSecurity.validateSubpath(relativePath: cleanName, within: dataFolder)
+            if FileManager.default.fileExists(atPath: sourceURL.path) {
+                try FileManager.default.removeItem(at: sourceURL)
+            }
+
+            removeAddonFromAllProfiles(folderName: plugin.folderName, category: .plugins)
+            scanPlugins()
+            ConsoleLogger.shared.log("Deleted plugin '\(plugin.name)'", category: .plugins)
+        } catch {
+            self.lastErrorMessage = "Failed to delete plugin '\(plugin.name)': \(error.localizedDescription)"
+            ConsoleLogger.shared.log("Failed to delete plugin '\(plugin.name)': \(error.localizedDescription)", category: .plugins, level: .error)
+        }
+    }
+
+    func deleteAircraft(_ item: Aircraft) {
+        guard let dataFolder = aircraftDataFolder else { return }
+        do {
+            if let xPlanePath = xPlanePath {
+                let targetFolder = pathService.aircraftTargetFolder(for: xPlanePath)
+                try? symlinkService.setAircraftEnabled(folderName: item.folderName, enabled: false, dataFolder: dataFolder, targetFolder: targetFolder)
+            }
+
+            let cleanName = try PathSecurity.sanitizePathComponent(item.folderName)
+            let sourceURL = try PathSecurity.validateSubpath(relativePath: cleanName, within: dataFolder)
+            if FileManager.default.fileExists(atPath: sourceURL.path) {
+                try FileManager.default.removeItem(at: sourceURL)
+            }
+
+            removeAddonFromAllProfiles(folderName: item.folderName, category: .aircraft)
+            scanAircraft()
+            ConsoleLogger.shared.log("Deleted aircraft '\(item.name)'", category: .aircraft)
+        } catch {
+            self.lastErrorMessage = "Failed to delete aircraft '\(item.name)': \(error.localizedDescription)"
+            ConsoleLogger.shared.log("Failed to delete aircraft '\(item.name)': \(error.localizedDescription)", category: .aircraft, level: .error)
+        }
+    }
+
+    func deleteLuaScript(_ item: LuaScript) {
+        guard let dataFolder = luaScriptsDataFolder else { return }
+        do {
+            if let targetFolder = flyWithLuaScriptsFolder {
+                try? symlinkService.setLuaScriptEnabled(item: item, enabled: false, dataFolder: dataFolder, targetFolder: targetFolder)
+            }
+
+            let cleanName = try PathSecurity.sanitizePathComponent(item.folderName)
+            let sourceURL = try PathSecurity.validateSubpath(relativePath: cleanName, within: dataFolder)
+            if FileManager.default.fileExists(atPath: sourceURL.path) {
+                try FileManager.default.removeItem(at: sourceURL)
+            }
+
+            removeAddonFromAllProfiles(folderName: item.folderName, category: .luaScripts)
+            scanLuaScripts()
+            ConsoleLogger.shared.log("Deleted Lua script '\(item.name)'", category: .lua)
+        } catch {
+            self.lastErrorMessage = "Failed to delete Lua script '\(item.name)': \(error.localizedDescription)"
+            ConsoleLogger.shared.log("Failed to delete Lua script '\(item.name)': \(error.localizedDescription)", category: .lua, level: .error)
+        }
+    }
+
+    func deleteScenery(_ item: Scenery) {
+        guard item.isManaged else {
+            self.lastErrorMessage = "Cannot delete unmanaged scenery '\(item.name)'."
+            return
+        }
+        guard let dataFolder = sceneryDataFolder else { return }
+
+        do {
+            if let xPlanePath = xPlanePath {
+                let customScenery = pathService.customSceneryFolder(for: xPlanePath)
+                try? sceneryService.unlinkScenery(folderName: item.folderName, customSceneryFolder: customScenery)
+            }
+
+            let cleanName = try PathSecurity.sanitizePathComponent(item.folderName)
+            let sourceURL = try PathSecurity.validateSubpath(relativePath: cleanName, within: dataFolder)
+            if FileManager.default.fileExists(atPath: sourceURL.path) {
+                try FileManager.default.removeItem(at: sourceURL)
+            }
+
+            removeFromGroup(item)
+            scenery.removeAll { $0.id == item.id }
+            saveSceneryOrder()
+            removeAddonFromAllProfiles(folderName: item.folderName, category: .scenery)
+            scanScenery()
+            ConsoleLogger.shared.log("Deleted scenery '\(item.name)'", category: .scenery)
+        } catch {
+            self.lastErrorMessage = "Failed to delete scenery '\(item.name)': \(error.localizedDescription)"
+            ConsoleLogger.shared.log("Failed to delete scenery '\(item.name)': \(error.localizedDescription)", category: .scenery, level: .error)
+        }
+    }
+
     // MARK: - Script Management
 
     func addScript(name: String, path: String) {

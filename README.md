@@ -9,6 +9,7 @@ X-Plane Launcher lets you organize your add-ons in a central folder, create dist
 - **Profiles**: Save and switch configurations across aircraft, plugins, scenery packs, and FlyWithLua scripts.
 - **Clean symlink management**: Keep your X-Plane directory tidy. Add-ons stay in a central folder and are symlinked into X-Plane on demand.
 - **Scenery pack ordering & grouping**: Reorder `scenery_packs.ini` with drag-and-drop, enable or disable packs without deleting files, and organize scenery into groups.
+- **Smart add-on installer & deletion**: Drag and drop `.zip` archives, folders, or `.lua` scripts to install add-ons, or delete them directly from the UI with automated profile cleanup and unlinking.
 - **Add-on updates**: Check and install updates for add-ons supported by SkunkCrafts Updater or X-Updater directly from the UI.
 - **CSL packages & lights**: Manage CSL model matching packages, apply lighting intensity presets (high/medium/low), or restore original lights.
 - **Pre-launch scripts**: Run custom shell scripts with profile-specific environment variables before starting X-Plane (e.g. setting up Hoppie ACARS).

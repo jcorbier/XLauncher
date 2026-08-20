@@ -30,3 +30,4 @@ In the **Aircraft** tab:
 - **Toggle switch**: Enables or disables the aircraft for the current profile.
 - **Enabling an aircraft**: Creates a symbolic link from `<X-Plane 12>/Aircraft/<Folder>` pointing to `<Central Data Folder>/Aircraft/<Folder>`.
 - **Disabling an aircraft**: Removes the symbolic link from `<X-Plane 12>/Aircraft/`. Your original aircraft files, liveries, and saved states remain safe in the central directory.
+- **Deleting an aircraft**: Right-click the aircraft row and select **Delete Add-on...** to permanently delete the aircraft folder from your Central Data Folder and purge it from all profiles after confirmation.

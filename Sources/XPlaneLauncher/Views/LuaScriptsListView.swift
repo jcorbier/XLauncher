@@ -24,11 +24,14 @@ import SwiftUI
 
 struct LuaScriptsListView: View {
     @Environment(PluginManager.self) var pluginManager
+    @State private var itemToDelete: PluginManager.LuaScript? = nil
 
     var body: some View {
         List {
             ForEach(pluginManager.luaScripts) { item in
-                LuaScriptRow(script: item)
+                LuaScriptRow(script: item, onDelete: {
+                    itemToDelete = item
+                })
             }
 
             if pluginManager.luaScripts.isEmpty {
@@ -41,12 +44,28 @@ struct LuaScriptsListView: View {
         }
         .listStyle(.inset)
         .scrollContentBackground(.hidden)
+        .alert(
+            "Delete FlyWithLua Script",
+            isPresented: Binding(
+                get: { itemToDelete != nil },
+                set: { if !$0 { itemToDelete = nil } }
+            ),
+            presenting: itemToDelete
+        ) { item in
+            Button("Delete", role: .destructive) {
+                pluginManager.deleteLuaScript(item)
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: { item in
+            Text("Are you sure you want to delete '\(item.name)'?\n\nThis will permanently delete the files from your Central Data Folder ('LuaScripts/\(item.folderName)'), unlink it from X-Plane, and remove it from all profiles.\n\nThis action cannot be undone.")
+        }
     }
 }
 
 struct LuaScriptRow: View {
     @Environment(PluginManager.self) var pluginManager
     let script: PluginManager.LuaScript
+    var onDelete: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 12) {
@@ -122,5 +141,12 @@ struct LuaScriptRow: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(Color(NSColor.separatorColor), lineWidth: 0.5)
         )
+        .contextMenu {
+            Button(role: .destructive) {
+                onDelete?()
+            } label: {
+                Label("Delete Add-on...", systemImage: "trash")
+            }
+        }
     }
 }

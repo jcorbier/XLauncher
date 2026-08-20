@@ -65,3 +65,12 @@ If you use multi-folder scenery packages (such as SimHeaven regional sets), you 
 - **Expand / Collapse**: Click the chevron to expand or collapse group members.
 - **Reorder Group**: Dragging a group moves all member packages together.
 - **Ungroup**: Right-click the group header and choose **Ungroup** to restore individual rows.
+
+---
+
+## Deleting Scenery
+
+Managed scenery packs (located in your Central Data Folder) can be deleted from the UI:
+- Right-click any managed scenery row and choose **Delete Add-on...**.
+- Confirming the deletion removes the scenery folder from your Central Data Folder, unlinks it from `Custom Scenery/`, updates `scenery_packs.ini`, and cleans up any scenery groups and profiles.
+- Unmanaged scenery residing directly in X-Plane's `Custom Scenery` directory is protected and cannot be deleted by the launcher.

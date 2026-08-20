@@ -51,3 +51,21 @@ Add-on authors package `.zip` files in various ways. The installer automatically
 - **Nested Root Folders**: If an archive contains a single top-level wrapper folder (for example, `MyScenery_v1.2/MyScenery/...`), the installer extracts the inner add-on folder directly into your Central Data Folder rather than creating redundant nested folders.
 - **Flat Archives**: If files are stored at the root of the `.zip` without an enclosing folder, the installer creates a clean folder named after the archive.
 - **Single Script Files**: Dropping a standalone `.lua` script file copies it directly into your `LuaScripts` directory.
+
+---
+
+## Deleting an Add-on
+
+You can delete any managed add-on directly from the user interface:
+
+1. Right-click (or control-click) the add-on row in **Aircraft**, **Plugins**, **Scenery**, or **Lua Scripts**.
+2. Select **Delete Add-on...** (with the trash icon).
+3. A confirmation dialog appears explaining the implications. Click **Delete** to confirm.
+
+```{warning}
+Deleting an add-on is permanent and performs the following actions:
+- Removes any active symbolic links inside your X-Plane installation directory.
+- Permanently deletes the add-on folder or file from your Central Data Folder.
+- Purges the add-on from **all** saved profiles in your settings.
+- Removes the item from `scenery_packs.ini` and any scenery groups (if deleting scenery).
+```

@@ -95,8 +95,8 @@ struct WelcomeView: View {
                         FeatureRow(
                             icon: "square.and.arrow.down",
                             color: .purple,
-                            title: "Add-on Package Installer",
-                            description: "Drag & drop ZIP files, folders, or Lua scripts onto the window to automatically identify their category and install them into your data folder."
+                            title: "Add-on Installation & Deletion",
+                            description: "Drag & drop ZIP packages, folders, or Lua scripts to install add-ons, or right-click any item to delete it and remove it across all profiles."
                         )
 
                         FeatureRow(

@@ -31,8 +31,8 @@ Keep your X-Plane directory tidy. Add-ons remain in a central directory and are 
 Reorder `scenery_packs.ini` with drag-and-drop, group related scenery entries, and toggle packages without moving files.
 :::
 
-:::{grid-item-card} Add-on Installer
-Drag and drop `.zip` archives, folders, or `.lua` scripts onto the launcher to automatically detect and install add-ons.
+:::{grid-item-card} Add-on Installer & Deletion
+Install packages with drag-and-drop, and cleanly delete unwanted add-ons with automated profile and symlink cleanup.
 :::
 
 :::{grid-item-card} Add-on Updates

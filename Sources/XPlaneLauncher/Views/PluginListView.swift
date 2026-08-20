@@ -24,13 +24,16 @@ import SwiftUI
 
 struct PluginListView: View {
     @Environment(PluginManager.self) var pluginManager
+    @State private var itemToDelete: PluginManager.Plugin? = nil
 
     // Sort logic handled in manager, or here. Manager is cleaner.
 
     var body: some View {
         List {
             ForEach(pluginManager.plugins) { plugin in
-                PluginRow(plugin: plugin)
+                PluginRow(plugin: plugin, onDelete: {
+                    itemToDelete = plugin
+                })
             }
 
             if pluginManager.plugins.isEmpty {
@@ -43,12 +46,28 @@ struct PluginListView: View {
         }
         .listStyle(.inset)
         .scrollContentBackground(.hidden)
+        .alert(
+            "Delete Plugin",
+            isPresented: Binding(
+                get: { itemToDelete != nil },
+                set: { if !$0 { itemToDelete = nil } }
+            ),
+            presenting: itemToDelete
+        ) { item in
+            Button("Delete", role: .destructive) {
+                pluginManager.deletePlugin(item)
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: { item in
+            Text("Are you sure you want to delete '\(item.name)'?\n\nThis will permanently delete the files from your Central Data Folder ('Plugins/\(item.folderName)'), unlink it from X-Plane, and remove it from all profiles.\n\nThis action cannot be undone.")
+        }
     }
 }
 
 struct PluginRow: View {
     @Environment(PluginManager.self) var pluginManager
     let plugin: PluginManager.Plugin
+    var onDelete: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 12) {
@@ -110,5 +129,12 @@ struct PluginRow: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(Color(NSColor.separatorColor), lineWidth: 0.5)
         )
+        .contextMenu {
+            Button(role: .destructive) {
+                onDelete?()
+            } label: {
+                Label("Delete Add-on...", systemImage: "trash")
+            }
+        }
     }
 }

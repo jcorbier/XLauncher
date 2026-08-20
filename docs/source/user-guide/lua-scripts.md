@@ -30,6 +30,7 @@ X-Plane Launcher supports both single `.lua` files and script directories.
 
 - **Enable a script**: Creates a symbolic link in `<X-Plane 12>/Resources/plugins/FlyWithLua/Scripts/`.
 - **Disable a script**: Removes the symbolic link from the `Scripts` folder so FlyWithLua does not load it.
+- **Delete a script**: Right-click the script row and select **Delete Add-on...** to permanently delete the script or script folder from your Central Data Folder and purge it from all profiles after confirmation.
 
 ```{note}
 FlyWithLua must be present in `<X-Plane 12>/Resources/plugins/FlyWithLua` for scripts to be linked.
