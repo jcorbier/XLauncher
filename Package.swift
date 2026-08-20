@@ -38,5 +38,10 @@ let package = Package(
             name: "XPlaneLauncher",
             path: "Sources/XPlaneLauncher" // Explicitly pointing here just in case, though standard.
         ),
+        .testTarget(
+            name: "XPlaneLauncherTests",
+            dependencies: ["XPlaneLauncher"],
+            path: "Tests/XPlaneLauncherTests"
+        ),
     ]
 )

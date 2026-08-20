@@ -270,7 +270,15 @@ final class SkunkCraftsUpdaterService: Sendable {
                 await logHandler("[SkunkCrafts] Ignored file: \(item.relativePath)")
                 continue
             }
-            let localFileURL = folderURL.appendingPathComponent(item.relativePath)
+
+            let localFileURL: URL
+            do {
+                localFileURL = try PathSecurity.validateSubpath(relativePath: item.relativePath, within: folderURL)
+            } catch {
+                await logHandler("[SkunkCrafts] Insecure path rejected in whitelist: \(item.relativePath)")
+                continue
+            }
+
             if !fileManager.fileExists(atPath: localFileURL.path) {
                 modifiedCount += 1
                 await logHandler("[SkunkCrafts] Missing file: \(item.relativePath)")
@@ -351,7 +359,14 @@ final class SkunkCraftsUpdaterService: Sendable {
                 continue
             }
 
-            let localFileURL = addonFolder.appendingPathComponent(item.relativePath)
+            let localFileURL: URL
+            do {
+                localFileURL = try PathSecurity.validateSubpath(relativePath: item.relativePath, within: addonFolder)
+            } catch {
+                await logHandler("[SkunkCrafts] Insecure path rejected in whitelist: \(item.relativePath)")
+                continue
+            }
+
             if !fileManager.fileExists(atPath: localFileURL.path) {
                 filesToDownload.append(item)
             } else if let expectedCRCStr = item.expectedCRC, let distantCRC = parseCRC32(expectedCRCStr), let localCRC = calculateCRC32UInt32(for: localFileURL) {
@@ -385,7 +400,14 @@ final class SkunkCraftsUpdaterService: Sendable {
                 continue
             }
 
-            let destinationURL = addonFolder.appendingPathComponent(item.relativePath)
+            let destinationURL: URL
+            do {
+                destinationURL = try PathSecurity.validateSubpath(relativePath: item.relativePath, within: addonFolder)
+            } catch {
+                await logHandler("[SkunkCrafts] Insecure destination path rejected: \(item.relativePath)")
+                continue
+            }
+
             let parentDir = destinationURL.deletingLastPathComponent()
             try fileManager.createDirectory(at: parentDir, withIntermediateDirectories: true)
 

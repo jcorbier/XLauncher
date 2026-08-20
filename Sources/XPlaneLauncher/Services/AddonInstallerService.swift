@@ -284,15 +284,17 @@ final class AddonInstallerService: Sendable {
         launcherDataFolder: URL,
         progressHandler: (@Sendable (_ fraction: Double, _ message: String) -> Void)? = nil
     ) async throws -> URL {
-        let trimmedName = packageName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedName.isEmpty else {
-            throw AddonInstallerError.invalidPackage("Package name cannot be empty.")
+        let sanitizedName: String
+        do {
+            sanitizedName = try PathSecurity.sanitizePathComponent(packageName)
+        } catch {
+            throw AddonInstallerError.invalidPackage("Invalid package name '\(packageName)': names cannot contain slashes or traversal sequences.")
         }
 
         let subfolderURL = PathService.shared.dataFolder(category.subfolder, in: launcherDataFolder)
         try fileManager.createDirectory(at: subfolderURL, withIntermediateDirectories: true)
 
-        let destinationURL = subfolderURL.appendingPathComponent(trimmedName)
+        let destinationURL = try PathSecurity.validateSubpath(relativePath: sanitizedName, within: subfolderURL)
 
         if fileManager.fileExists(atPath: destinationURL.path) {
             throw AddonInstallerError.destinationExists(destinationURL.path)
@@ -314,13 +316,10 @@ final class AddonInstallerService: Sendable {
 
             progressHandler?(0.85, "Organizing files...")
 
-            if let rootPrefix = analysis.internalRootPrefix {
-                let innerFolder = tempDir.appendingPathComponent(rootPrefix.trimmingCharacters(in: CharacterSet(charactersIn: "/")))
-                if fileManager.fileExists(atPath: innerFolder.path) {
-                    try fileManager.moveItem(at: innerFolder, to: destinationURL)
-                } else {
-                    try fileManager.moveItem(at: tempDir, to: destinationURL)
-                }
+            if let rootPrefix = analysis.internalRootPrefix,
+               let innerFolder = try? PathSecurity.validateSubpath(relativePath: rootPrefix, within: tempDir),
+               fileManager.fileExists(atPath: innerFolder.path) {
+                try fileManager.moveItem(at: innerFolder, to: destinationURL)
             } else {
                 try fileManager.moveItem(at: tempDir, to: destinationURL)
             }

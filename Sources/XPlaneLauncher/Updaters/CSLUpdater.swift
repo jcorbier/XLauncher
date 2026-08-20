@@ -292,7 +292,9 @@ final class CSLUpdaterService: Sendable {
     // MARK: - Package Comparison
 
     func comparePackage(raw: CSLRawPackage, cslBaseFolder: URL) async -> (status: CSLPackageStatus, filesToUpdate: Int, updateSizeBytes: Int64, isInstalled: Bool) {
-        let pkgDir = cslBaseFolder.appendingPathComponent(raw.name)
+        guard let pkgDir = try? PathSecurity.validateSubpath(relativePath: raw.name, within: cslBaseFolder) else {
+            return (.error, 0, 0, false)
+        }
         var isDir: ObjCBool = false
         let isInstalled = fileManager.fileExists(atPath: pkgDir.path, isDirectory: &isDir) && isDir.boolValue
 
@@ -307,7 +309,9 @@ final class CSLUpdaterService: Sendable {
 
         for file in raw.files {
             let relPath = file.path.hasPrefix(prefix) ? String(file.path.dropFirst(prefix.count)) : file.path
-            let localFileURL = pkgDir.appendingPathComponent(relPath)
+            guard let localFileURL = try? PathSecurity.validateSubpath(relativePath: relPath, within: pkgDir) else {
+                continue
+            }
             let isObj = localFileURL.pathExtension.lowercased() == "obj"
             let bakFileURL = localFileURL.deletingPathExtension().appendingPathExtension(CSLLightsUpdater.backupExtension)
             let fileToCheck = (isObj && fileManager.fileExists(atPath: bakFileURL.path)) ? bakFileURL : localFileURL
@@ -345,7 +349,7 @@ final class CSLUpdaterService: Sendable {
         return (status, filesToUpdate, updateSize, true)
     }
 
-    // MARK: - File Download with Retry & Progress
+    // MARK: - Package Download & Installation
 
     func downloadPackage(
         package: CSLPackage,
@@ -355,43 +359,59 @@ final class CSLUpdaterService: Sendable {
         onLog: @Sendable @escaping @MainActor (String) -> Void,
         isCancelled: @Sendable @escaping () -> Bool
     ) async throws {
-        let pkgDir = targetFolder.appendingPathComponent(package.name)
-        try fileManager.createDirectory(at: pkgDir, withIntermediateDirectories: true)
+        guard let pkgDir = try? PathSecurity.validateSubpath(relativePath: package.name, within: targetFolder) else {
+            throw AppError.pathNotFound(package.name)
+        }
+        if !fileManager.fileExists(atPath: pkgDir.path) {
+            try fileManager.createDirectory(at: pkgDir, withIntermediateDirectories: true)
+        }
 
         let prefix = "\(package.name)/"
+        let trimmedServer = serverBaseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+
+        // Find files needing download
         var filesToDownload: [CSLFileItem] = []
+        var totalBytes: Int64 = 0
 
         for file in package.files {
+            if isCancelled() { throw CancellationError() }
+
             let relPath = file.path.hasPrefix(prefix) ? String(file.path.dropFirst(prefix.count)) : file.path
-            let localFileURL = pkgDir.appendingPathComponent(relPath)
+            guard let localFileURL = try? PathSecurity.validateSubpath(relativePath: relPath, within: pkgDir) else {
+                await onLog("Insecure CSL file path rejected: \(relPath)")
+                continue
+            }
             let isObj = localFileURL.pathExtension.lowercased() == "obj"
             let bakFileURL = localFileURL.deletingPathExtension().appendingPathExtension(CSLLightsUpdater.backupExtension)
             let fileToCheck = (isObj && fileManager.fileExists(atPath: bakFileURL.path)) ? bakFileURL : localFileURL
 
+            var needsDownload = false
             if !fileManager.fileExists(atPath: fileToCheck.path) {
-                filesToDownload.append(file)
+                needsDownload = true
             } else if let attrs = try? fileManager.attributesOfItem(atPath: fileToCheck.path),
-                      let size = attrs[.size] as? Int64, size != file.sizeBytes {
-                filesToDownload.append(file)
-            } else if let expectedMD5 = file.md5, !expectedMD5.isEmpty {
-                let localMD5 = await computeMD5Cached(for: fileToCheck)?.lowercased()
-                if localMD5 != expectedMD5 {
-                    filesToDownload.append(file)
+                      let localSize = attrs[.size] as? Int64, localSize != file.sizeBytes {
+                needsDownload = true
+            } else if let expectedMd5 = file.md5, !expectedMd5.isEmpty {
+                let actualMd5 = await computeMD5Cached(for: fileToCheck)?.lowercased()
+                if actualMd5 != expectedMd5 {
+                    needsDownload = true
                 }
+            }
+
+            if needsDownload {
+                filesToDownload.append(file)
+                totalBytes += file.sizeBytes
             }
         }
 
         if filesToDownload.isEmpty {
-            await onProgress(1.0, 0, "Complete")
+            await onProgress(1.0, 0, "Up to date")
+            await onLog("\(package.name) is already up to date.")
             return
         }
 
         let totalFiles = filesToDownload.count
-        let totalBytes = filesToDownload.reduce(Int64(0)) { $0 + $1.sizeBytes }
-        await onLog("Starting download of \(package.name): \(totalFiles) files (\(ByteCountFormatter.string(fromByteCount: totalBytes, countStyle: .file)))")
-
         var downloadedBytes: Int64 = 0
-        let trimmedServer = serverBaseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
 
         for (index, file) in filesToDownload.enumerated() {
             if isCancelled() {
@@ -400,11 +420,12 @@ final class CSLUpdaterService: Sendable {
             }
 
             let relPath = file.path.hasPrefix(prefix) ? String(file.path.dropFirst(prefix.count)) : file.path
-            let localFileURL = pkgDir.appendingPathComponent(relPath)
-            let parentDir = localFileURL.deletingLastPathComponent()
-            if !fileManager.fileExists(atPath: parentDir.path) {
-                try fileManager.createDirectory(at: parentDir, withIntermediateDirectories: true)
+            guard let localFileURL = try? PathSecurity.validateSubpath(relativePath: relPath, within: pkgDir) else {
+                await onLog("Insecure CSL file path rejected: \(relPath)")
+                continue
             }
+            let parentDir = localFileURL.deletingLastPathComponent()
+            try fileManager.createDirectory(at: parentDir, withIntermediateDirectories: true)
 
             let displayFileName = (relPath as NSString).lastPathComponent
             await onProgress(

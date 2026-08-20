@@ -177,12 +177,17 @@ final class SceneryService: Sendable {
             }
         }
 
+        guard PathSecurity.isStrictlyContained(url: iniURL, within: customSceneryFolder) else {
+            throw AppError.pathNotFound(iniURL.path)
+        }
+
         try content.write(to: iniURL, atomically: true, encoding: .utf8)
     }
 
     func linkScenery(folderName: String, managedSceneryFolder: URL, customSceneryFolder: URL) throws {
-        let linkURL = customSceneryFolder.appendingPathComponent(folderName)
-        let sourceURL = managedSceneryFolder.appendingPathComponent(folderName)
+        let cleanName = try PathSecurity.sanitizePathComponent(folderName)
+        let linkURL = try PathSecurity.validateSubpath(relativePath: cleanName, within: customSceneryFolder)
+        let sourceURL = try PathSecurity.validateSubpath(relativePath: cleanName, within: managedSceneryFolder)
 
         guard fileManager.fileExists(atPath: sourceURL.path) else {
             throw AppError.pathNotFound(sourceURL.path)
@@ -200,7 +205,8 @@ final class SceneryService: Sendable {
     }
 
     func unlinkScenery(folderName: String, customSceneryFolder: URL) throws {
-        let linkURL = customSceneryFolder.appendingPathComponent(folderName)
+        let cleanName = try PathSecurity.sanitizePathComponent(folderName)
+        let linkURL = try PathSecurity.validateSubpath(relativePath: cleanName, within: customSceneryFolder)
         // Only ever remove the link itself, never a real scenery directory.
         // `isSymlink` also matches stale links, which `fileExists` would miss.
         if isSymlink(at: linkURL) {

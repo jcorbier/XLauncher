@@ -26,12 +26,13 @@ import zlib
 /// A pure Swift in-process ZIP archive extractor supporting Store (0) and Deflate (8) compression methods.
 public enum ZipExtractor {
 
-    public enum ZipError: LocalizedError {
+    public enum ZipError: LocalizedError, Equatable {
         case invalidArchive
         case unsupportedCompressionMethod(UInt16)
         case decompressionFailed(Int32)
         case fileWriteFailed(String)
         case pathTraversalAttempt(String)
+        case insecureArchive(String)
         case truncatedData
 
         public var errorDescription: String? {
@@ -46,15 +47,18 @@ public enum ZipExtractor {
                 return "Failed to write extracted file to: \(path)."
             case .pathTraversalAttempt(let entry):
                 return "Insecure relative path in ZIP entry: \(entry)."
+            case .insecureArchive(let reason):
+                return "Insecure ZIP archive rejected: \(reason)"
             case .truncatedData:
                 return "Unexpected end of ZIP archive data."
             }
         }
     }
 
-    public struct ZipEntry {
+    public struct ZipEntry: Sendable {
         public let path: String
         public let isDirectory: Bool
+        public let isSymbolicLink: Bool
         public let uncompressedSize: UInt64
         public let compressedSize: UInt64
         public let compressionMethod: UInt16
@@ -85,24 +89,21 @@ public enum ZipExtractor {
         let fileManager = FileManager.default
         try fileManager.createDirectory(at: destinationURL, withIntermediateDirectories: true)
 
-        let destinationCanonical = destinationURL.resolvingSymlinksInPath().path
-
         for (index, entry) in entries.enumerated() {
-            // Prevent Zip-Slip directory traversal
-            let sanitizedPath = entry.path.replacingOccurrences(of: "\\", with: "/")
-            if sanitizedPath.contains("../") || sanitizedPath.hasPrefix("/") {
+            // Reject symbolic link entries inside untrusted ZIP archives
+            if entry.isSymbolicLink {
+                throw ZipError.insecureArchive("Symbolic links inside archive are not allowed: \(entry.path)")
+            }
+
+            // Prevent Zip-Slip directory traversal using PathSecurity
+            let targetURL: URL
+            do {
+                targetURL = try PathSecurity.validateSubpath(relativePath: entry.path, within: destinationURL)
+            } catch {
                 throw ZipError.pathTraversalAttempt(entry.path)
             }
 
-            let targetURL = destinationURL.appendingPathComponent(sanitizedPath)
-            let targetCanonical = targetURL.resolvingSymlinksInPath().path
-
-            // Ensure target is within destination
-            guard targetCanonical.hasPrefix(destinationCanonical) || targetURL.path.hasPrefix(destinationURL.path) else {
-                throw ZipError.pathTraversalAttempt(entry.path)
-            }
-
-            progressHandler?(index + 1, entries.count, sanitizedPath)
+            progressHandler?(index + 1, entries.count, entry.path)
 
             if entry.isDirectory {
                 try fileManager.createDirectory(at: targetURL, withIntermediateDirectories: true)
@@ -172,6 +173,9 @@ public enum ZipExtractor {
             let commentLength = Int(data.readUInt16(at: currentOffset + 32))
             let localHeaderOffset = UInt64(data.readUInt32(at: currentOffset + 42))
 
+            let externalAttributes = data.readUInt32(at: currentOffset + 38)
+            let isSymlink = ((externalAttributes >> 16) & 0o170000) == 0o120000
+
             let filenameOffset = currentOffset + 46
             guard filenameOffset + filenameLength <= data.count else { break }
             let filenameData = data.subdata(in: filenameOffset..<(filenameOffset + filenameLength))
@@ -184,6 +188,7 @@ public enum ZipExtractor {
             entries.append(ZipEntry(
                 path: filename,
                 isDirectory: isDir,
+                isSymbolicLink: isSymlink,
                 uncompressedSize: uncompressedSize,
                 compressedSize: compressedSize,
                 compressionMethod: method,
@@ -223,6 +228,7 @@ public enum ZipExtractor {
             entries.append(ZipEntry(
                 path: filename,
                 isDirectory: isDir,
+                isSymbolicLink: false,
                 uncompressedSize: uncompressedSize,
                 compressedSize: compressedSize,
                 compressionMethod: method,
@@ -325,14 +331,14 @@ private extension Data {
     func readUInt16(at offset: Int) -> UInt16 {
         guard offset + 2 <= count else { return 0 }
         return withUnsafeBytes { raw in
-            raw.load(fromByteOffset: offset, as: UInt16.self).littleEndian
+            raw.loadUnaligned(fromByteOffset: offset, as: UInt16.self).littleEndian
         }
     }
 
     func readUInt32(at offset: Int) -> UInt32 {
         guard offset + 4 <= count else { return 0 }
         return withUnsafeBytes { raw in
-            raw.load(fromByteOffset: offset, as: UInt32.self).littleEndian
+            raw.loadUnaligned(fromByteOffset: offset, as: UInt32.self).littleEndian
         }
     }
 }

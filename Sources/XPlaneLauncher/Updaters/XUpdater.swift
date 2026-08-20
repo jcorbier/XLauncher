@@ -549,7 +549,9 @@ final class XUpdaterService: Sendable {
     }
 
     func resolveLocalFile(itemPath: String, in folderURL: URL) -> (exists: Bool, actualURL: URL?) {
-        let directURL = folderURL.appendingPathComponent(itemPath)
+        guard let directURL = try? PathSecurity.validateSubpath(relativePath: itemPath, within: folderURL) else {
+            return (false, nil)
+        }
         if fileManager.fileExists(atPath: directURL.path) {
             return (true, directURL)
         }
@@ -562,16 +564,20 @@ final class XUpdaterService: Sendable {
             let altExt = isPng ? ".dds" : ".png"
             let stem = (itemPath as NSString).deletingPathExtension
             let altPath = stem + altExt
-            let altURL = folderURL.appendingPathComponent(altPath)
-            if fileManager.fileExists(atPath: altURL.path) {
-                return (true, altURL)
-            }
+            if let altURL = try? PathSecurity.validateSubpath(relativePath: altPath, within: folderURL) {
+                if fileManager.fileExists(atPath: altURL.path) {
+                    return (true, altURL)
+                }
 
-            let parentDir = altURL.deletingLastPathComponent()
-            let altTargetName = altURL.lastPathComponent.lowercased()
-            if let contents = try? fileManager.contentsOfDirectory(atPath: parentDir.path) {
-                if let match = contents.first(where: { $0.lowercased() == altTargetName }) {
-                    return (true, parentDir.appendingPathComponent(match))
+                let parentDir = altURL.deletingLastPathComponent()
+                let altTargetName = altURL.lastPathComponent.lowercased()
+                if let contents = try? fileManager.contentsOfDirectory(atPath: parentDir.path) {
+                    if let match = contents.first(where: { $0.lowercased() == altTargetName }) {
+                        let candidateURL = parentDir.appendingPathComponent(match)
+                        if PathSecurity.isStrictlyContained(url: candidateURL, within: folderURL) {
+                            return (true, candidateURL)
+                        }
+                    }
                 }
             }
         }
@@ -581,7 +587,10 @@ final class XUpdaterService: Sendable {
         let directTargetName = directURL.lastPathComponent.lowercased()
         if let contents = try? fileManager.contentsOfDirectory(atPath: parentDir.path) {
             if let match = contents.first(where: { $0.lowercased() == directTargetName }) {
-                return (true, parentDir.appendingPathComponent(match))
+                let candidateURL = parentDir.appendingPathComponent(match)
+                if PathSecurity.isStrictlyContained(url: candidateURL, within: folderURL) {
+                    return (true, candidateURL)
+                }
             }
         }
 
@@ -590,9 +599,10 @@ final class XUpdaterService: Sendable {
         let stem = (lastComponent as NSString).deletingPathExtension
         let parentPath = (itemPath as NSString).deletingLastPathComponent
         let altSubPath = parentPath.isEmpty ? "\(stem)/\(lastComponent)" : "\(parentPath)/\(stem)/\(lastComponent)"
-        let subURL = folderURL.appendingPathComponent(altSubPath)
-        if fileManager.fileExists(atPath: subURL.path) {
-            return (true, subURL)
+        if let subURL = try? PathSecurity.validateSubpath(relativePath: altSubPath, within: folderURL) {
+            if fileManager.fileExists(atPath: subURL.path) {
+                return (true, subURL)
+            }
         }
 
         return (false, nil)
@@ -724,6 +734,11 @@ final class XUpdaterService: Sendable {
         var filesToDelete: [XUpdaterFileItem] = []
 
         for item in files {
+            guard (try? PathSecurity.validateSubpath(relativePath: item.path, within: addonFolder)) != nil else {
+                await logHandler("[X-Updater] Insecure path rejected in manifest: \(item.path)")
+                continue
+            }
+
             let (exists, actualURL) = resolveLocalFile(itemPath: item.path, in: addonFolder)
 
             if item.state == .delete {
@@ -760,7 +775,10 @@ final class XUpdaterService: Sendable {
             currentAction += 1
             let progress = Double(currentAction) / Double(totalActions)
             await progressHandler("Removing (\(currentAction)/\(totalActions)): \(item.path)", progress)
-            let destinationURL = addonFolder.appendingPathComponent(item.path)
+            guard let destinationURL = try? PathSecurity.validateSubpath(relativePath: item.path, within: addonFolder) else {
+                await logHandler("[X-Updater] Insecure delete destination rejected: \(item.path)")
+                continue
+            }
             if fileManager.fileExists(atPath: destinationURL.path) {
                 try? fileManager.removeItem(at: destinationURL)
                 await logHandler("[X-Updater] Removed deprecated file \(item.path)")
@@ -782,7 +800,10 @@ final class XUpdaterService: Sendable {
                 continue
             }
 
-            let destinationURL = addonFolder.appendingPathComponent(item.path)
+            guard let destinationURL = try? PathSecurity.validateSubpath(relativePath: item.path, within: addonFolder) else {
+                await logHandler("[X-Updater] Insecure write destination rejected: \(item.path)")
+                continue
+            }
             let parentDir = destinationURL.deletingLastPathComponent()
             try fileManager.createDirectory(at: parentDir, withIntermediateDirectories: true)
 
