@@ -54,6 +54,12 @@ jobs:
       - name: Select Xcode
         run: sudo xcode-select -switch /Applications/Xcode_26.2.app/Contents/Developer
 
+      - name: Run Tests
+        run: |
+          if [ "$IS_DRAFT" = "false" ]; then
+            swift test
+          fi
+
       - name: Install Tools
         run: |
           brew install create-dmg
