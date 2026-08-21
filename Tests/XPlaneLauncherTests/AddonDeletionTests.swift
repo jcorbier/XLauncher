@@ -203,7 +203,6 @@ final class AddonDeletionTests: XCTestCase {
             isEnabled: true,
             folderName: "Global_Airports",
             isManaged: false,
-            isInIni: true,
             iniLine: "SCENERY_PACK Custom Scenery/Global_Airports/"
         )
 

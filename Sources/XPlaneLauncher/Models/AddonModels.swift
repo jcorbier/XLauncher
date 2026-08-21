@@ -72,20 +72,18 @@ struct Scenery: Identifiable, Equatable, Hashable, Sendable {
     var isEnabled: Bool
     var folderName: String
     var isManaged: Bool
-    var isInIni: Bool
     var iniLine: String
 
     var isToggleable: Bool {
         !folderName.hasPrefix("*")
     }
 
-    init(id: UUID = UUID(), name: String, isEnabled: Bool, folderName: String, isManaged: Bool, isInIni: Bool, iniLine: String) {
+    init(id: UUID = UUID(), name: String, isEnabled: Bool, folderName: String, isManaged: Bool, iniLine: String = "") {
         self.id = id
         self.name = name
         self.isEnabled = isEnabled
         self.folderName = folderName
         self.isManaged = isManaged
-        self.isInIni = isInIni
         self.iniLine = iniLine
     }
 }

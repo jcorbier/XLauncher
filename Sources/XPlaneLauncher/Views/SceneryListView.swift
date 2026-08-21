@@ -320,28 +320,18 @@ struct SceneryRow: View {
         HStack(spacing: 12) {
             Image(systemName: item.isEnabled ? "map.fill" : "map")
                 .font(.title3)
-                .foregroundStyle(statusColor)
+                .foregroundStyle(item.isEnabled ? .green : .secondary)
                 .frame(width: 32, height: 32)
-                .background(statusColor.opacity(0.12))
+                .background(item.isEnabled ? Color.green.opacity(0.12) : Color.secondary.opacity(0.12))
                 .clipShape(RoundedRectangle(cornerRadius: 6))
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.name)
                     .font(.body)
                     .fontWeight(.medium)
-                if !item.isManaged && !item.isInIni {
-                    Text("New (Unmanaged)")
-                        .font(.caption)
-                        .foregroundStyle(.blue)
-                } else if !item.isInIni && item.isEnabled {
-                    Text("New")
-                        .font(.caption)
-                        .foregroundStyle(.blue)
-                } else if !item.isEnabled && !item.isInIni {
-                    Text("Not Installed")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+                Text(item.folderName)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Spacer()
@@ -362,29 +352,22 @@ struct SceneryRow: View {
                 .clipShape(Capsule())
             }
 
-            Text(item.isEnabled ? "Enabled" : (item.isInIni ? "Disabled" : "Available"))
+            Text(item.isEnabled ? "Enabled" : "Disabled")
                 .font(.caption2)
                 .fontWeight(.semibold)
-                .foregroundStyle(statusColor)
+                .foregroundStyle(item.isEnabled ? .green : .secondary)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)
-                .background(statusColor.opacity(0.12))
+                .background(item.isEnabled ? Color.green.opacity(0.12) : Color.secondary.opacity(0.12))
                 .clipShape(Capsule())
 
-            if item.isEnabled || item.isInIni {
-                Toggle("", isOn: Binding(
-                    get: { item.isEnabled },
-                    set: { _ in pluginManager.toggleScenery(item) }
-                ))
-                .toggleStyle(.switch)
-                .labelsHidden()
-                .disabled(!item.isToggleable)
-            } else {
-                Button("Install") {
-                    pluginManager.toggleScenery(item)
-                }
-                .buttonStyle(.bordered)
-            }
+            Toggle("", isOn: Binding(
+                get: { item.isEnabled },
+                set: { _ in pluginManager.toggleScenery(item) }
+            ))
+            .toggleStyle(.switch)
+            .labelsHidden()
+            .disabled(!item.isToggleable)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -443,11 +426,5 @@ struct SceneryRow: View {
             }
             return false
         }
-    }
-
-    var statusColor: Color {
-        if item.isEnabled { return .green }
-        if item.isInIni { return .orange }
-        return .secondary
     }
 }

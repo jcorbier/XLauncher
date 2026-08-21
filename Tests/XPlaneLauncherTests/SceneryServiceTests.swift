@@ -59,7 +59,7 @@ final class SceneryServiceTests: XCTestCase {
         try fm.createDirectory(at: packB, withIntermediateDirectories: true)
         try fm.createDirectory(at: packC, withIntermediateDirectories: true)
 
-        // 2. Create managed scenery pack (uninstalled)
+        // 2. Create managed scenery pack in Central Data Folder
         let packD = managedSceneryFolder.appendingPathComponent("PackD")
         try fm.createDirectory(at: packD, withIntermediateDirectories: true)
 
@@ -83,32 +83,27 @@ final class SceneryServiceTests: XCTestCase {
         )
 
         // Expected order:
-        // 1. Installed but not in INI (PackC)
+        // 1. Installed but not in INI (PackC, and newly linked managed pack PackD)
         // 2. INI items (PackA, PackB, *GLOBAL_AIRPORTS*)
-        // 3. Uninstalled items from managed folder (PackD)
         XCTAssertEqual(result.count, 5)
 
         XCTAssertEqual(result[0].name, "PackC")
         XCTAssertTrue(result[0].isEnabled)
-        XCTAssertFalse(result[0].isInIni)
+        XCTAssertFalse(result[0].isManaged)
 
-        XCTAssertEqual(result[1].name, "PackA")
+        XCTAssertEqual(result[1].name, "PackD")
         XCTAssertTrue(result[1].isEnabled)
-        XCTAssertTrue(result[1].isInIni)
+        XCTAssertTrue(result[1].isManaged)
 
-        XCTAssertEqual(result[2].name, "PackB")
-        XCTAssertFalse(result[2].isEnabled)
-        XCTAssertTrue(result[2].isInIni)
+        XCTAssertEqual(result[2].name, "PackA")
+        XCTAssertTrue(result[2].isEnabled)
 
-        XCTAssertEqual(result[3].name, "*GLOBAL_AIRPORTS*")
-        XCTAssertTrue(result[3].isEnabled)
-        XCTAssertTrue(result[3].isInIni)
-        XCTAssertFalse(result[3].isToggleable)
+        XCTAssertEqual(result[3].name, "PackB")
+        XCTAssertFalse(result[3].isEnabled)
 
-        XCTAssertEqual(result[4].name, "PackD")
-        XCTAssertFalse(result[4].isEnabled)
-        XCTAssertTrue(result[4].isManaged)
-        XCTAssertFalse(result[4].isInIni)
+        XCTAssertEqual(result[4].name, "*GLOBAL_AIRPORTS*")
+        XCTAssertTrue(result[4].isEnabled)
+        XCTAssertFalse(result[4].isToggleable)
     }
 
     // MARK: - Save Scenery Order Tests
@@ -120,10 +115,10 @@ final class SceneryServiceTests: XCTestCase {
         try fm.createDirectory(at: packB, withIntermediateDirectories: true)
 
         let sceneryItems: [Scenery] = [
-            Scenery(name: "PackA", isEnabled: true, folderName: "PackA", isManaged: false, isInIni: true, iniLine: ""),
-            Scenery(name: "*SPECIAL*", isEnabled: true, folderName: "*SPECIAL*", isManaged: false, isInIni: true, iniLine: ""),
-            Scenery(name: "PackB", isEnabled: false, folderName: "PackB", isManaged: false, isInIni: true, iniLine: ""),
-            Scenery(name: "UninstalledPack", isEnabled: false, folderName: "UninstalledPack", isManaged: true, isInIni: false, iniLine: "")
+            Scenery(name: "PackA", isEnabled: true, folderName: "PackA", isManaged: false, iniLine: ""),
+            Scenery(name: "*SPECIAL*", isEnabled: true, folderName: "*SPECIAL*", isManaged: false, iniLine: ""),
+            Scenery(name: "PackB", isEnabled: false, folderName: "PackB", isManaged: false, iniLine: ""),
+            Scenery(name: "UninstalledPack", isEnabled: false, folderName: "UninstalledPack", isManaged: true, iniLine: "")
         ]
 
         try sceneryService.saveSceneryOrder(scenery: sceneryItems, customSceneryFolder: customSceneryFolder, iniURL: iniURL)
@@ -200,9 +195,9 @@ final class SceneryServiceTests: XCTestCase {
     // MARK: - Group Management Tests
 
     func testCreateGroupAndRemoveFromGroup() {
-        let item1 = Scenery(name: "Scenery1", isEnabled: true, folderName: "Scenery1", isManaged: true, isInIni: true, iniLine: "")
-        let item2 = Scenery(name: "Scenery2", isEnabled: true, folderName: "Scenery2", isManaged: true, isInIni: true, iniLine: "")
-        let item3 = Scenery(name: "Scenery3", isEnabled: true, folderName: "Scenery3", isManaged: true, isInIni: true, iniLine: "")
+        let item1 = Scenery(name: "Scenery1", isEnabled: true, folderName: "Scenery1", isManaged: true, iniLine: "")
+        let item2 = Scenery(name: "Scenery2", isEnabled: true, folderName: "Scenery2", isManaged: true, iniLine: "")
+        let item3 = Scenery(name: "Scenery3", isEnabled: true, folderName: "Scenery3", isManaged: true, iniLine: "")
 
         let existingScenery = [item1, item2, item3]
         let existingGroups: [SceneryGroup] = []

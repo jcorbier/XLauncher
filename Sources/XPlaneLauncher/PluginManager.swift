@@ -609,35 +609,6 @@ class PluginManager {
         }
     }
 
-    func unlinkScenery(_ item: Scenery) {
-        guard let index = scenery.firstIndex(where: { $0.id == item.id }) else { return }
-        guard item.isManaged else { return }
-
-        if let xPlanePath = xPlanePath {
-            let customScenery = pathService.customSceneryFolder(for: xPlanePath)
-            do {
-                try sceneryService.unlinkScenery(folderName: item.folderName, customSceneryFolder: customScenery)
-            } catch {
-                self.lastErrorMessage = "Failed to unlink scenery '\(item.name)': \(error.localizedDescription)"
-                return
-            }
-        }
-
-        var newItem = scenery[index]
-        newItem.isEnabled = false
-        newItem.isInIni = false
-        scenery[index] = newItem
-
-        if let groupIndex = sceneryGroups.firstIndex(where: { $0.childFolderNames.contains(item.folderName) }) {
-            var group = sceneryGroups[groupIndex]
-            group.childFolderNames.removeAll(where: { $0 == item.folderName })
-            sceneryGroups[groupIndex] = group
-        }
-
-        saveSceneryOrder()
-        scanScenery()
-    }
-
     // MARK: - Scenery Grouping & Reordering
 
     func createGroup(name: String, with items: [Scenery]) {

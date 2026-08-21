@@ -263,8 +263,10 @@ struct AddonInstallerView: View {
                         }
                     case .scenery:
                         pluginManager.scanScenery()
-                        if enableImmediately, let item = pluginManager.scenery.first(where: { $0.folderName == name }), !item.isEnabled {
+                        if !enableImmediately, let item = pluginManager.scenery.first(where: { $0.folderName == name }), item.isEnabled {
                             pluginManager.toggleScenery(item)
+                        } else if enableImmediately {
+                            pluginManager.saveSceneryOrder()
                         }
                     case .aircraft:
                         pluginManager.scanAircraft()

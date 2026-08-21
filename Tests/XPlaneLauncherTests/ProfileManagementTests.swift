@@ -138,7 +138,7 @@ final class ProfileManagementTests: XCTestCase {
         let pluginB = Plugin(name: "PluginB", isEnabled: false, folderName: "PluginB")
         pluginManager.plugins = [pluginA, pluginB]
 
-        let sceneryA = Scenery(name: "SceneryA", isEnabled: true, folderName: "SceneryA", isManaged: true, isInIni: true, iniLine: "")
+        let sceneryA = Scenery(name: "SceneryA", isEnabled: true, folderName: "SceneryA", isManaged: true, iniLine: "")
         pluginManager.scenery = [sceneryA]
 
         let aircraftA = Aircraft(name: "Cessna", isEnabled: true, folderName: "Cessna")
