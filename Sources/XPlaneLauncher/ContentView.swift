@@ -335,6 +335,8 @@ struct ContentView: View {
                 updateManager.checkAutoUpdates()
                 if pluginManager.enableCSLSupport && cslManager.automaticallyCheckCSLUpdates {
                     cslManager.cslFolderURL = pluginManager.cslPath
+                    cslManager.xPlaneFolderURL = pluginManager.xPlanePath
+                    cslManager.launcherDataFolder = pluginManager.launcherDataFolder
                     cslManager.scanAndCheck()
                 }
                 if pluginManager.enableNavdataSupport {

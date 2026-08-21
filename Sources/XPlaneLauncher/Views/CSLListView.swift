@@ -222,6 +222,12 @@ struct CSLListView: View {
             if cslManager.cslFolderURL == nil {
                 cslManager.cslFolderURL = pluginManager.cslPath
             }
+            if cslManager.xPlaneFolderURL == nil {
+                cslManager.xPlaneFolderURL = pluginManager.xPlanePath
+            }
+            if cslManager.launcherDataFolder == nil {
+                cslManager.launcherDataFolder = pluginManager.launcherDataFolder
+            }
             if cslManager.packages.isEmpty && !cslManager.hasFetchedRemoteIndex {
                 cslManager.scanLocalPackages()
             }
@@ -250,7 +256,7 @@ struct CSLPackageRow: View {
         VStack(spacing: 8) {
             HStack(spacing: 12) {
                 // Icon
-                Image(systemName: "airplane")
+                Image(systemName: package.isResourcePackage ? "shippingbox.fill" : "airplane")
                     .font(.title3)
                     .foregroundStyle(package.isInstalled ? Color.accentColor : Color.secondary)
                     .frame(width: 36, height: 36)
@@ -268,6 +274,17 @@ struct CSLPackageRow: View {
                             Text(package.title)
                                 .font(.body)
                                 .foregroundStyle(.secondary)
+                        }
+
+                        if package.isResourcePackage {
+                            Text("Core Resource")
+                                .font(.caption2)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(Color.indigo)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.indigo.opacity(0.12))
+                                .clipShape(Capsule())
                         }
 
                         if package.isInstalled {

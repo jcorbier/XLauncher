@@ -44,6 +44,48 @@ struct CSLFileItem: Codable, Equatable, Hashable, Sendable {
     let time: String
 }
 
+struct CSLPackageConfig: Codable, Equatable, Hashable, Sendable {
+    var remoteDir: String = "."
+    var localDir: String = "Resources/plugins/IVAO_CSL/CSL"
+    var folders: [String: String] = [:]
+
+    static func parse(content: String) -> CSLPackageConfig {
+        var config = CSLPackageConfig()
+        var currentSection = ""
+
+        let lines = content.components(separatedBy: .newlines)
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty || trimmed.hasPrefix(";") || trimmed.hasPrefix("#") {
+                continue
+            }
+            if trimmed.hasPrefix("[") && trimmed.hasSuffix("]") {
+                currentSection = String(trimmed.dropFirst().dropLast()).trimmingCharacters(in: .whitespaces).lowercased()
+                continue
+            }
+
+            let parts = trimmed.split(separator: "=", maxSplits: 1).map { String($0).trimmingCharacters(in: .whitespaces) }
+            guard parts.count == 2 else { continue }
+            let key = parts[0]
+            var val = parts[1]
+            if val.hasPrefix("\"") && val.hasSuffix("\"") && val.count >= 2 {
+                val = String(val.dropFirst().dropLast())
+            }
+
+            if currentSection == "x-csl-package" {
+                if key.lowercased() == "remotedir" {
+                    config.remoteDir = val
+                } else if key.lowercased() == "localdir" {
+                    config.localDir = val
+                }
+            } else if currentSection == "folders" {
+                config.folders[key] = val
+            }
+        }
+        return config
+    }
+}
+
 struct CSLPackage: Identifiable, Equatable, Hashable, Sendable {
     let id = UUID()
     let name: String
@@ -60,6 +102,9 @@ struct CSLPackage: Identifiable, Equatable, Hashable, Sendable {
     var downloadedBytes: Int64 = 0
     var currentDownloadFile: String = ""
     var files: [CSLFileItem] = []
+    var config: CSLPackageConfig? = nil
+    var filesToDelete: [CSLFileItem] = []
+    var isResourcePackage: Bool = false
 
     var formattedTotalSize: String {
         ByteCountFormatter.string(fromByteCount: totalSizeBytes, countStyle: .file)
@@ -87,6 +132,9 @@ struct CSLRawPackage: Sendable {
     var headerDate: String
     var headerTime: String
     var files: [CSLFileItem]
+    var config: CSLPackageConfig? = nil
+    var filesToDelete: [CSLFileItem] = []
+    var isResourcePackage: Bool = false
 }
 
 final class CSLIndexParser: Sendable {
@@ -188,6 +236,63 @@ final class CSLUpdaterService: Sendable {
     static let defaultServerBaseURL = "https://x-csl.ru"
     static let indexRelativePath = "package/x-csl-indexes.idx"
     static let packageBaseRelativePath = "package"
+    static let altitudePackageName = "ALTITUDE"
+
+    // MARK: - Path Resolution Helper
+
+    static func resolveDestinationURL(
+        fileItemPath: String,
+        packageName: String,
+        config: CSLPackageConfig?,
+        cslBaseFolder: URL,
+        xPlaneBaseFolder: URL?,
+        launcherDataFolder: URL? = nil
+    ) -> URL? {
+        let prefix = "\(packageName)/"
+        let relPath = fileItemPath.hasPrefix(prefix) ? String(fileItemPath.dropFirst(prefix.count)) : fileItemPath
+
+        if let config = config, !config.folders.isEmpty {
+            let basePath = xPlaneBaseFolder ?? cslBaseFolder.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+
+            let components = relPath.split(separator: "/", maxSplits: 1)
+            if let firstComp = components.first.map(String.init), let mappedDir = config.folders[firstComp] {
+                let subPath = components.count > 1 ? String(components[1]) : ""
+                var targetBaseDir = basePath.appendingPathComponent(mappedDir)
+
+                // If not found in X-Plane root, check if it resides in Central Data Folder (e.g. disabled plugin)
+                if !FileManager.default.fileExists(atPath: targetBaseDir.path), let launcherDataFolder {
+                    let pluginsPrefix = "Resources/plugins/"
+                    if mappedDir.hasPrefix(pluginsPrefix) {
+                        let relPluginSubpath = String(mappedDir.dropFirst(pluginsPrefix.count))
+                        let pluginComponents = relPluginSubpath.split(separator: "/", maxSplits: 1)
+                        if let pluginName = pluginComponents.first.map(String.init) {
+                            let centralPluginDir = launcherDataFolder.appendingPathComponent("Plugins").appendingPathComponent(pluginName)
+                            if FileManager.default.fileExists(atPath: centralPluginDir.path) {
+                                if pluginComponents.count > 1 {
+                                    targetBaseDir = centralPluginDir.appendingPathComponent(String(pluginComponents[1]))
+                                } else {
+                                    targetBaseDir = centralPluginDir
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if subPath.isEmpty {
+                    return targetBaseDir
+                }
+                return try? PathSecurity.validateSubpath(relativePath: subPath, within: targetBaseDir)
+            } else {
+                let targetBaseDir = basePath.appendingPathComponent(config.localDir)
+                return try? PathSecurity.validateSubpath(relativePath: relPath, within: targetBaseDir)
+            }
+        } else {
+            guard let pkgDir = try? PathSecurity.validateSubpath(relativePath: packageName, within: cslBaseFolder) else {
+                return nil
+            }
+            return try? PathSecurity.validateSubpath(relativePath: relPath, within: pkgDir)
+        }
+    }
 
     // MARK: - MD5 Hashing with Cache
 
@@ -256,6 +361,60 @@ final class CSLUpdaterService: Sendable {
         return content
     }
 
+    // MARK: - Special Package Fetching (e.g. ALTITUDE)
+
+    func fetchSpecialPackage(name: String, serverBaseURL: String = defaultServerBaseURL) async -> CSLRawPackage? {
+        let trimmedServer = serverBaseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard let encodedName = name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+              let filesURL = URL(string: "\(trimmedServer)/\(CSLUpdaterService.packageBaseRelativePath)/\(encodedName)/files.idx") else {
+            return nil
+        }
+
+        var req = URLRequest(url: filesURL)
+        req.timeoutInterval = 20
+        req.setValue("XPlaneLauncher", forHTTPHeaderField: "User-Agent")
+
+        guard let (data, resp) = try? await URLSession.shared.data(for: req),
+              let httpResp = resp as? HTTPURLResponse, httpResp.statusCode == 200,
+              let content = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .ascii) else {
+            return nil
+        }
+
+        let rawPackages = CSLIndexParser.parseIndex(content: content)
+        guard var raw = rawPackages.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) ?? rawPackages.first else {
+            return nil
+        }
+
+        raw.isResourcePackage = true
+
+        // Fetch client-config.ini if available
+        if let configURL = URL(string: "\(trimmedServer)/\(CSLUpdaterService.packageBaseRelativePath)/\(encodedName)/client-config.ini") {
+            var configReq = URLRequest(url: configURL)
+            configReq.timeoutInterval = 10
+            configReq.setValue("XPlaneLauncher", forHTTPHeaderField: "User-Agent")
+            if let (configData, configResp) = try? await URLSession.shared.data(for: configReq),
+               let configHttp = configResp as? HTTPURLResponse, configHttp.statusCode == 200,
+               let configContent = String(data: configData, encoding: .utf8) ?? String(data: configData, encoding: .ascii) {
+                raw.config = CSLPackageConfig.parse(content: configContent)
+            }
+        }
+
+        // Fetch files-for-delete.idx if available
+        if let deleteURL = URL(string: "\(trimmedServer)/\(CSLUpdaterService.packageBaseRelativePath)/\(encodedName)/files-for-delete.idx") {
+            var delReq = URLRequest(url: deleteURL)
+            delReq.timeoutInterval = 10
+            delReq.setValue("XPlaneLauncher", forHTTPHeaderField: "User-Agent")
+            if let (delData, delResp) = try? await URLSession.shared.data(for: delReq),
+               let delHttp = delResp as? HTTPURLResponse, delHttp.statusCode == 200,
+               let delContent = String(data: delData, encoding: .utf8) ?? String(data: delData, encoding: .ascii) {
+                let delPackages = CSLIndexParser.parseIndex(content: delContent)
+                raw.filesToDelete = delPackages.flatMap { $0.files }
+            }
+        }
+
+        return raw
+    }
+
     // MARK: - Package Description Fetching
 
     func fetchPackageDescription(packageName: String, serverBaseURL: String = defaultServerBaseURL) async -> String? {
@@ -291,25 +450,54 @@ final class CSLUpdaterService: Sendable {
 
     // MARK: - Package Comparison
 
-    func comparePackage(raw: CSLRawPackage, cslBaseFolder: URL) async -> (status: CSLPackageStatus, filesToUpdate: Int, updateSizeBytes: Int64, isInstalled: Bool) {
-        guard let pkgDir = try? PathSecurity.validateSubpath(relativePath: raw.name, within: cslBaseFolder) else {
-            return (.error, 0, 0, false)
+    func comparePackage(
+        raw: CSLRawPackage,
+        cslBaseFolder: URL,
+        xPlaneBaseFolder: URL? = nil,
+        launcherDataFolder: URL? = nil
+    ) async -> (status: CSLPackageStatus, filesToUpdate: Int, updateSizeBytes: Int64, isInstalled: Bool) {
+        let effectiveXPlaneFolder = xPlaneBaseFolder ?? cslBaseFolder.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+
+        var isInstalled = false
+        if raw.config != nil && !(raw.config?.folders.isEmpty ?? true) {
+            for file in raw.files {
+                if let dest = CSLUpdaterService.resolveDestinationURL(
+                    fileItemPath: file.path,
+                    packageName: raw.name,
+                    config: raw.config,
+                    cslBaseFolder: cslBaseFolder,
+                    xPlaneBaseFolder: effectiveXPlaneFolder,
+                    launcherDataFolder: launcherDataFolder
+                ), fileManager.fileExists(atPath: dest.path) {
+                    isInstalled = true
+                    break
+                }
+            }
+        } else {
+            guard let pkgDir = try? PathSecurity.validateSubpath(relativePath: raw.name, within: cslBaseFolder) else {
+                return (.error, 0, 0, false)
+            }
+            var isDir: ObjCBool = false
+            isInstalled = fileManager.fileExists(atPath: pkgDir.path, isDirectory: &isDir) && isDir.boolValue
         }
-        var isDir: ObjCBool = false
-        let isInstalled = fileManager.fileExists(atPath: pkgDir.path, isDirectory: &isDir) && isDir.boolValue
 
         if !isInstalled {
             let totalBytes = raw.files.reduce(Int64(0)) { $0 + $1.sizeBytes }
             return (.notInstalled, raw.files.count, totalBytes, false)
         }
 
-        let prefix = "\(raw.name)/"
         var filesToUpdate = 0
         var updateSize: Int64 = 0
 
         for file in raw.files {
-            let relPath = file.path.hasPrefix(prefix) ? String(file.path.dropFirst(prefix.count)) : file.path
-            guard let localFileURL = try? PathSecurity.validateSubpath(relativePath: relPath, within: pkgDir) else {
+            guard let localFileURL = CSLUpdaterService.resolveDestinationURL(
+                fileItemPath: file.path,
+                packageName: raw.name,
+                config: raw.config,
+                cslBaseFolder: cslBaseFolder,
+                xPlaneBaseFolder: effectiveXPlaneFolder,
+                launcherDataFolder: launcherDataFolder
+            ) else {
                 continue
             }
             let isObj = localFileURL.pathExtension.lowercased() == "obj"
@@ -354,33 +542,34 @@ final class CSLUpdaterService: Sendable {
     func downloadPackage(
         package: CSLPackage,
         targetFolder: URL,
+        xPlaneBaseFolder: URL? = nil,
+        launcherDataFolder: URL? = nil,
         serverBaseURL: String = defaultServerBaseURL,
         onProgress: @Sendable @escaping @MainActor (Double, Int64, String) -> Void,
         onLog: @Sendable @escaping @MainActor (String) -> Void,
         isCancelled: @Sendable @escaping () -> Bool
     ) async throws {
-        guard let pkgDir = try? PathSecurity.validateSubpath(relativePath: package.name, within: targetFolder) else {
-            throw AppError.pathNotFound(package.name)
-        }
-        if !fileManager.fileExists(atPath: pkgDir.path) {
-            try fileManager.createDirectory(at: pkgDir, withIntermediateDirectories: true)
-        }
-
-        let prefix = "\(package.name)/"
-        let trimmedServer = serverBaseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let effectiveXPlaneFolder = xPlaneBaseFolder ?? targetFolder.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
 
         // Find files needing download
-        var filesToDownload: [CSLFileItem] = []
+        var filesToDownload: [(item: CSLFileItem, destURL: URL)] = []
         var totalBytes: Int64 = 0
 
         for file in package.files {
             if isCancelled() { throw CancellationError() }
 
-            let relPath = file.path.hasPrefix(prefix) ? String(file.path.dropFirst(prefix.count)) : file.path
-            guard let localFileURL = try? PathSecurity.validateSubpath(relativePath: relPath, within: pkgDir) else {
-                await onLog("Insecure CSL file path rejected: \(relPath)")
+            guard let localFileURL = CSLUpdaterService.resolveDestinationURL(
+                fileItemPath: file.path,
+                packageName: package.name,
+                config: package.config,
+                cslBaseFolder: targetFolder,
+                xPlaneBaseFolder: effectiveXPlaneFolder,
+                launcherDataFolder: launcherDataFolder
+            ) else {
+                await onLog("Insecure CSL file path rejected: \(file.path)")
                 continue
             }
+
             let isObj = localFileURL.pathExtension.lowercased() == "obj"
             let bakFileURL = localFileURL.deletingPathExtension().appendingPathExtension(CSLLightsUpdater.backupExtension)
             let fileToCheck = (isObj && fileManager.fileExists(atPath: bakFileURL.path)) ? bakFileURL : localFileURL
@@ -399,8 +588,23 @@ final class CSLUpdaterService: Sendable {
             }
 
             if needsDownload {
-                filesToDownload.append(file)
+                filesToDownload.append((item: file, destURL: localFileURL))
                 totalBytes += file.sizeBytes
+            }
+        }
+
+        // Delete obsolete files if specified in filesToDelete
+        for delFile in package.filesToDelete {
+            if let destURL = CSLUpdaterService.resolveDestinationURL(
+                fileItemPath: delFile.path,
+                packageName: package.name,
+                config: package.config,
+                cslBaseFolder: targetFolder,
+                xPlaneBaseFolder: effectiveXPlaneFolder,
+                launcherDataFolder: launcherDataFolder
+            ), fileManager.fileExists(atPath: destURL.path) {
+                try? fileManager.removeItem(at: destURL)
+                await onLog("Removed deprecated file: \(destURL.lastPathComponent)")
             }
         }
 
@@ -412,22 +616,20 @@ final class CSLUpdaterService: Sendable {
 
         let totalFiles = filesToDownload.count
         var downloadedBytes: Int64 = 0
+        let trimmedServer = serverBaseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
 
-        for (index, file) in filesToDownload.enumerated() {
+        for (index, filePair) in filesToDownload.enumerated() {
             if isCancelled() {
                 await onLog("Download cancelled for \(package.name)")
                 throw CancellationError()
             }
 
-            let relPath = file.path.hasPrefix(prefix) ? String(file.path.dropFirst(prefix.count)) : file.path
-            guard let localFileURL = try? PathSecurity.validateSubpath(relativePath: relPath, within: pkgDir) else {
-                await onLog("Insecure CSL file path rejected: \(relPath)")
-                continue
-            }
+            let file = filePair.item
+            let localFileURL = filePair.destURL
             let parentDir = localFileURL.deletingLastPathComponent()
             try fileManager.createDirectory(at: parentDir, withIntermediateDirectories: true)
 
-            let displayFileName = (relPath as NSString).lastPathComponent
+            let displayFileName = localFileURL.lastPathComponent
             await onProgress(
                 Double(downloadedBytes) / Double(max(totalBytes, 1)),
                 downloadedBytes,
@@ -438,7 +640,12 @@ final class CSLUpdaterService: Sendable {
             let pathComponents = file.path.split(separator: "/").map {
                 $0.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? String($0)
             }
-            let fullURLString = "\(trimmedServer)/\(CSLUpdaterService.packageBaseRelativePath)/\(pathComponents.joined(separator: "/"))"
+            let fullURLString: String
+            if package.isResourcePackage {
+                fullURLString = "\(trimmedServer)/\(CSLUpdaterService.packageBaseRelativePath)/\(package.name)/\(pathComponents.joined(separator: "/"))"
+            } else {
+                fullURLString = "\(trimmedServer)/\(CSLUpdaterService.packageBaseRelativePath)/\(pathComponents.joined(separator: "/"))"
+            }
             guard let url = URL(string: fullURLString) else {
                 await onLog("Invalid URL for \(file.path)")
                 continue
@@ -479,7 +686,7 @@ final class CSLUpdaterService: Sendable {
                     if attempt < 3 {
                         try? await Task.sleep(nanoseconds: UInt64(attempt) * 500_000_000)
                     } else {
-                        await onLog("Failed downloading \(relPath): \(error.localizedDescription)")
+                        await onLog("Failed downloading \(displayFileName): \(error.localizedDescription)")
                         throw error
                     }
                 }
@@ -516,6 +723,24 @@ final class CSLManager {
             if cslFolderURL != oldValue {
                 hasFetchedRemoteIndex = false
                 packages = []
+                scanLocalPackages()
+            }
+        }
+    }
+
+    var xPlaneFolderURL: URL? {
+        didSet {
+            if xPlaneFolderURL != oldValue {
+                hasFetchedRemoteIndex = false
+                scanLocalPackages()
+            }
+        }
+    }
+
+    var launcherDataFolder: URL? {
+        didSet {
+            if launcherDataFolder != oldValue {
+                hasFetchedRemoteIndex = false
                 scanLocalPackages()
             }
         }
@@ -629,6 +854,29 @@ final class CSLManager {
             localPackages.append(pkg)
         }
 
+        // Check if IVAO Altitude resource files are present locally (in X-Plane or Central Data Folder)
+        let effectiveXPlaneFolder = xPlaneFolderURL ?? folderURL.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let ivaoCslFolder = effectiveXPlaneFolder.appendingPathComponent("Resources/plugins/IVAO_CSL")
+        let ivaoPilotCentral = launcherDataFolder?.appendingPathComponent("Plugins/ivao_pilot")
+        if fileManager.fileExists(atPath: ivaoCslFolder.path) || (ivaoPilotCentral != nil && fileManager.fileExists(atPath: ivaoPilotCentral!.path)) {
+            let altStats = computeDirectoryStats(at: ivaoCslFolder)
+            let altPkg = CSLPackage(
+                name: CSLUpdaterService.altitudePackageName,
+                title: "IVAO Altitude resources files",
+                totalSizeBytes: altStats.totalSize,
+                fileCount: altStats.fileCount,
+                status: .unknown,
+                filesToUpdate: 0,
+                updateSizeBytes: 0,
+                lastUpdated: "",
+                statusMessage: "Unknown",
+                isInstalled: true,
+                files: [],
+                isResourcePackage: true
+            )
+            localPackages.insert(altPkg, at: 0)
+        }
+
         self.packages = localPackages
     }
 
@@ -644,20 +892,33 @@ final class CSLManager {
         isChecking = true
         log("Checking X-CSL packages index...")
 
+        let effectiveXPlane = xPlaneFolderURL ?? folderURL.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let centralFolder = launcherDataFolder
+
         Task { @MainActor in
             do {
                 let indexContent = try await service.fetchRemoteIndex()
-                let rawPackages = CSLIndexParser.parseIndex(content: indexContent)
+                var rawPackages = CSLIndexParser.parseIndex(content: indexContent)
                 self.hasFetchedRemoteIndex = true
 
-                log("Remote index loaded: \(rawPackages.count) total packages available")
+                // Also fetch the special ALTITUDE resource package
+                if let altitudeRaw = await service.fetchSpecialPackage(name: CSLUpdaterService.altitudePackageName) {
+                    rawPackages.insert(altitudeRaw, at: 0)
+                }
+
+                log("Remote index loaded: \(rawPackages.count) total package(s) available")
 
                 var parsedPackages: [CSLPackage] = []
                 var processedNames: Set<String> = []
 
                 for raw in rawPackages {
                     processedNames.insert(raw.name)
-                    let comparison = await service.comparePackage(raw: raw, cslBaseFolder: folderURL)
+                    let comparison = await service.comparePackage(
+                        raw: raw,
+                        cslBaseFolder: folderURL,
+                        xPlaneBaseFolder: effectiveXPlane,
+                        launcherDataFolder: centralFolder
+                    )
 
                     let statusMsg: String
                     switch comparison.status {
@@ -680,9 +941,13 @@ final class CSLManager {
                     let headerDate = !raw.headerDate.isEmpty ? "\(raw.headerDate) \(raw.headerTime)" : ""
                     let totalSize = raw.headerSize > 0 ? raw.headerSize : raw.files.reduce(0) { $0 + $1.sizeBytes }
 
+                    let defaultTitle = raw.isResourcePackage && raw.name == CSLUpdaterService.altitudePackageName
+                        ? "IVAO Altitude resources files"
+                        : raw.name
+
                     let pkg = CSLPackage(
                         name: raw.name,
-                        title: raw.name,
+                        title: defaultTitle,
                         totalSizeBytes: totalSize,
                         fileCount: raw.files.count,
                         status: comparison.status,
@@ -691,7 +956,10 @@ final class CSLManager {
                         lastUpdated: headerDate,
                         statusMessage: statusMsg,
                         isInstalled: comparison.isInstalled,
-                        files: raw.files
+                        files: raw.files,
+                        config: raw.config,
+                        filesToDelete: raw.filesToDelete,
+                        isResourcePackage: raw.isResourcePackage
                     )
                     parsedPackages.append(pkg)
                 }
@@ -723,7 +991,13 @@ final class CSLManager {
                     }
                 }
 
-                self.packages = parsedPackages.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+                // Sort packages: Resource packages (e.g. ALTITUDE) first, then alphabetical
+                self.packages = parsedPackages.sorted { a, b in
+                    if a.isResourcePackage != b.isResourcePackage {
+                        return a.isResourcePackage && !b.isResourcePackage
+                    }
+                    return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
+                }
                 self.isChecking = false
 
                 let needUpdate = self.updatesAvailableCount
@@ -767,12 +1041,16 @@ final class CSLManager {
 
         let pkgToUpdate = packages[index]
         let pkgName = pkgToUpdate.name
+        let effectiveXPlane = xPlaneFolderURL ?? folderURL.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let centralFolder = launcherDataFolder
 
         let task = Task { @MainActor in
             do {
                 try await service.downloadPackage(
                     package: pkgToUpdate,
                     targetFolder: folderURL,
+                    xPlaneBaseFolder: effectiveXPlane,
+                    launcherDataFolder: centralFolder,
                     onProgress: { [weak self] progress, bytes, currentFile in
                         guard let self = self, let i = self.packages.firstIndex(where: { $0.name == pkgName }) else { return }
                         self.packages[i].downloadProgress = progress
@@ -797,8 +1075,8 @@ final class CSLManager {
                     self.packages[i].statusMessage = "Up to date"
                 }
 
-                // If XP12 lighting is enabled, apply it automatically to the newly updated package
-                if UserDefaults.standard.bool(forKey: .enableCSLXP12Lights) {
+                // If XP12 lighting is enabled and this is a regular model package, apply it automatically
+                if UserDefaults.standard.bool(forKey: .enableCSLXP12Lights) && !pkgToUpdate.isResourcePackage {
                     let pkgDir = folderURL.appendingPathComponent(pkgName)
                     CSLLightsUpdater.shared.processPackage(packageURL: pkgDir, flashingBeacons: true) { [weak self] msg in
                         self?.log(msg)
@@ -865,15 +1143,26 @@ final class CSLManager {
         packages[index].statusMessage = "Verifying files..."
 
         let pkg = packages[index]
+        let effectiveXPlane = xPlaneFolderURL ?? folderURL.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let centralFolder = launcherDataFolder
+
         Task { @MainActor in
             let raw = CSLRawPackage(
                 name: pkg.name,
                 headerSize: pkg.totalSizeBytes,
                 headerDate: "",
                 headerTime: "",
-                files: pkg.files
+                files: pkg.files,
+                config: pkg.config,
+                filesToDelete: pkg.filesToDelete,
+                isResourcePackage: pkg.isResourcePackage
             )
-            let result = await service.comparePackage(raw: raw, cslBaseFolder: folderURL)
+            let result = await service.comparePackage(
+                raw: raw,
+                cslBaseFolder: folderURL,
+                xPlaneBaseFolder: effectiveXPlane,
+                launcherDataFolder: centralFolder
+            )
             if let i = self.packages.firstIndex(where: { $0.id == pkg.id }) {
                 self.packages[i].status = result.status
                 self.packages[i].isInstalled = result.isInstalled
@@ -895,7 +1184,7 @@ final class CSLManager {
         log("[XP12 Lights] Applying modern X-Plane 12 lighting to all installed CSL models...")
 
         Task { @MainActor in
-            let installedPackages = self.packages.filter { $0.isInstalled }
+            let installedPackages = self.packages.filter { $0.isInstalled && !$0.isResourcePackage }
             for pkg in installedPackages {
                 let pkgDir = folderURL.appendingPathComponent(pkg.name)
                 CSLLightsUpdater.shared.processPackage(packageURL: pkgDir, flashingBeacons: flashingBeacons) { [weak self] msg in
@@ -919,7 +1208,7 @@ final class CSLManager {
         log("[XP12 Lights] Reverting all CSL models to original unmodified lighting...")
 
         Task { @MainActor in
-            let installedPackages = self.packages.filter { $0.isInstalled }
+            let installedPackages = self.packages.filter { $0.isInstalled && !$0.isResourcePackage }
             for pkg in installedPackages {
                 let pkgDir = folderURL.appendingPathComponent(pkg.name)
                 CSLLightsUpdater.shared.revertPackage(packageURL: pkgDir) { [weak self] msg in

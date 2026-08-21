@@ -52,6 +52,8 @@ struct XPlaneLauncherApp: App {
                 .onAppear {
                     updateManager.launcherDataFolder = pluginManager.launcherDataFolder
                     cslManager.cslFolderURL = pluginManager.cslPath
+                    cslManager.xPlaneFolderURL = pluginManager.xPlanePath
+                    cslManager.launcherDataFolder = pluginManager.launcherDataFolder
                     if pluginManager.enableNavdataSupport {
                         navdataManager.xPlaneURL = pluginManager.xPlanePath
                         navdataManager.launcherDataFolder = pluginManager.launcherDataFolder
@@ -74,17 +76,20 @@ struct XPlaneLauncherApp: App {
                 }
                 .onChange(of: pluginManager.launcherDataFolder) { _, newValue in
                     updateManager.launcherDataFolder = newValue
+                    cslManager.launcherDataFolder = newValue
                     if pluginManager.enableNavdataSupport {
                         navdataManager.launcherDataFolder = newValue
                     }
                 }
                 .onChange(of: pluginManager.xPlanePath) { _, newValue in
+                    cslManager.xPlaneFolderURL = newValue
                     if pluginManager.enableNavdataSupport {
                         navdataManager.xPlaneURL = newValue
                     }
                 }
                 .onChange(of: pluginManager.cslPath) { _, newValue in
                     cslManager.cslFolderURL = newValue
+                    cslManager.xPlaneFolderURL = pluginManager.xPlanePath
                     if pluginManager.enableCSLSupport && cslManager.automaticallyCheckCSLUpdates {
                         cslManager.scanAndCheck()
                     }
@@ -92,6 +97,7 @@ struct XPlaneLauncherApp: App {
                 .onChange(of: pluginManager.enableCSLSupport) { _, enabled in
                     if enabled {
                         cslManager.cslFolderURL = pluginManager.cslPath
+                        cslManager.xPlaneFolderURL = pluginManager.xPlanePath
                         if cslManager.automaticallyCheckCSLUpdates {
                             cslManager.scanAndCheck()
                         }
