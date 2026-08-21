@@ -31,67 +31,62 @@ struct SceneryListView: View {
     @State private var itemToDelete: PluginManager.Scenery? = nil
 
     var body: some View {
-        NavigationStack {
-            List(selection: $selection) {
-                ForEach(displayItems) { item in
-                    switch item {
-                    case .group(let group, let members):
-                        SceneryGroupSection(group: group, members: members, selection: selection, onDelete: {
-                            itemToDelete = $0
-                        })
-                    case .simple(let scenery):
-                        SceneryRow(item: scenery, selection: selection, onDelete: {
-                            itemToDelete = scenery
-                        })
-                            .tag(scenery.id)
-                            .draggable(scenery.id.uuidString)
-                    }
-                }
-                .onMove(perform: moveDisplayItems)
-
-                if pluginManager.scenery.isEmpty {
-                    ContentUnavailableView {
-                        Label("No Scenery Found", systemImage: "map")
-                    } description: {
-                        Text("Check your Central Data Folder ('Scenery' subfolder).")
-                    }
-                }
-            }
-            .listStyle(.inset)
-            .scrollContentBackground(.hidden)
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button("Create Group", systemImage: "folder.badge.plus") {
+        List(selection: $selection) {
+            ForEach(displayItems) { item in
+                switch item {
+                case .group(let group, let members):
+                    SceneryGroupSection(group: group, members: members, selection: selection, onDelete: {
+                        itemToDelete = $0
+                    }, onCreateGroup: {
                         newGroupName = ""
                         isCreatingGroup = true
-                    }
-                    .disabled(selection.isEmpty)
+                    })
+                case .simple(let scenery):
+                    SceneryRow(item: scenery, selection: selection, onDelete: {
+                        itemToDelete = scenery
+                    }, onCreateGroup: {
+                        newGroupName = ""
+                        isCreatingGroup = true
+                    })
+                        .tag(scenery.id)
+                        .draggable(scenery.id.uuidString)
                 }
             }
-            .alert("New Group", isPresented: $isCreatingGroup) {
-                TextField("Group Name", text: $newGroupName)
-                Button("Cancel", role: .cancel) { }
-                Button("Create") {
-                    createGroupFromSelection()
+            .onMove(perform: moveDisplayItems)
+
+            if pluginManager.scenery.isEmpty {
+                ContentUnavailableView {
+                    Label("No Scenery Found", systemImage: "map")
+                } description: {
+                    Text("Check your Central Data Folder ('Scenery' subfolder).")
                 }
-            } message: {
-                Text("Enter a name for the new scenery group.")
             }
-            .alert(
-                "Delete Scenery",
-                isPresented: Binding(
-                    get: { itemToDelete != nil },
-                    set: { if !$0 { itemToDelete = nil } }
-                ),
-                presenting: itemToDelete
-            ) { item in
-                Button("Delete", role: .destructive) {
-                    pluginManager.deleteScenery(item)
-                }
-                Button("Cancel", role: .cancel) { }
-            } message: { item in
-                Text("Are you sure you want to delete '\(item.name)'?\n\nThis will permanently delete the files from your Central Data Folder ('Scenery/\(item.folderName)'), unlink it from X-Plane, remove it from scenery_packs.ini, and remove it from all profiles.\n\nThis action cannot be undone.")
+        }
+        .listStyle(.inset)
+        .scrollContentBackground(.hidden)
+        .alert("New Group", isPresented: $isCreatingGroup) {
+            TextField("Group Name", text: $newGroupName)
+            Button("Cancel", role: .cancel) { }
+            Button("Create") {
+                createGroupFromSelection()
             }
+        } message: {
+            Text("Enter a name for the new scenery group.")
+        }
+        .alert(
+            "Delete Scenery",
+            isPresented: Binding(
+                get: { itemToDelete != nil },
+                set: { if !$0 { itemToDelete = nil } }
+            ),
+            presenting: itemToDelete
+        ) { item in
+            Button("Delete", role: .destructive) {
+                pluginManager.deleteScenery(item)
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: { item in
+            Text("Are you sure you want to delete '\(item.name)'?\n\nThis will permanently delete the files from your Central Data Folder ('Scenery/\(item.folderName)'), unlink it from X-Plane, remove it from scenery_packs.ini, and remove it from all profiles.\n\nThis action cannot be undone.")
         }
     }
 
@@ -167,6 +162,7 @@ struct SceneryGroupSection: View {
     let members: [PluginManager.Scenery]
     let selection: Set<UUID>
     var onDelete: ((PluginManager.Scenery) -> Void)? = nil
+    var onCreateGroup: (() -> Void)? = nil
 
     @State private var isRenaming = false
     @State private var renameText = ""
@@ -183,7 +179,7 @@ struct SceneryGroupSection: View {
             ForEach(members) { item in
                 SceneryRow(item: item, selection: selection, onDelete: {
                     onDelete?(item)
-                })
+                }, onCreateGroup: onCreateGroup)
                     .padding(.leading, 8)
                     .tag(item.id)
                     .draggable(item.id.uuidString)
@@ -315,6 +311,7 @@ struct SceneryRow: View {
     let item: PluginManager.Scenery
     let selection: Set<UUID>
     var onDelete: (() -> Void)? = nil
+    var onCreateGroup: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 12) {
@@ -378,6 +375,11 @@ struct SceneryRow: View {
                 .stroke(Color(NSColor.separatorColor), lineWidth: 0.5)
         )
         .contextMenu {
+            if !selection.isEmpty {
+                Button("Create Group from Selection...", systemImage: "folder.badge.plus") {
+                    onCreateGroup?()
+                }
+            }
             if pluginManager.sceneryGroups.contains(where: { $0.childFolderNames.contains(item.folderName) }) {
                 Button("Remove from Group") {
                     pluginManager.removeFromGroup(item)

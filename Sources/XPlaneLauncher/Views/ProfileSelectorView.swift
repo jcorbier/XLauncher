@@ -33,7 +33,7 @@ struct ProfileSelectorView: View {
         HStack(spacing: 12) {
             HStack(spacing: 8) {
                 Image(systemName: "person.crop.circle.fill")
-                    .font(.title2)
+                    .font(.title3)
                     .foregroundStyle(.blue)
 
                 Text("Profile:")
@@ -100,14 +100,8 @@ struct ProfileSelectorView: View {
                 .help("Delete selected profile")
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(Color(NSColor.controlBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(Color(NSColor.separatorColor), lineWidth: 0.5)
-        )
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
         .alert("Save Profile", isPresented: $showingSaveProfileAlert) {
             TextField("Profile Name", text: $newProfileName)
             Button("Save") {

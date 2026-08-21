@@ -49,9 +49,9 @@ struct ContentView: View {
         case scenery = "Scenery"
         case luaScripts = "Lua Scripts"
         case scripts = "Profile Scripts"
-        case csl = "CSL"
+        case addonUpdates = "Add-ons"
+        case csl = "CSL Models"
         case navdata = "Navigation Data"
-        case updates = "Updates"
         case settings = "Settings"
         case about = "About"
 
@@ -64,15 +64,20 @@ struct ContentView: View {
             case .scenery: return "map"
             case .luaScripts: return "scroll"
             case .scripts: return "terminal"
+            case .addonUpdates: return "arrow.triangle.2.circlepath.circle"
             case .csl: return "airplane.circle"
             case .navdata: return "point.topleft.down.to.point.bottomright.curvepath"
-            case .updates: return "arrow.triangle.2.circlepath.circle"
             case .settings: return "gearshape"
             case .about: return "info.circle"
             }
         }
-        static func mainCategories(cslEnabled: Bool, navdataEnabled: Bool) -> [NavigationCategory] {
-            var list: [NavigationCategory] = [.aircraft, .plugins, .scenery, .luaScripts, .scripts]
+
+        static var mainCategories: [NavigationCategory] {
+            [.aircraft, .plugins, .scenery, .luaScripts, .scripts]
+        }
+
+        static func updateCategories(cslEnabled: Bool, navdataEnabled: Bool) -> [NavigationCategory] {
+            var list: [NavigationCategory] = [.addonUpdates]
             if cslEnabled {
                 list.append(.csl)
             }
@@ -83,11 +88,11 @@ struct ContentView: View {
         }
 
         static var systemCategories: [NavigationCategory] {
-            [.updates, .settings]
+            [.settings]
         }
 
         var isAddonCategory: Bool {
-            self != .updates && self != .settings && self != .csl && self != .navdata && self != .about
+            self == .aircraft || self == .plugins || self == .scenery || self == .luaScripts || self == .scripts
         }
     }
 
@@ -103,13 +108,40 @@ struct ContentView: View {
         NavigationSplitView {
             List(selection: $selectedCategory) {
                 Section("Add-ons") {
-                    ForEach(NavigationCategory.mainCategories(cslEnabled: pluginManager.enableCSLSupport, navdataEnabled: pluginManager.enableNavdataSupport)) { category in
+                    ForEach(NavigationCategory.mainCategories) { category in
+                        NavigationLink(value: category) {
+                            HStack(spacing: 8) {
+                                Label(category.rawValue, systemImage: category.systemImage)
+                                    .font(.body)
+                            }
+                        }
+                    }
+                }
+
+                Section("Updates") {
+                    ForEach(NavigationCategory.updateCategories(cslEnabled: pluginManager.enableCSLSupport, navdataEnabled: pluginManager.enableNavdataSupport)) { category in
                         NavigationLink(value: category) {
                             HStack(spacing: 8) {
                                 Label(category.rawValue, systemImage: category.systemImage)
                                     .font(.body)
 
-                                if category == .csl {
+                                if category == .addonUpdates {
+                                    Spacer()
+
+                                    if updateManager.isProcessing {
+                                        ProgressView()
+                                            .controlSize(.small)
+                                    } else if availableUpdatesCount > 0 {
+                                        Text("\(availableUpdatesCount)")
+                                            .font(.caption2)
+                                            .fontWeight(.bold)
+                                            .foregroundStyle(.white)
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(Color.orange)
+                                            .clipShape(Capsule())
+                                    }
+                                } else if category == .csl {
                                     Spacer()
 
                                     if cslManager.isProcessing {
@@ -153,26 +185,6 @@ struct ContentView: View {
                             HStack(spacing: 8) {
                                 Label(category.rawValue, systemImage: category.systemImage)
                                     .font(.body)
-
-                                if category == .updates {
-                                    Spacer()
-
-                                    if updateManager.isProcessing {
-                                        ProgressView()
-                                            .controlSize(.small)
-                                    }
-
-                                    if availableUpdatesCount > 0 {
-                                        Text("\(availableUpdatesCount)")
-                                            .font(.caption2)
-                                            .fontWeight(.bold)
-                                            .foregroundStyle(.white)
-                                            .padding(.horizontal, 6)
-                                            .padding(.vertical, 2)
-                                            .background(Color.orange)
-                                            .clipShape(Capsule())
-                                    }
-                                }
                             }
                         }
                     }
@@ -221,7 +233,6 @@ struct ContentView: View {
                 // Header Profile Bar (Only shown for Add-ons categories)
                 if let category = selectedCategory, category.isAddonCategory {
                     ProfileSelectorView()
-                        .padding(12)
 
                     Divider()
                 }
@@ -239,12 +250,12 @@ struct ContentView: View {
                         LuaScriptsListView()
                     case .scripts:
                         ScriptsListView()
+                    case .addonUpdates:
+                        UpdatesView()
                     case .csl:
                         CSLListView()
                     case .navdata:
                         NavdataListView()
-                    case .updates:
-                        UpdatesView()
                     case .settings:
                         SettingsView()
                     case .about:
