@@ -41,5 +41,6 @@
 
 ## Diagnostic Logs
 
-- **Updates & CSL Operations**: Click the **Console** button in the Updates or CSL tabs to view real-time logs and error messages.
+- **Application Logs Window**: Open the full application log viewer by choosing **Window > Logs...** from the menu bar or pressing `⌥⌘L`. This window provides real-time, searchable logs categorized by subsystem (profiles, scenery, plugins, updates, symlinks, navigation data, and simulator launch) with severity filtering and copy support.
+- **Updates & CSL Operations**: Click the **Console** button in the Updates or CSL tabs to view real-time operation logs and progress messages.
 - **Simulator Log**: Check `<X-Plane 12>/Log.txt` for general X-Plane startup and plugin diagnostic information.

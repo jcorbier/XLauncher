@@ -137,19 +137,9 @@ struct XPlaneLauncherApp: App {
                     showWelcomeScreen = true
                 }
             }
-            CommandGroup(after: .windowList) {
-                Button("Logs...") {
-                    openWindow(id: "logs-window")
-                }
-                .keyboardShortcut("l", modifiers: [.command, .option])
-            }
             CommandGroup(replacing: .help) {
                 Button("Show Welcome Screen...") {
                     showWelcomeScreen = true
-                }
-                Divider()
-                Button("Show Logs...") {
-                    openWindow(id: "logs-window")
                 }
                 Divider()
                 Button("X-Plane Launcher Documentation") {
@@ -158,9 +148,10 @@ struct XPlaneLauncherApp: App {
             }
         }
 
-        Window("Application Logs", id: "logs-window") {
+        Window("Logs", id: "logs-window") {
             LogsDialogView()
         }
+        .keyboardShortcut("l", modifiers: [.command, .option])
         .defaultSize(width: 800, height: 500)
         .windowResizability(.contentMinSize)
     }
