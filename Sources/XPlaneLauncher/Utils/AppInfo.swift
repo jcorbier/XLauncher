@@ -56,14 +56,21 @@ enum AppInfo {
     static let authorURL = URL(string: "https://github.com/jcorbier")!
 
     static var documentationURL: URL {
-        let ver = version.trimmingCharacters(in: .whitespacesAndNewlines)
+        documentationURL(for: version)
+    }
 
-        // If it's a tagged release (not empty and not a dev/draft build)
-        if !ver.isEmpty && !ver.contains("draft") && !ver.contains("dev") && ver != "0.0.0" {
-            let tag = ver.hasPrefix("v") ? ver : "v\(ver)"
-            if let url = URL(string: "https://xlauncher.readthedocs.io/en/\(tag)/") {
-                return url
-            }
+    static func documentationURL(for versionString: String) -> URL {
+        let ver = versionString.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard let semVer = SemanticVersion(string: ver),
+              !semVer.isDevelopment,
+              !semVer.isPrerelease else {
+            return URL(string: "https://xlauncher.readthedocs.io/en/latest/")!
+        }
+
+        let tag = "v\(semVer.major).\(semVer.minor).\(semVer.patch)"
+        if let url = URL(string: "https://xlauncher.readthedocs.io/en/\(tag)/") {
+            return url
         }
 
         return URL(string: "https://xlauncher.readthedocs.io/en/latest/")!

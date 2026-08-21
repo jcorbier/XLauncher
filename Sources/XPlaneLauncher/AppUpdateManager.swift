@@ -44,6 +44,10 @@ public struct SemanticVersion: Comparable, Hashable, Sendable, CustomStringConve
         rawString.localizedCaseInsensitiveContains("dev")
     }
 
+    public var isPrerelease: Bool {
+        prerelease != nil
+    }
+
     public init?(string: String) {
         let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
