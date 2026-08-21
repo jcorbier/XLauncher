@@ -15,10 +15,6 @@
 3. Drag **XLauncher.app** into your `/Applications` folder.
 4. Eject the disk image.
 
-```{note}
-On first launch, macOS Gatekeeper might ask to confirm opening the app. Click **Open**, or allow it in **System Settings > Privacy & Security**.
-```
-
 ---
 
 ## Building from Source
