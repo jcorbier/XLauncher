@@ -23,6 +23,7 @@
 import Foundation
 import Observation
 import AppKit
+import Sparkle
 
 // MARK: - Semantic Version
 
@@ -182,13 +183,17 @@ public struct AppRelease: Codable, Identifiable, Hashable, Sendable {
     public var dmgAsset: AppReleaseAsset? {
         assets.first { $0.name.lowercased().hasSuffix(".dmg") }
     }
+
+    public var zipAsset: AppReleaseAsset? {
+        assets.first { $0.name.lowercased().hasSuffix(".zip") }
+    }
 }
 
 // MARK: - App Update Manager
 
 @MainActor
 @Observable
-final class AppUpdateManager {
+final class AppUpdateManager: NSObject {
     private let defaults = UserDefaults.standard
 
     var isChecking: Bool = false
@@ -198,6 +203,15 @@ final class AppUpdateManager {
     var lastCheckDate: Date? = nil
     var lastErrorMessage: String? = nil
     var statusMessage: String = "Not checked yet"
+
+    // Sparkle In-App Update State
+    var isSparkleUpdating: Bool = false
+    var sparkleDownloadProgress: Double = 0.0
+    var sparkleStatus: String = ""
+    var sparkleErrorMessage: String? = nil
+
+    private var sparkleDriver: SparkleCustomUserDriver?
+    private var sparkleUpdater: SPUUpdater?
 
     var automaticallyCheckOnLaunch: Bool {
         didSet {
@@ -221,7 +235,7 @@ final class AppUpdateManager {
         }
     }
 
-    init() {
+    override init() {
         if defaults.object(forKey: .appUpdateAutoCheckOnLaunch) == nil {
             self.automaticallyCheckOnLaunch = true
         } else {
@@ -233,6 +247,28 @@ final class AppUpdateManager {
 
         if let savedDate = defaults.object(forKey: .appUpdateLastCheckDate) as? Date {
             self.lastCheckDate = savedDate
+        }
+
+        super.init()
+        setupSparkle()
+    }
+
+    private func setupSparkle() {
+        let driver = SparkleCustomUserDriver(updateManager: self)
+        self.sparkleDriver = driver
+
+        let updater = SPUUpdater(
+            hostBundle: Bundle.main,
+            applicationBundle: Bundle.main,
+            userDriver: driver,
+            delegate: self
+        )
+        self.sparkleUpdater = updater
+
+        do {
+            try updater.start()
+        } catch {
+            ConsoleLogger.shared.log("Failed to start Sparkle updater: \(error.localizedDescription)", category: .updates, level: .warn)
         }
     }
 
@@ -402,5 +438,42 @@ final class AppUpdateManager {
         } else {
             NSWorkspace.shared.open(AppInfo.releasesURL)
         }
+    }
+
+    func startInAppUpdate() {
+        guard let updater = sparkleUpdater else {
+            downloadLatestDMG()
+            return
+        }
+        isSparkleUpdating = true
+        sparkleErrorMessage = nil
+        sparkleStatus = "Starting update..."
+        sparkleDriver?.proceedWithInstall()
+        updater.checkForUpdates()
+    }
+
+    func cancelInAppUpdate() {
+        sparkleDriver?.cancelDownload()
+        isSparkleUpdating = false
+        sparkleDownloadProgress = 0.0
+        sparkleStatus = ""
+    }
+}
+
+// MARK: - SPUUpdaterDelegate
+
+extension AppUpdateManager: SPUUpdaterDelegate {
+    func feedURLString(for updater: SPUUpdater) -> String? {
+        if let appcastAsset = latestRelease?.assets.first(where: { $0.name.lowercased() == "appcast.xml" }) {
+            return appcastAsset.browserDownloadURL.absoluteString
+        }
+        return AppInfo.appcastURL.absoluteString
+    }
+
+    func allowedChannels(for updater: SPUUpdater) -> Set<String> {
+        if includePrereleases {
+            return ["beta", "prerelease"]
+        }
+        return []
     }
 }

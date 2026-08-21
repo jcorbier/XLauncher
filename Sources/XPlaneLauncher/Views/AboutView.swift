@@ -118,7 +118,7 @@ struct AboutView: View {
                                         Text("Update Available: \(release.displayTitle)")
                                             .font(.subheadline)
                                             .fontWeight(.semibold)
-                                        Text("A newer version of X-Plane Launcher is available for download.")
+                                        Text("A newer version of X-Plane Launcher is available.")
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
                                     }
@@ -127,23 +127,30 @@ struct AboutView: View {
                                 }
 
                                 HStack(spacing: 10) {
-                                    Button(action: {
-                                        showReleaseNotesSheet = true
-                                    }) {
-                                        Label("What's New", systemImage: "doc.plaintext")
-                                    }
-                                    .controlSize(.small)
+                                    if appUpdateManager.isSparkleUpdating {
+                                        HStack(spacing: 8) {
+                                            ProgressView()
+                                                .controlSize(.small)
+                                            Text(appUpdateManager.sparkleStatus.isEmpty ? "Updating..." : appUpdateManager.sparkleStatus)
+                                                .font(.caption2)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    } else {
+                                        Button(action: {
+                                            showReleaseNotesSheet = true
+                                        }) {
+                                            Label("What's New", systemImage: "doc.plaintext")
+                                        }
+                                        .controlSize(.small)
 
-                                    Button(action: {
-                                        appUpdateManager.downloadLatestDMG()
-                                    }) {
-                                        Label(
-                                            release.dmgAsset != nil ? "Download DMG (\(release.dmgAsset!.formattedSize))" : "Download Update",
-                                            systemImage: "arrow.down.circle.fill"
-                                        )
+                                        Button(action: {
+                                            appUpdateManager.startInAppUpdate()
+                                        }) {
+                                            Label("Update & Relaunch", systemImage: "arrow.triangle.2.circlepath.circle.fill")
+                                        }
+                                        .buttonStyle(.borderedProminent)
+                                        .controlSize(.small)
                                     }
-                                    .buttonStyle(.borderedProminent)
-                                    .controlSize(.small)
                                 }
                                 .frame(maxWidth: .infinity, alignment: .trailing)
                             }

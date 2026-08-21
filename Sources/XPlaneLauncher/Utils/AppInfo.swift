@@ -52,6 +52,7 @@ enum AppInfo {
     static let releasesURL = URL(string: "https://github.com/jcorbier/XLauncher/releases")!
     static let latestReleaseAPIURL = URL(string: "https://api.github.com/repos/jcorbier/XLauncher/releases/latest")!
     static let allReleasesAPIURL = URL(string: "https://api.github.com/repos/jcorbier/XLauncher/releases")!
+    static let appcastURL = URL(string: "https://github.com/jcorbier/XLauncher/releases/latest/download/appcast.xml")!
     static let issuesURL = URL(string: "https://github.com/jcorbier/XLauncher/issues")!
     static let authorURL = URL(string: "https://github.com/jcorbier")!
 

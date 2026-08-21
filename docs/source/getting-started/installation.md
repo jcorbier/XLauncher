@@ -42,3 +42,12 @@ xcode-select --install
    ```bash
    open XLauncher.app
    ```
+
+---
+
+## Updating
+
+X-Plane Launcher includes built-in in-place self-updating:
+- When a new version is detected, an update banner appears in **Settings** and **About**, and you can also check manually from the menu bar (**X-Plane Launcher > Check for Updates...**).
+- Click **Update & Relaunch** to automatically download the verified update archive, replace the installed application bundle, and relaunch into the new version.
+- You can also view detailed changelogs and version release notes directly from the UI before applying the update.

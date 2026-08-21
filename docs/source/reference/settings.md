@@ -37,7 +37,7 @@ Disabling automatic checks on launch does not prevent manual checks. You can sti
 
 - **Include pre-release and beta versions**: When enabled, checks for pre-release and beta builds on GitHub in addition to stable releases.
 - **Check Now**: Manually checks GitHub for application updates immediately.
-- **What's New / Download**: View version release notes and changelogs, or download the latest disk image installer (`.dmg`) directly when an update is detected.
+- **What's New / Update & Relaunch**: View version release notes and changelogs, or update and relaunch the application in-place directly from the UI (with a manual `.dmg` download option available as a fallback).
 
 ---
 

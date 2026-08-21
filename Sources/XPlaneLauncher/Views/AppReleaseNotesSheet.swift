@@ -212,24 +212,59 @@ struct AppReleaseNotesSheet: View {
 
                 Spacer()
 
-                if let dmg = latestRelease?.dmgAsset {
-                    Button(action: {
-                        appUpdateManager.downloadLatestDMG()
-                    }) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "arrow.down.circle.fill")
-                            Text("Download Installer (\(dmg.formattedSize))")
+                if appUpdateManager.isSparkleUpdating {
+                    HStack(spacing: 12) {
+                        VStack(alignment: .trailing, spacing: 4) {
+                            if appUpdateManager.sparkleDownloadProgress > 0 && appUpdateManager.sparkleDownloadProgress < 1.0 {
+                                ProgressView(value: appUpdateManager.sparkleDownloadProgress, total: 1.0)
+                                    .progressViewStyle(.linear)
+                                    .frame(width: 180)
+                            } else {
+                                ProgressView()
+                                    .progressViewStyle(.circular)
+                                    .controlSize(.small)
+                            }
+                            Text(appUpdateManager.sparkleStatus.isEmpty ? "Updating..." : appUpdateManager.sparkleStatus)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
                         }
+
+                        Button("Cancel") {
+                            appUpdateManager.cancelInAppUpdate()
+                        }
+                        .controlSize(.small)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.regular)
                 } else {
+                    if let err = appUpdateManager.sparkleErrorMessage {
+                        Text(err)
+                            .font(.caption2)
+                            .foregroundStyle(.red)
+                            .lineLimit(1)
+                    }
+
+                    if let dmg = latestRelease?.dmgAsset {
+                        Menu {
+                            Button("Download Installer DMG (\(dmg.formattedSize))") {
+                                appUpdateManager.downloadLatestDMG()
+                            }
+                            Button("Open GitHub Releases Page") {
+                                appUpdateManager.openReleasePage()
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                                .font(.body)
+                        }
+                        .menuStyle(.borderlessButton)
+                        .fixedSize()
+                        .help("Manual download options")
+                    }
+
                     Button(action: {
-                        appUpdateManager.openReleasePage()
+                        appUpdateManager.startInAppUpdate()
                     }) {
                         HStack(spacing: 6) {
-                            Image(systemName: "arrow.down.circle.fill")
-                            Text("Download Release (.dmg)")
+                            Image(systemName: "arrow.triangle.2.circlepath.circle.fill")
+                            Text("Update & Relaunch")
                         }
                     }
                     .buttonStyle(.borderedProminent)

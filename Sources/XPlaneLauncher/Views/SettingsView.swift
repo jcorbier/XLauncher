@@ -200,28 +200,35 @@ struct SettingsView: View {
                                         Text("New Version Available: \(release.displayTitle)")
                                             .font(.subheadline)
                                             .fontWeight(.medium)
-                                        Text("Released on GitHub. You can download the latest installer (.dmg) or view the changelog.")
+                                        Text("Released on GitHub. You can update now or view the changelog.")
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
                                     }
 
                                     Spacer()
 
-                                    Button("What's New") {
-                                        showReleaseNotesSheet = true
-                                    }
-                                    .controlSize(.small)
+                                    if appUpdateManager.isSparkleUpdating {
+                                        HStack(spacing: 8) {
+                                            ProgressView()
+                                                .controlSize(.small)
+                                            Text(appUpdateManager.sparkleStatus.isEmpty ? "Updating..." : appUpdateManager.sparkleStatus)
+                                                .font(.caption2)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    } else {
+                                        Button("What's New") {
+                                            showReleaseNotesSheet = true
+                                        }
+                                        .controlSize(.small)
 
-                                    Button(action: {
-                                        appUpdateManager.downloadLatestDMG()
-                                    }) {
-                                        Label(
-                                            release.dmgAsset != nil ? "Download DMG (\(release.dmgAsset!.formattedSize))" : "Download Update",
-                                            systemImage: "arrow.down.circle.fill"
-                                        )
+                                        Button(action: {
+                                            appUpdateManager.startInAppUpdate()
+                                        }) {
+                                            Label("Update & Relaunch", systemImage: "arrow.triangle.2.circlepath.circle.fill")
+                                        }
+                                        .buttonStyle(.borderedProminent)
+                                        .controlSize(.small)
                                     }
-                                    .buttonStyle(.borderedProminent)
-                                    .controlSize(.small)
                                 }
                                 .padding(8)
                                 .background(Color.orange.opacity(0.08))

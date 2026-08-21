@@ -110,24 +110,25 @@ jobs:
       - name: Create App Bundle
         run: |
           chmod +x package.sh
-          # Run package script to create structure without rebuilding single arch
-          ./package.sh --skip-build
-          
-          # Overwrite with universal binary
-          cp .build/universal/XPlaneLauncher XLauncher.app/Contents/MacOS/XLauncher
+          # Run package script to create structure with universal binary
+          ./package.sh --skip-build --binary .build/universal/XPlaneLauncher
           
           # Update Version in Info.plist
           plutil -replace CFBundleShortVersionString -string "$VERSION" XLauncher.app/Contents/Info.plist
           plutil -replace CFBundleVersion -string "${{ github.run_number }}" XLauncher.app/Contents/Info.plist
           
           if [ "$IS_DRAFT" = "false" ]; then
-            echo "Signing app bundle with Developer ID and Hardened Runtime..."
+            echo "Signing Sparkle framework and app bundle with Developer ID and Hardened Runtime..."
+            codesign --force --deep --options runtime --timestamp \
+              --sign "Developer ID Application" \
+              XLauncher.app/Contents/Frameworks/Sparkle.framework
+
             codesign --force --deep --options runtime --timestamp \
               --sign "Developer ID Application" \
               --entitlements entitlements.plist \
               XLauncher.app
           else
-            codesign -f -s - XLauncher.app
+            codesign --force --deep -s - XLauncher.app
           fi
 
       - name: Create DMG
@@ -167,11 +168,33 @@ jobs:
               --issuer "$APPLE_API_ISSUER" \
               --wait
 
-            echo "Stapling notarization ticket to DMG..."
+            echo "Stapling notarization ticket to DMG and App..."
             xcrun stapler staple XLauncher.dmg
+            xcrun stapler staple XLauncher.app || true
 
             echo "Validating notarization ticket..."
             xcrun stapler validate XLauncher.dmg
+          fi
+
+      - name: Create Sparkle Update Archive
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          echo "Creating ZIP archive of app bundle..."
+          ditto -c -k --keepParent XLauncher.app XLauncher-macOS.zip
+
+          GENERATE_APPCAST=$(find .build -name "generate_appcast" -type f | head -n 1)
+          if [ -n "$SPARKLE_PRIVATE_KEY" ] && [ -n "$GENERATE_APPCAST" ]; then
+            echo "Generating Sparkle appcast.xml..."
+            mkdir -p sparkle_staging
+            cp XLauncher-macOS.zip sparkle_staging/
+            echo "$SPARKLE_PRIVATE_KEY" > sparkle_key.txt
+            DOWNLOAD_PREFIX="https://github.com/jcorbier/XLauncher/releases/download/${TAG_NAME}/"
+            "$GENERATE_APPCAST" --download-url-prefix "$DOWNLOAD_PREFIX" --ed-key-file sparkle_key.txt sparkle_staging/ || true
+            if [ -f "sparkle_staging/appcast.xml" ]; then
+              cp sparkle_staging/appcast.xml ./appcast.xml
+            fi
+            rm -f sparkle_key.txt
           fi
 
       - name: Cleanup Keychain
@@ -196,7 +219,10 @@ jobs:
       - name: Release
         uses: softprops/action-gh-release@v3
         with:
-          files: XLauncher.dmg
+          files: |
+            XLauncher.dmg
+            XLauncher-macOS.zip
+            appcast.xml
           body_path: RELEASE_CHANGELOG.md
           prerelease: ${{ steps.vars.outputs.prerelease }}
           name: ${{ steps.vars.outputs.release_name }}
