@@ -297,6 +297,49 @@ final class UpdaterConfigParserTests: XCTestCase {
         XCTAssertNotNil(mtlURL)
         XCTAssertEqual(mtlURL?.path, fakeCentralIvaoPilot.appendingPathComponent("mtlList.xml").path)
     }
+
+    func testCSLLightsUpdaterDeduplication() throws {
+        let pkgDir = tempDir.appendingPathComponent("TestPackage")
+        try fm.createDirectory(at: pkgDir, withIntermediateDirectories: true)
+
+        let xsbFile = pkgDir.appendingPathComponent("xsb_aircraft.txt")
+        let xsbContent = """
+        OBJ8_AIRCRAFT AFR_CRJ2
+        ICAO CRJ2
+        OBJ8 AIRCRAFT YES TestPackage/CRJ2.obj
+
+        OBJ8_AIRCRAFT DLH_CRJ2
+        ICAO CRJ2
+        OBJ8 AIRCRAFT YES TestPackage/CRJ2.obj
+
+        OBJ8_AIRCRAFT BAW_CRJ2
+        ICAO CRJ2
+        OBJ8 AIRCRAFT YES TestPackage/CRJ2.obj
+        """
+        try xsbContent.write(to: xsbFile, atomically: true, encoding: .utf8)
+
+        let objFile = pkgDir.appendingPathComponent("CRJ2.obj")
+        let objContent = """
+        I
+        800
+        OBJ
+        ANIM_begin
+        ANIM_hide 0 0 libxplanemp/controls/landing_lites_on
+        LIGHT_NAMED airplane_landing 1.0 2.0 3.0
+        ANIM_end
+        """
+        try objContent.write(to: objFile, atomically: true, encoding: .utf8)
+
+        var loggedMessages: [String] = []
+        CSLLightsUpdater.shared.processPackage(packageURL: pkgDir, flashingBeacons: true) { msg in
+            loggedMessages.append(msg)
+        }
+
+        // Even though xsb_aircraft.txt has 3 entries referencing CRJ2.obj, it should only be converted once
+        XCTAssertEqual(loggedMessages.count, 1)
+        XCTAssertEqual(loggedMessages.first, "[XP12 Lights] Converted CRJ2.obj (CRJ2)")
+        XCTAssertTrue(fm.fileExists(atPath: pkgDir.appendingPathComponent("CRJ2.bak").path))
+    }
 }
 
 

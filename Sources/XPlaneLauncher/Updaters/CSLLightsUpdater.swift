@@ -509,8 +509,13 @@ final class CSLLightsUpdater: Sendable {
 
         // Parse xsb_aircraft.txt for aircraft objects
         let aircraftObjects = parseXSB(content: content, parentDir: packageURL)
+        var processedFiles = Set<String>()
         for obj in aircraftObjects {
             let fileURL = obj.fileURL
+            let normalizedPath = fileURL.standardizedFileURL.path
+            guard !processedFiles.contains(normalizedPath) else { continue }
+            processedFiles.insert(normalizedPath)
+
             guard fileManager.fileExists(atPath: fileURL.path) else { continue }
 
             // Backup to .bak if not already backed up
