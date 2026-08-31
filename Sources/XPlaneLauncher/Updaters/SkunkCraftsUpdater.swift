@@ -438,6 +438,53 @@ actor SkunkCraftsUpdaterService {
         await logHandler("[SkunkCrafts] Update completed successfully.")
         await progressHandler("Up to date", 1.0)
     }
+
+    func fetchReleaseNotes(
+        for addonFolder: URL,
+        config: SkunkCraftsConfig,
+        logHandler: @Sendable @escaping @MainActor (String) -> Void = { _ in }
+    ) async throws -> String? {
+        if let baseURLString = config.baseURL ?? config.remoteManifestURL {
+            var base = baseURLString
+            if base.hasSuffix("skunkcrafts_updater.cfg") {
+                base = String(base.dropLast("skunkcrafts_updater.cfg".count))
+            }
+            if !base.hasSuffix("/") {
+                base += "/"
+            }
+            if let baseURL = URL(string: base) {
+                await logHandler("[SkunkCrafts] Searching for changelog / release notes in remote manifest for \(config.name)...")
+
+                let whitelistURL = baseURL.appendingPathComponent("skunkcrafts_updater_whitelist.txt")
+                if let whitelistText = try? await fetchTextContent(from: whitelistURL) {
+                    let whitelistItems = parseWhitelist(content: whitelistText)
+                    let candidatePaths = whitelistItems.map(\.relativePath)
+                    if let bestMatch = ChangelogFinder.bestChangelogMatch(in: candidatePaths) {
+                        await logHandler("[SkunkCrafts] Found release notes candidate: \(bestMatch)")
+                        let relativeEncoded = bestMatch
+                            .split(separator: "/")
+                            .map { $0.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? String($0) }
+                            .joined(separator: "/")
+                        if let fileURL = URL(string: relativeEncoded, relativeTo: baseURL),
+                           let content = try? await fetchTextContent(from: fileURL),
+                           !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            return content
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fallback to local file in addon folder
+        if let localURL = ChangelogFinder.findLocalChangelog(in: addonFolder),
+           let content = try? String(contentsOf: localURL, encoding: .utf8),
+           !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            await logHandler("[SkunkCrafts] Loaded local release notes from \(localURL.lastPathComponent)")
+            return content
+        }
+
+        return nil
+    }
 }
 
 // MARK: - AddonUpdater Conformance
@@ -479,4 +526,18 @@ extension SkunkCraftsUpdaterService: AddonUpdater {
             progressHandler: progressHandler
         )
     }
+
+    func fetchReleaseNotes(
+        for addon: UpdateManager.UpdatableAddon,
+        logHandler: @Sendable @escaping @MainActor (String) -> Void = { _ in }
+    ) async throws -> String? {
+        let config = SkunkCraftsConfig(
+            name: addon.name,
+            version: addon.latestVersion ?? addon.currentVersion,
+            remoteManifestURL: addon.remoteManifestURL,
+            baseURL: nil
+        )
+        return try await fetchReleaseNotes(for: addon.folderURL, config: config, logHandler: logHandler)
+    }
 }
+

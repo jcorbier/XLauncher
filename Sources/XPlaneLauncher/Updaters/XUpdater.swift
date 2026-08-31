@@ -989,6 +989,51 @@ actor XUpdaterService {
             try? content.write(to: defaultURL, atomically: true, encoding: .utf8)
         }
     }
+
+    func fetchReleaseNotes(
+        for addonFolder: URL,
+        config: XUpdaterConfig,
+        logHandler: @Sendable @escaping @MainActor (String) -> Void = { _ in }
+    ) async throws -> String? {
+        var activeConfig = config
+        if (activeConfig.login == nil || activeConfig.licenseKey == nil || activeConfig.snapshotNum == nil),
+           let configFile = findConfig(in: addonFolder),
+           let fullConfig = parseConfig(at: configFile, defaultName: config.name) {
+            activeConfig = fullConfig
+        }
+
+        do {
+            let (_, _, files) = try await checkRemoteVersion(config: activeConfig, logHandler: logHandler)
+            let candidatePaths = files.map(\.path)
+            if let bestMatchPath = ChangelogFinder.bestChangelogMatch(in: candidatePaths),
+               let item = files.first(where: { $0.path == bestMatchPath }) {
+                await logHandler("[X-Updater] Found release notes candidate in remote manifest: \(item.path)")
+                if let downloadURLString = item.url ?? activeConfig.remoteURL,
+                   let downloadURL = URL(string: downloadURLString) {
+                    let (fileData, response) = try await URLSession.shared.data(from: downloadURL)
+                    if (response as? HTTPURLResponse)?.statusCode == 200 {
+                        let finalData = decompressGzip(data: fileData) ?? fileData
+                        if let text = String(data: finalData, encoding: .utf8) ?? String(data: finalData, encoding: .isoLatin1),
+                           !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            return text
+                        }
+                    }
+                }
+            }
+        } catch {
+            await logHandler("[X-Updater] Remote release notes lookup error: \(error.localizedDescription)")
+        }
+
+        // Fallback to local files
+        if let localURL = ChangelogFinder.findLocalChangelog(in: addonFolder),
+           let content = (try? String(contentsOf: localURL, encoding: .utf8)) ?? (try? String(contentsOf: localURL, encoding: .isoLatin1)),
+           !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            await logHandler("[X-Updater] Loaded local release notes from \(localURL.lastPathComponent)")
+            return content
+        }
+
+        return nil
+    }
 }
 
 // MARK: - AddonUpdater Conformance
@@ -1028,4 +1073,17 @@ extension XUpdaterService: AddonUpdater {
             progressHandler: progressHandler
         )
     }
+
+    func fetchReleaseNotes(
+        for addon: UpdateManager.UpdatableAddon,
+        logHandler: @Sendable @escaping @MainActor (String) -> Void = { _ in }
+    ) async throws -> String? {
+        let config = XUpdaterConfig(
+            name: addon.name,
+            version: addon.latestVersion ?? addon.currentVersion,
+            remoteURL: addon.remoteManifestURL
+        )
+        return try await fetchReleaseNotes(for: addon.folderURL, config: config, logHandler: logHandler)
+    }
 }
+

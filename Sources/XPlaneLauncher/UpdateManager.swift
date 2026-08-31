@@ -341,4 +341,17 @@ class UpdateManager {
             }
         }
     }
+
+    func fetchReleaseNotes(for addon: UpdatableAddon) async -> String? {
+        let updater = addon.updaterType.updater
+        do {
+            return try await updater.fetchReleaseNotes(for: addon) { [weak self] msg in
+                self?.log(msg)
+            }
+        } catch {
+            log("Error fetching release notes for \(addon.name): \(error.localizedDescription)", level: .error)
+            return nil
+        }
+    }
 }
+

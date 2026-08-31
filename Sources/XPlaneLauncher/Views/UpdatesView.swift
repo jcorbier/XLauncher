@@ -26,6 +26,7 @@ struct UpdatesView: View {
     @Environment(UpdateManager.self) var updateManager
     @State private var selectedFilter: AddonCategoryFilter = .all
     @State private var showDebugConsole: Bool = false
+    @State private var selectedAddonForReleaseNotes: UpdateManager.UpdatableAddon? = nil
 
     enum AddonCategoryFilter: String, CaseIterable, Identifiable {
         case all = "All"
@@ -120,7 +121,9 @@ struct UpdatesView: View {
             } else {
                 List {
                     ForEach(filteredAddons) { item in
-                        UpdatableAddonRow(addon: item)
+                        UpdatableAddonRow(addon: item, onShowReleaseNotes: { addon in
+                            selectedAddonForReleaseNotes = addon
+                        })
                     }
                 }
                 .listStyle(.inset)
@@ -133,12 +136,16 @@ struct UpdatesView: View {
                     .frame(height: 180)
             }
         }
+        .sheet(item: $selectedAddonForReleaseNotes) { addon in
+            AddonReleaseNotesSheet(addon: addon)
+        }
     }
 }
 
 struct UpdatableAddonRow: View {
     @Environment(UpdateManager.self) var updateManager
     let addon: UpdateManager.UpdatableAddon
+    var onShowReleaseNotes: ((UpdateManager.UpdatableAddon) -> Void)? = nil
 
     var categoryColor: Color {
         switch addon.addonCategory {
@@ -233,9 +240,22 @@ struct UpdatableAddonRow: View {
 
                     if addon.isUpdateAvailable {
                         let isRepair = (addon.statusMessage.lowercased().contains("repair") || (addon.currentVersion != nil && addon.latestVersion != nil && addon.currentVersion == addon.latestVersion))
-                        Button(isRepair ? "Repair" : "Update") {
+                        Menu {
+                            Button {
+                                onShowReleaseNotes?(addon)
+                            } label: {
+                                Label("Show Changes...", systemImage: "doc.text")
+                            }
+                            Divider()
+                            Button("Verify & Repair Files") {
+                                updateManager.updateAddon(addon)
+                            }
+                        } label: {
+                            Text(isRepair ? "Repair" : "Update")
+                        } primaryAction: {
                             updateManager.updateAddon(addon)
                         }
+                        .menuStyle(.borderedButton)
                         .buttonStyle(.borderedProminent)
                         .tint(isRepair ? .orange : .accentColor)
                         .controlSize(.small)
@@ -243,6 +263,11 @@ struct UpdatableAddonRow: View {
                         Menu {
                             Button("Check for Updates") {
                                 updateManager.checkForUpdates(for: addon)
+                            }
+                            Button {
+                                onShowReleaseNotes?(addon)
+                            } label: {
+                                Label("Show Changes...", systemImage: "doc.text")
                             }
                             Button("Verify & Repair Files") {
                                 updateManager.updateAddon(addon)
@@ -267,6 +292,12 @@ struct UpdatableAddonRow: View {
                 .stroke(Color(NSColor.separatorColor), lineWidth: 0.5)
         )
         .contextMenu {
+            Button {
+                onShowReleaseNotes?(addon)
+            } label: {
+                Label("Show Changes...", systemImage: "doc.text")
+            }
+            Divider()
             Button("Check for Updates") {
                 updateManager.checkForUpdates(for: addon)
             }
@@ -280,3 +311,4 @@ struct UpdatableAddonRow: View {
         }
     }
 }
+
