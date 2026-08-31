@@ -70,8 +70,16 @@ final class PathService: Sendable {
         customSceneryFolder(for: xPlanePath).appendingPathComponent("scenery_packs.ini")
     }
 
+    func flyWithLuaFolder(for xPlanePath: URL) -> URL {
+        xPlanePath.appendingPathComponent("Resources").appendingPathComponent("plugins").appendingPathComponent("FlyWithLua")
+    }
+
     func flyWithLuaScriptsFolder(for xPlanePath: URL) -> URL {
-        xPlanePath.appendingPathComponent("Resources").appendingPathComponent("plugins").appendingPathComponent("FlyWithLua").appendingPathComponent("Scripts")
+        flyWithLuaFolder(for: xPlanePath).appendingPathComponent("Scripts")
+    }
+
+    func flyWithLuaModulesFolder(for xPlanePath: URL) -> URL {
+        flyWithLuaFolder(for: xPlanePath).appendingPathComponent("Modules")
     }
 
     func cslFolder(for xPlanePath: URL) -> URL {

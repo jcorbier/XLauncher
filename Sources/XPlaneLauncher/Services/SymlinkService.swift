@@ -71,6 +71,41 @@ final class SymlinkService: Sendable {
         return Dictionary(uniqueKeysWithValues: contents.map { ($0.lastPathComponent, $0) })
     }
 
+    private struct LuaStructure {
+        let scriptsDir: URL?
+        let modulesDir: URL?
+        let isStructured: Bool
+    }
+
+    private func inspectLuaDirectory(at url: URL) -> LuaStructure {
+        let subItems = (try? fileManager.contentsOfDirectory(at: url, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+        let scriptsDir = subItems.first { item in
+            var isDir: ObjCBool = false
+            return fileManager.fileExists(atPath: item.path, isDirectory: &isDir) && isDir.boolValue && item.lastPathComponent.caseInsensitiveCompare("Scripts") == .orderedSame
+        }
+        let modulesDir = subItems.first { item in
+            var isDir: ObjCBool = false
+            return fileManager.fileExists(atPath: item.path, isDirectory: &isDir) && isDir.boolValue && item.lastPathComponent.caseInsensitiveCompare("Modules") == .orderedSame
+        }
+        return LuaStructure(
+            scriptsDir: scriptsDir,
+            modulesDir: modulesDir,
+            isStructured: (scriptsDir != nil || modulesDir != nil)
+        )
+    }
+
+    private func resolveModulesTargetFolder(from scriptsTargetFolder: URL?, explicitModulesTarget: URL?) -> URL? {
+        if let explicitModulesTarget = explicitModulesTarget {
+            return explicitModulesTarget
+        }
+        guard let scriptsTarget = scriptsTargetFolder else { return nil }
+        if scriptsTarget.lastPathComponent.caseInsensitiveCompare("Scripts") == .orderedSame {
+            return scriptsTarget.deletingLastPathComponent().appendingPathComponent("Modules")
+        } else {
+            return scriptsTarget.appendingPathComponent("Modules")
+        }
+    }
+
     /// Lua bundles are linked child by child, so the children are the repair sources.
     func luaScriptLinkSources(in dataFolder: URL) -> [String: URL] {
         guard let contents = try? fileManager.contentsOfDirectory(at: dataFolder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else {
@@ -83,12 +118,44 @@ final class SymlinkService: Sendable {
             guard fileManager.fileExists(atPath: item.path, isDirectory: &isDir) else { continue }
 
             if isDir.boolValue {
-                let children = (try? fileManager.contentsOfDirectory(at: item, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
-                for child in children {
-                    sources[child.lastPathComponent] = child
+                let structure = inspectLuaDirectory(at: item)
+                if structure.isStructured {
+                    if let scriptsDir = structure.scriptsDir {
+                        let children = (try? fileManager.contentsOfDirectory(at: scriptsDir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+                        for child in children {
+                            sources[child.lastPathComponent] = child
+                        }
+                    }
+                } else {
+                    let children = (try? fileManager.contentsOfDirectory(at: item, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+                    for child in children {
+                        sources[child.lastPathComponent] = child
+                    }
                 }
             } else {
                 sources[item.lastPathComponent] = item
+            }
+        }
+        return sources
+    }
+
+    /// Modules for structured Lua add-ons.
+    func luaModuleLinkSources(in dataFolder: URL) -> [String: URL] {
+        guard let contents = try? fileManager.contentsOfDirectory(at: dataFolder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else {
+            return [:]
+        }
+
+        var sources: [String: URL] = [:]
+        for item in contents {
+            var isDir: ObjCBool = false
+            guard fileManager.fileExists(atPath: item.path, isDirectory: &isDir), isDir.boolValue else { continue }
+
+            let structure = inspectLuaDirectory(at: item)
+            if let modulesDir = structure.modulesDir {
+                let children = (try? fileManager.contentsOfDirectory(at: modulesDir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+                for child in children {
+                    sources[child.lastPathComponent] = child
+                }
             }
         }
         return sources
@@ -199,11 +266,13 @@ final class SymlinkService: Sendable {
 
     // MARK: - FlyWithLua Scripts
 
-    func scanLuaScripts(dataFolder: URL, targetFolder: URL?) throws -> [LuaScript] {
+    func scanLuaScripts(dataFolder: URL, targetFolder: URL?, modulesTargetFolder: URL? = nil) throws -> [LuaScript] {
         var isDir: ObjCBool = false
         guard fileManager.fileExists(atPath: dataFolder.path, isDirectory: &isDir), isDir.boolValue else {
             return []
         }
+
+        let resolvedModulesFolder = resolveModulesTargetFolder(from: targetFolder, explicitModulesTarget: modulesTargetFolder)
 
         let contents = try fileManager.contentsOfDirectory(at: dataFolder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
         var list: [LuaScript] = []
@@ -217,10 +286,26 @@ final class SymlinkService: Sendable {
                 var isEnabled = false
                 if let targetFolder = targetFolder {
                     if isDirBool {
-                        if let childContents = try? fileManager.contentsOfDirectory(at: item, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]),
-                           let firstChild = childContents.first {
-                            let childLink = targetFolder.appendingPathComponent(firstChild.lastPathComponent)
-                            isEnabled = fileManager.fileExists(atPath: childLink.path)
+                        let structure = inspectLuaDirectory(at: item)
+                        if structure.isStructured {
+                            if let scriptsDir = structure.scriptsDir,
+                               let childContents = try? fileManager.contentsOfDirectory(at: scriptsDir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]),
+                               let firstChild = childContents.first {
+                                let childLink = targetFolder.appendingPathComponent(firstChild.lastPathComponent)
+                                isEnabled = fileManager.fileExists(atPath: childLink.path)
+                            } else if let modulesDir = structure.modulesDir,
+                                      let modulesTarget = resolvedModulesFolder,
+                                      let childContents = try? fileManager.contentsOfDirectory(at: modulesDir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]),
+                                      let firstChild = childContents.first {
+                                let childLink = modulesTarget.appendingPathComponent(firstChild.lastPathComponent)
+                                isEnabled = fileManager.fileExists(atPath: childLink.path)
+                            }
+                        } else {
+                            if let childContents = try? fileManager.contentsOfDirectory(at: item, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]),
+                               let firstChild = childContents.first {
+                                let childLink = targetFolder.appendingPathComponent(firstChild.lastPathComponent)
+                                isEnabled = fileManager.fileExists(atPath: childLink.path)
+                            }
                         }
                     } else {
                         let targetLink = targetFolder.appendingPathComponent(folderName)
@@ -235,30 +320,76 @@ final class SymlinkService: Sendable {
         return list.sorted { $0.name < $1.name }
     }
 
-    func setLuaScriptEnabled(item: LuaScript, enabled: Bool, dataFolder: URL, targetFolder: URL) throws {
+    func setLuaScriptEnabled(item: LuaScript, enabled: Bool, dataFolder: URL, targetFolder: URL, modulesTargetFolder: URL? = nil) throws {
         let cleanName = try PathSecurity.sanitizePathComponent(item.folderName)
         let itemSourceURL = try PathSecurity.validateSubpath(relativePath: cleanName, within: dataFolder)
+        let resolvedModulesFolder = resolveModulesTargetFolder(from: targetFolder, explicitModulesTarget: modulesTargetFolder)
 
         if enabled {
-            try? fileManager.createDirectory(at: targetFolder, withIntermediateDirectories: true)
             if item.isDirectory {
-                let children = try fileManager.contentsOfDirectory(at: itemSourceURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
-                for child in children {
-                    let childCleanName = try PathSecurity.sanitizePathComponent(child.lastPathComponent)
-                    let linkURL = try PathSecurity.validateSubpath(relativePath: childCleanName, within: targetFolder)
-                    try createOrReplaceLink(at: linkURL, to: child)
+                let structure = inspectLuaDirectory(at: itemSourceURL)
+                if structure.isStructured {
+                    if let scriptsDir = structure.scriptsDir {
+                        try? fileManager.createDirectory(at: targetFolder, withIntermediateDirectories: true)
+                        let children = try fileManager.contentsOfDirectory(at: scriptsDir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
+                        for child in children {
+                            let childCleanName = try PathSecurity.sanitizePathComponent(child.lastPathComponent)
+                            let linkURL = try PathSecurity.validateSubpath(relativePath: childCleanName, within: targetFolder)
+                            try createOrReplaceLink(at: linkURL, to: child)
+                        }
+                    }
+                    if let modulesDir = structure.modulesDir, let modulesTarget = resolvedModulesFolder {
+                        try? fileManager.createDirectory(at: modulesTarget, withIntermediateDirectories: true)
+                        let children = try fileManager.contentsOfDirectory(at: modulesDir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
+                        for child in children {
+                            let childCleanName = try PathSecurity.sanitizePathComponent(child.lastPathComponent)
+                            let linkURL = try PathSecurity.validateSubpath(relativePath: childCleanName, within: modulesTarget)
+                            try createOrReplaceLink(at: linkURL, to: child)
+                        }
+                    }
+                } else {
+                    try? fileManager.createDirectory(at: targetFolder, withIntermediateDirectories: true)
+                    let children = try fileManager.contentsOfDirectory(at: itemSourceURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
+                    for child in children {
+                        let childCleanName = try PathSecurity.sanitizePathComponent(child.lastPathComponent)
+                        let linkURL = try PathSecurity.validateSubpath(relativePath: childCleanName, within: targetFolder)
+                        try createOrReplaceLink(at: linkURL, to: child)
+                    }
                 }
             } else {
+                try? fileManager.createDirectory(at: targetFolder, withIntermediateDirectories: true)
                 let linkURL = try PathSecurity.validateSubpath(relativePath: cleanName, within: targetFolder)
                 try createOrReplaceLink(at: linkURL, to: itemSourceURL)
             }
         } else {
             if item.isDirectory {
-                if let children = try? fileManager.contentsOfDirectory(at: itemSourceURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
-                    for child in children {
-                        if let childCleanName = try? PathSecurity.sanitizePathComponent(child.lastPathComponent),
-                           let linkURL = try? PathSecurity.validateSubpath(relativePath: childCleanName, within: targetFolder) {
-                            try removeLink(at: linkURL)
+                let structure = inspectLuaDirectory(at: itemSourceURL)
+                if structure.isStructured {
+                    if let scriptsDir = structure.scriptsDir,
+                       let children = try? fileManager.contentsOfDirectory(at: scriptsDir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
+                        for child in children {
+                            if let childCleanName = try? PathSecurity.sanitizePathComponent(child.lastPathComponent),
+                               let linkURL = try? PathSecurity.validateSubpath(relativePath: childCleanName, within: targetFolder) {
+                                try removeLink(at: linkURL)
+                            }
+                        }
+                    }
+                    if let modulesDir = structure.modulesDir, let modulesTarget = resolvedModulesFolder,
+                       let children = try? fileManager.contentsOfDirectory(at: modulesDir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
+                        for child in children {
+                            if let childCleanName = try? PathSecurity.sanitizePathComponent(child.lastPathComponent),
+                               let linkURL = try? PathSecurity.validateSubpath(relativePath: childCleanName, within: modulesTarget) {
+                                try removeLink(at: linkURL)
+                            }
+                        }
+                    }
+                } else {
+                    if let children = try? fileManager.contentsOfDirectory(at: itemSourceURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
+                        for child in children {
+                            if let childCleanName = try? PathSecurity.sanitizePathComponent(child.lastPathComponent),
+                               let linkURL = try? PathSecurity.validateSubpath(relativePath: childCleanName, within: targetFolder) {
+                                try removeLink(at: linkURL)
+                            }
                         }
                     }
                 }

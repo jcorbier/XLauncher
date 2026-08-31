@@ -149,6 +149,118 @@ final class SymlinkServiceTests: XCTestCase {
         XCTAssertFalse(fm.fileExists(atPath: childLink2.path))
     }
 
+    // MARK: - Structured FlyWithLua Addons (Scripts & Modules)
+
+    func testScanAndToggleStructuredLuaScriptWithScriptsOnlyAndSkunkCraftsConfig() throws {
+        let addonDir = dataFolder.appendingPathComponent("ChecklistAddon")
+        try fm.createDirectory(at: addonDir, withIntermediateDirectories: true)
+
+        let cfgFile = addonDir.appendingPathComponent("skunkcrafts_updater.cfg")
+        let whitelistFile = addonDir.appendingPathComponent("skunkcrafts_updater_whitelist.txt")
+        try "name|Checklist".write(to: cfgFile, atomically: true, encoding: .utf8)
+        try "whitelist".write(to: whitelistFile, atomically: true, encoding: .utf8)
+
+        let scriptsSubdir = addonDir.appendingPathComponent("Scripts")
+        try fm.createDirectory(at: scriptsSubdir, withIntermediateDirectories: true)
+        let mainScript = scriptsSubdir.appendingPathComponent("checklist_main.lua")
+        let helperScript = scriptsSubdir.appendingPathComponent("checklist_helper.lua")
+        try "-- main".write(to: mainScript, atomically: true, encoding: .utf8)
+        try "-- helper".write(to: helperScript, atomically: true, encoding: .utf8)
+
+        // Verify link sources detection
+        let scriptSources = service.luaScriptLinkSources(in: dataFolder)
+        XCTAssertEqual(scriptSources.count, 2)
+        XCTAssertEqual(scriptSources["checklist_main.lua"]?.resolvingSymlinksInPath().path, mainScript.resolvingSymlinksInPath().path)
+        XCTAssertEqual(scriptSources["checklist_helper.lua"]?.resolvingSymlinksInPath().path, helperScript.resolvingSymlinksInPath().path)
+        XCTAssertNil(scriptSources["skunkcrafts_updater.cfg"])
+        XCTAssertNil(scriptSources["Scripts"])
+
+        let moduleSources = service.luaModuleLinkSources(in: dataFolder)
+        XCTAssertTrue(moduleSources.isEmpty)
+
+        let item = LuaScript(name: "ChecklistAddon", isEnabled: false, folderName: "ChecklistAddon", isDirectory: true)
+
+        // Enable
+        try service.setLuaScriptEnabled(item: item, enabled: true, dataFolder: dataFolder, targetFolder: targetFolder)
+
+        let link1 = targetFolder.appendingPathComponent("checklist_main.lua")
+        let link2 = targetFolder.appendingPathComponent("checklist_helper.lua")
+        let wrongCfgLink = targetFolder.appendingPathComponent("skunkcrafts_updater.cfg")
+        let wrongScriptsDirLink = targetFolder.appendingPathComponent("Scripts")
+
+        XCTAssertTrue(fm.fileExists(atPath: link1.path))
+        XCTAssertTrue(fm.fileExists(atPath: link2.path))
+        XCTAssertFalse(fm.fileExists(atPath: wrongCfgLink.path))
+        XCTAssertFalse(fm.fileExists(atPath: wrongScriptsDirLink.path))
+
+        // Scan
+        let scanned = try service.scanLuaScripts(dataFolder: dataFolder, targetFolder: targetFolder)
+        XCTAssertEqual(scanned.count, 1)
+        XCTAssertEqual(scanned[0].name, "ChecklistAddon")
+        XCTAssertTrue(scanned[0].isEnabled)
+
+        // Disable
+        try service.setLuaScriptEnabled(item: item, enabled: false, dataFolder: dataFolder, targetFolder: targetFolder)
+        XCTAssertFalse(fm.fileExists(atPath: link1.path))
+        XCTAssertFalse(fm.fileExists(atPath: link2.path))
+
+        let scannedAfterDisable = try service.scanLuaScripts(dataFolder: dataFolder, targetFolder: targetFolder)
+        XCTAssertFalse(scannedAfterDisable[0].isEnabled)
+    }
+
+    func testScanAndToggleStructuredLuaScriptWithScriptsAndModules() throws {
+        let scriptsFolder = tempDir.appendingPathComponent("FlyWithLua").appendingPathComponent("Scripts")
+        let modulesFolder = tempDir.appendingPathComponent("FlyWithLua").appendingPathComponent("Modules")
+        try fm.createDirectory(at: scriptsFolder, withIntermediateDirectories: true)
+        try fm.createDirectory(at: modulesFolder, withIntermediateDirectories: true)
+
+        let addonDir = dataFolder.appendingPathComponent("AdvancedLuaAddon")
+        let scriptsSubdir = addonDir.appendingPathComponent("Scripts")
+        let modulesSubdir = addonDir.appendingPathComponent("Modules")
+        try fm.createDirectory(at: scriptsSubdir, withIntermediateDirectories: true)
+        try fm.createDirectory(at: modulesSubdir, withIntermediateDirectories: true)
+
+        let cfgFile = addonDir.appendingPathComponent("skunkcrafts_updater.cfg")
+        try "name|Advanced".write(to: cfgFile, atomically: true, encoding: .utf8)
+
+        let actionScript = scriptsSubdir.appendingPathComponent("action.lua")
+        let libModule = modulesSubdir.appendingPathComponent("lib.lua")
+        try "-- action".write(to: actionScript, atomically: true, encoding: .utf8)
+        try "-- lib".write(to: libModule, atomically: true, encoding: .utf8)
+
+        // Check source indexing
+        let scriptSources = service.luaScriptLinkSources(in: dataFolder)
+        XCTAssertEqual(scriptSources["action.lua"]?.resolvingSymlinksInPath().path, actionScript.resolvingSymlinksInPath().path)
+        XCTAssertNil(scriptSources["lib.lua"])
+
+        let moduleSources = service.luaModuleLinkSources(in: dataFolder)
+        XCTAssertEqual(moduleSources["lib.lua"]?.resolvingSymlinksInPath().path, libModule.resolvingSymlinksInPath().path)
+        XCTAssertNil(moduleSources["action.lua"])
+
+        let item = LuaScript(name: "AdvancedLuaAddon", isEnabled: false, folderName: "AdvancedLuaAddon", isDirectory: true)
+
+        // Enable
+        try service.setLuaScriptEnabled(item: item, enabled: true, dataFolder: dataFolder, targetFolder: scriptsFolder, modulesTargetFolder: modulesFolder)
+
+        let scriptLink = scriptsFolder.appendingPathComponent("action.lua")
+        let moduleLink = modulesFolder.appendingPathComponent("lib.lua")
+        let wrongCfgLink = scriptsFolder.appendingPathComponent("skunkcrafts_updater.cfg")
+
+        XCTAssertTrue(fm.fileExists(atPath: scriptLink.path))
+        XCTAssertTrue(fm.fileExists(atPath: moduleLink.path))
+        XCTAssertFalse(fm.fileExists(atPath: wrongCfgLink.path))
+
+        // Scan
+        let scanned = try service.scanLuaScripts(dataFolder: dataFolder, targetFolder: scriptsFolder, modulesTargetFolder: modulesFolder)
+        XCTAssertEqual(scanned.count, 1)
+        XCTAssertTrue(scanned[0].isEnabled)
+
+        // Disable
+        try service.setLuaScriptEnabled(item: item, enabled: false, dataFolder: dataFolder, targetFolder: scriptsFolder, modulesTargetFolder: modulesFolder)
+        XCTAssertFalse(fm.fileExists(atPath: scriptLink.path))
+        XCTAssertFalse(fm.fileExists(atPath: moduleLink.path))
+    }
+
     // MARK: - Stale Link Repair Tests
 
     func testRepairStaleLinks() throws {
@@ -181,5 +293,62 @@ final class SymlinkServiceTests: XCTestCase {
         XCTAssertTrue(fm.fileExists(atPath: linkA.path), "Repaired link should now resolve to new source")
         let destination = try fm.destinationOfSymbolicLink(atPath: linkA.path)
         XCTAssertEqual(URL(fileURLWithPath: destination).resolvingSymlinksInPath().path, addonANew.resolvingSymlinksInPath().path)
+    }
+
+    func testRepairStaleLinksForStructuredLuaScriptsAndModules() throws {
+        let oldDataDir = tempDir.appendingPathComponent("OldData")
+        let newDataDir = tempDir.appendingPathComponent("NewData")
+        let scriptsFolder = tempDir.appendingPathComponent("FlyWithLua").appendingPathComponent("Scripts")
+        let modulesFolder = tempDir.appendingPathComponent("FlyWithLua").appendingPathComponent("Modules")
+        try fm.createDirectory(at: oldDataDir, withIntermediateDirectories: true)
+        try fm.createDirectory(at: newDataDir, withIntermediateDirectories: true)
+        try fm.createDirectory(at: scriptsFolder, withIntermediateDirectories: true)
+        try fm.createDirectory(at: modulesFolder, withIntermediateDirectories: true)
+
+        let oldAddon = oldDataDir.appendingPathComponent("MyLua")
+        let oldScripts = oldAddon.appendingPathComponent("Scripts")
+        let oldModules = oldAddon.appendingPathComponent("Modules")
+        try fm.createDirectory(at: oldScripts, withIntermediateDirectories: true)
+        try fm.createDirectory(at: oldModules, withIntermediateDirectories: true)
+
+        let oldScriptFile = oldScripts.appendingPathComponent("myscript.lua")
+        let oldModuleFile = oldModules.appendingPathComponent("mymodule.lua")
+        try "old script".write(to: oldScriptFile, atomically: true, encoding: .utf8)
+        try "old module".write(to: oldModuleFile, atomically: true, encoding: .utf8)
+
+        // Point links to old location
+        let scriptLink = scriptsFolder.appendingPathComponent("myscript.lua")
+        let moduleLink = modulesFolder.appendingPathComponent("mymodule.lua")
+        try fm.createSymbolicLink(at: scriptLink, withDestinationURL: oldScriptFile)
+        try fm.createSymbolicLink(at: moduleLink, withDestinationURL: oldModuleFile)
+
+        // Delete old location, create new location in newDataDir
+        try fm.removeItem(at: oldDataDir)
+        let newAddon = newDataDir.appendingPathComponent("MyLua")
+        let newScripts = newAddon.appendingPathComponent("Scripts")
+        let newModules = newAddon.appendingPathComponent("Modules")
+        try fm.createDirectory(at: newScripts, withIntermediateDirectories: true)
+        try fm.createDirectory(at: newModules, withIntermediateDirectories: true)
+
+        let newScriptFile = newScripts.appendingPathComponent("myscript.lua")
+        let newModuleFile = newModules.appendingPathComponent("mymodule.lua")
+        try "new script".write(to: newScriptFile, atomically: true, encoding: .utf8)
+        try "new module".write(to: newModuleFile, atomically: true, encoding: .utf8)
+
+        // Verify links are stale
+        XCTAssertFalse(fm.fileExists(atPath: scriptLink.path))
+        XCTAssertFalse(fm.fileExists(atPath: moduleLink.path))
+
+        // Repair script links
+        let scriptSources = service.luaScriptLinkSources(in: newDataDir)
+        let repairedScripts = service.repairStaleLinks(in: scriptsFolder, using: scriptSources)
+        XCTAssertEqual(repairedScripts, ["myscript.lua"])
+        XCTAssertTrue(fm.fileExists(atPath: scriptLink.path))
+
+        // Repair module links
+        let moduleSources = service.luaModuleLinkSources(in: newDataDir)
+        let repairedModules = service.repairStaleLinks(in: modulesFolder, using: moduleSources)
+        XCTAssertEqual(repairedModules, ["mymodule.lua"])
+        XCTAssertTrue(fm.fileExists(atPath: moduleLink.path))
     }
 }

@@ -95,6 +95,11 @@ class PluginManager {
         return pathService.flyWithLuaScriptsFolder(for: xPlanePath)
     }
 
+    var flyWithLuaModulesFolder: URL? {
+        guard let xPlanePath = xPlanePath else { return nil }
+        return pathService.flyWithLuaModulesFolder(for: xPlanePath)
+    }
+
     var cslPath: URL? {
         guard let xPlanePath = xPlanePath else { return nil }
         return pathService.cslFolder(for: xPlanePath)
@@ -395,11 +400,19 @@ class PluginManager {
             )
         }
 
-        if let dataFolder = luaScriptsDataFolder, let targetFolder = flyWithLuaScriptsFolder {
-            symlinkService.repairStaleLinks(
-                in: targetFolder,
-                using: symlinkService.luaScriptLinkSources(in: dataFolder)
-            )
+        if let dataFolder = luaScriptsDataFolder {
+            if let targetFolder = flyWithLuaScriptsFolder {
+                symlinkService.repairStaleLinks(
+                    in: targetFolder,
+                    using: symlinkService.luaScriptLinkSources(in: dataFolder)
+                )
+            }
+            if let modulesFolder = flyWithLuaModulesFolder {
+                symlinkService.repairStaleLinks(
+                    in: modulesFolder,
+                    using: symlinkService.luaModuleLinkSources(in: dataFolder)
+                )
+            }
         }
     }
 
@@ -446,8 +459,9 @@ class PluginManager {
         }
 
         let targetFolder = flyWithLuaScriptsFolder
+        let modulesFolder = flyWithLuaModulesFolder
         do {
-            self.luaScripts = try symlinkService.scanLuaScripts(dataFolder: luaScriptsFolder, targetFolder: targetFolder)
+            self.luaScripts = try symlinkService.scanLuaScripts(dataFolder: luaScriptsFolder, targetFolder: targetFolder, modulesTargetFolder: modulesFolder)
             ConsoleLogger.shared.log("Scanned \(self.luaScripts.count) Lua scripts (\(self.luaScripts.filter { $0.isEnabled }.count) enabled)", category: .lua)
         } catch {
             self.lastErrorMessage = "Error scanning Lua scripts: \(error.localizedDescription)"
@@ -549,10 +563,11 @@ class PluginManager {
         guard let targetFolder = flyWithLuaScriptsFolder,
               let sourceRoot = luaScriptsDataFolder else { return }
 
+        let modulesFolder = flyWithLuaModulesFolder
         let newEnabled = !item.isEnabled
 
         do {
-            try symlinkService.setLuaScriptEnabled(item: item, enabled: newEnabled, dataFolder: sourceRoot, targetFolder: targetFolder)
+            try symlinkService.setLuaScriptEnabled(item: item, enabled: newEnabled, dataFolder: sourceRoot, targetFolder: targetFolder, modulesTargetFolder: modulesFolder)
             if let index = luaScripts.firstIndex(where: { $0.id == item.id }) {
                 luaScripts[index].isEnabled = newEnabled
                 ConsoleLogger.shared.log("\(newEnabled ? "Enabled" : "Disabled") Lua script '\(item.name)'", category: .lua)
@@ -949,7 +964,8 @@ class PluginManager {
         guard let dataFolder = luaScriptsDataFolder else { return }
         do {
             if let targetFolder = flyWithLuaScriptsFolder {
-                try? symlinkService.setLuaScriptEnabled(item: item, enabled: false, dataFolder: dataFolder, targetFolder: targetFolder)
+                let modulesFolder = flyWithLuaModulesFolder
+                try? symlinkService.setLuaScriptEnabled(item: item, enabled: false, dataFolder: dataFolder, targetFolder: targetFolder, modulesTargetFolder: modulesFolder)
             }
 
             let cleanName = try PathSecurity.sanitizePathComponent(item.folderName)
