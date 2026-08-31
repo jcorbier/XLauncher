@@ -36,13 +36,13 @@ struct SkunkCraftsFileItem: Sendable {
     let expectedSize: Int64?
 }
 
-final class SkunkCraftsUpdaterService: Sendable {
+actor SkunkCraftsUpdaterService {
     static let shared = SkunkCraftsUpdaterService()
     private var fileManager: FileManager { .default }
 
     // MARK: - Config Detection & Parsing
 
-    func findConfig(in folderURL: URL) -> URL? {
+    nonisolated func findConfig(in folderURL: URL) -> URL? {
         let skunkcraftsFiles = [
             "skunkcrafts_updater.cfg",
             "skunkcrafts_updater_beta.cfg",
@@ -51,14 +51,14 @@ final class SkunkCraftsUpdaterService: Sendable {
         ]
         for name in skunkcraftsFiles {
             let url = folderURL.appendingPathComponent(name)
-            if fileManager.fileExists(atPath: url.path) {
+            if FileManager.default.fileExists(atPath: url.path) {
                 return url
             }
         }
         return nil
     }
 
-    func parseConfig(at url: URL, defaultName: String) -> SkunkCraftsConfig? {
+    nonisolated func parseConfig(at url: URL, defaultName: String) -> SkunkCraftsConfig? {
         guard let content = try? String(contentsOf: url, encoding: .utf8) else {
             return nil
         }
@@ -103,7 +103,7 @@ final class SkunkCraftsUpdaterService: Sendable {
 
     // MARK: - Ignore & Blacklist Parsing
 
-    func parseIgnoreFile(in folderURL: URL) -> Set<String> {
+    nonisolated func parseIgnoreFile(in folderURL: URL) -> Set<String> {
         let ignoreFileURL = folderURL.appendingPathComponent("skunkcrafts_updater_ignore.txt")
         guard let content = try? String(contentsOf: ignoreFileURL, encoding: .utf8) else {
             return []
@@ -111,7 +111,7 @@ final class SkunkCraftsUpdaterService: Sendable {
         return parseBlacklist(content: content)
     }
 
-    func parseBlacklist(content: String) -> Set<String> {
+    nonisolated func parseBlacklist(content: String) -> Set<String> {
         var paths = Set<String>()
         let lines = content.components(separatedBy: .newlines)
         for line in lines {
@@ -123,7 +123,7 @@ final class SkunkCraftsUpdaterService: Sendable {
         return paths
     }
 
-    func isIgnored(relativePath: String, ignoredSet: Set<String>) -> Bool {
+    nonisolated func isIgnored(relativePath: String, ignoredSet: Set<String>) -> Bool {
         let normalizedPath = relativePath.replacingOccurrences(of: "\\", with: "/")
         for ignoreEntry in ignoredSet {
             if normalizedPath == ignoreEntry || normalizedPath.hasPrefix(ignoreEntry + "/") {
@@ -141,7 +141,7 @@ final class SkunkCraftsUpdaterService: Sendable {
 
     // MARK: - Manifest & Whitelist Parsing
 
-    func parseWhitelist(content: String) -> [SkunkCraftsFileItem] {
+    nonisolated func parseWhitelist(content: String) -> [SkunkCraftsFileItem] {
         var items: [SkunkCraftsFileItem] = []
         let metadataKeys: Set<String> = ["name", "version", "build", "url", "manifest_url", "base_url", "module", "disabled", "locked", "zone", "liveries"]
         let lines = content.components(separatedBy: .newlines)
@@ -185,7 +185,7 @@ final class SkunkCraftsUpdaterService: Sendable {
         return content
     }
 
-    func parseCRC32(_ string: String) -> UInt32? {
+    nonisolated func parseCRC32(_ string: String) -> UInt32? {
         let trimmed = string.trimmingCharacters(in: .whitespaces)
         if let dec = UInt32(trimmed) {
             return dec
@@ -197,11 +197,20 @@ final class SkunkCraftsUpdaterService: Sendable {
     }
 
     private func calculateCRC32UInt32(for url: URL) -> UInt32? {
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        return data.withUnsafeBytes { ptr -> UInt32 in
-            guard let baseAddress = ptr.baseAddress else { return 0 }
-            return UInt32(zlib.crc32(0, baseAddress.assumingMemoryBound(to: Bytef.self), uInt(data.count)))
+        guard let fileHandle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? fileHandle.close() }
+        var crc: uLong = zlib.crc32(0, nil, 0)
+        let bufferSize = 65536
+        while true {
+            let chunk = fileHandle.readData(ofLength: bufferSize)
+            if chunk.isEmpty { break }
+            chunk.withUnsafeBytes { ptr in
+                if let base = ptr.baseAddress {
+                    crc = zlib.crc32(crc, base.assumingMemoryBound(to: Bytef.self), uInt(chunk.count))
+                }
+            }
         }
+        return UInt32(crc)
     }
 
     func checkAddonStatus(
@@ -263,9 +272,22 @@ final class SkunkCraftsUpdaterService: Sendable {
             await logHandler("[SkunkCrafts] Fetched skunkcrafts_updater_blacklist.txt")
         }
 
-        // 4. Compare local CRC vs distant CRC for all whitelist files
-        var modifiedCount = 0
+        let latestVersion = remoteVersion ?? config.version
+        let versionMismatch = (remoteVersion != nil && config.version != nil && remoteVersion != config.version)
+        if versionMismatch {
+            let rVersion = remoteVersion!
+            await logHandler("[SkunkCrafts] Version mismatch: Local '\(config.version ?? "none")' vs Remote '\(rVersion)'. Marking addon for update.")
+            return (rVersion, true, "Update available (\(rVersion))")
+        }
+
+        // 4. Compare local CRC vs distant CRC for all whitelist files (early exit on first mismatch)
+        var count = 0
         for item in whitelistItems {
+            count += 1
+            if count % 50 == 0 {
+                await Task.yield()
+            }
+
             if isIgnored(relativePath: item.relativePath, ignoredSet: ignoredSet) {
                 await logHandler("[SkunkCrafts] Ignored file: \(item.relativePath)")
                 continue
@@ -280,40 +302,18 @@ final class SkunkCraftsUpdaterService: Sendable {
             }
 
             if !fileManager.fileExists(atPath: localFileURL.path) {
-                modifiedCount += 1
-                await logHandler("[SkunkCrafts] Missing file: \(item.relativePath)")
+                await logHandler("[SkunkCrafts] Missing file: \(item.relativePath). Marking addon for update.")
+                return (latestVersion, true, "Update available (modified files)")
             } else if let expectedCRCStr = item.expectedCRC, let distantCRC = parseCRC32(expectedCRCStr), let localCRC = calculateCRC32UInt32(for: localFileURL) {
                 if localCRC != distantCRC {
-                    modifiedCount += 1
-                    await logHandler("[SkunkCrafts] CRC mismatch for \(item.relativePath) (local: \(localCRC), distant: \(distantCRC))")
+                    await logHandler("[SkunkCrafts] CRC mismatch for \(item.relativePath) (local: \(localCRC), distant: \(distantCRC)). Marking addon for update.")
+                    return (latestVersion, true, "Update available (modified files)")
                 }
             }
         }
 
-        let versionMismatch = (remoteVersion != nil && config.version != nil && remoteVersion != config.version)
-        let isUpdateAvailable = versionMismatch || (modifiedCount > 0)
-        let latestVersion = remoteVersion ?? config.version
-
-        var statusMessage = "Up to date"
-        if isUpdateAvailable {
-            if let rVersion = remoteVersion, rVersion != config.version {
-                if modifiedCount > 0 {
-                    statusMessage = "Update available (\(rVersion) - \(modifiedCount) modified files)"
-                } else {
-                    statusMessage = "Update available (\(rVersion))"
-                }
-                await logHandler("[SkunkCrafts] Version mismatch: Local '\(config.version ?? "none")' vs Remote '\(rVersion)'")
-            } else if modifiedCount > 0 {
-                statusMessage = "Update available (\(modifiedCount) modified files)"
-                await logHandler("[SkunkCrafts] \(modifiedCount) files modified or missing")
-            } else {
-                statusMessage = "Update available"
-            }
-        } else {
-            await logHandler("[SkunkCrafts] \(config.name) is up to date.")
-        }
-
-        return (latestVersion, isUpdateAvailable, statusMessage)
+        await logHandler("[SkunkCrafts] \(config.name) is up to date.")
+        return (latestVersion, false, "Up to date")
     }
 
     func downloadAndApplyUpdates(
@@ -353,7 +353,13 @@ final class SkunkCraftsUpdaterService: Sendable {
 
         // 3. Filter files needing download
         var filesToDownload: [SkunkCraftsFileItem] = []
+        var checkCount = 0
         for item in whitelistItems {
+            checkCount += 1
+            if checkCount % 50 == 0 {
+                await Task.yield()
+            }
+
             if isIgnored(relativePath: item.relativePath, ignoredSet: ignoredSet) {
                 await logHandler("[SkunkCrafts] Skipping ignored file: \(item.relativePath)")
                 continue
@@ -378,44 +384,55 @@ final class SkunkCraftsUpdaterService: Sendable {
             }
         }
 
-        if filesToDownload.isEmpty {
-            await logHandler("[SkunkCrafts] No files required download.")
+        guard !filesToDownload.isEmpty else {
+            await logHandler("[SkunkCrafts] All whitelist files are already up to date.")
             await progressHandler("Up to date", 1.0)
             return
         }
 
-        let total = filesToDownload.count
-        await logHandler("[SkunkCrafts] Downloading \(total) files from \(baseURL.absoluteString)...")
+        await logHandler("[SkunkCrafts] Need to download \(filesToDownload.count) file(s)...")
+
+        // 4. Download and write each file
+        let totalFiles = filesToDownload.count
         for (index, item) in filesToDownload.enumerated() {
-            let progress = Double(index + 1) / Double(total)
-            let statusText = "Downloading (\(index + 1)/\(total)): \(item.relativePath)"
-            await progressHandler(statusText, progress)
+            let progress = Double(index) / Double(totalFiles)
+            let filename = (item.relativePath as NSString).lastPathComponent
+            await progressHandler("Downloading \(filename)...", progress)
 
-            let downloadURL = baseURL.appendingPathComponent(item.relativePath)
-            await logHandler("[SkunkCrafts] Fetching \(downloadURL.absoluteString)...")
+            // Construct relative encoded URL
+            let relativeEncoded = item.relativePath
+                .split(separator: "/")
+                .map { $0.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? String($0) }
+                .joined(separator: "/")
 
-            let (fileData, response) = try await URLSession.shared.data(from: downloadURL)
-            guard (response as? HTTPURLResponse)?.statusCode == 200 else {
-                await logHandler("[SkunkCrafts] Download failed for \(item.relativePath) (HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0))")
+            guard let fileURL = URL(string: relativeEncoded, relativeTo: baseURL) else {
+                await logHandler("[SkunkCrafts] Invalid download URL for: \(item.relativePath)")
                 continue
             }
 
-            let destinationURL: URL
+            let localDestination: URL
             do {
-                destinationURL = try PathSecurity.validateSubpath(relativePath: item.relativePath, within: addonFolder)
+                localDestination = try PathSecurity.validateSubpath(relativePath: item.relativePath, within: addonFolder)
             } catch {
-                await logHandler("[SkunkCrafts] Insecure destination path rejected: \(item.relativePath)")
+                await logHandler("[SkunkCrafts] Insecure subpath rejected during download: \(item.relativePath)")
                 continue
             }
 
-            let parentDir = destinationURL.deletingLastPathComponent()
+            let parentDir = localDestination.deletingLastPathComponent()
             try fileManager.createDirectory(at: parentDir, withIntermediateDirectories: true)
 
-            if fileManager.fileExists(atPath: destinationURL.path) {
-                try fileManager.removeItem(at: destinationURL)
+            await logHandler("[SkunkCrafts] Downloading: \(item.relativePath)...")
+
+            let (tempDownloadedURL, response) = try await URLSession.shared.download(from: fileURL)
+            guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+                await logHandler("[SkunkCrafts] Failed downloading \(item.relativePath): HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0)")
+                continue
             }
-            try fileData.write(to: destinationURL, options: .atomic)
-            await logHandler("[SkunkCrafts] Replaced \(item.relativePath) (\(fileData.count) bytes)")
+
+            if fileManager.fileExists(atPath: localDestination.path) {
+                try? fileManager.removeItem(at: localDestination)
+            }
+            try fileManager.moveItem(at: tempDownloadedURL, to: localDestination)
         }
 
         await logHandler("[SkunkCrafts] Update completed successfully.")

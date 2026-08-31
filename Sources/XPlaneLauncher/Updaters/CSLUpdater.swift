@@ -228,7 +228,7 @@ actor CSLCacheActor {
 
 // MARK: - CSL Updater Service
 
-final class CSLUpdaterService: Sendable {
+actor CSLUpdaterService {
     static let shared = CSLUpdaterService()
     private var fileManager: FileManager { .default }
     private let cache = CSLCacheActor()
@@ -1078,7 +1078,7 @@ final class CSLManager {
                 // If XP12 lighting is enabled and this is a regular model package, apply it automatically
                 if UserDefaults.standard.bool(forKey: .enableCSLXP12Lights) && !pkgToUpdate.isResourcePackage {
                     let pkgDir = folderURL.appendingPathComponent(pkgName)
-                    CSLLightsUpdater.shared.processPackage(packageURL: pkgDir, flashingBeacons: true) { [weak self] msg in
+                    await CSLLightsUpdater.shared.processPackage(packageURL: pkgDir, flashingBeacons: true) { [weak self] msg in
                         self?.log(msg)
                     }
                 }
@@ -1187,7 +1187,7 @@ final class CSLManager {
             let installedPackages = self.packages.filter { $0.isInstalled && !$0.isResourcePackage }
             for pkg in installedPackages {
                 let pkgDir = folderURL.appendingPathComponent(pkg.name)
-                CSLLightsUpdater.shared.processPackage(packageURL: pkgDir, flashingBeacons: flashingBeacons) { [weak self] msg in
+                await CSLLightsUpdater.shared.processPackage(packageURL: pkgDir, flashingBeacons: flashingBeacons) { [weak self] msg in
                     self?.log(msg)
                 }
             }
@@ -1211,7 +1211,7 @@ final class CSLManager {
             let installedPackages = self.packages.filter { $0.isInstalled && !$0.isResourcePackage }
             for pkg in installedPackages {
                 let pkgDir = folderURL.appendingPathComponent(pkg.name)
-                CSLLightsUpdater.shared.revertPackage(packageURL: pkgDir) { [weak self] msg in
+                await CSLLightsUpdater.shared.revertPackage(packageURL: pkgDir) { [weak self] msg in
                     self?.log(msg)
                 }
             }

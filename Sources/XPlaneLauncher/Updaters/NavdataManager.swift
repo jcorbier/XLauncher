@@ -100,9 +100,21 @@ final class NavdataManager {
         }
 
         self.isScanning = true
-        self.addons = scanner.scanAddons(xPlaneURL: xPlaneURL, launcherDataFolder: launcherDataFolder, catalog: catalog)
-        self.backups = scanner.scanBackups(xPlaneURL: xPlaneURL)
-        self.isScanning = false
+        let launcherFolder = launcherDataFolder
+        let currentCatalog = catalog
+        let currentScanner = self.scanner
+
+        Task.detached(priority: .userInitiated) {
+            let scannedAddons = currentScanner.scanAddons(xPlaneURL: xPlaneURL, launcherDataFolder: launcherFolder, catalog: currentCatalog)
+            let scannedBackups = currentScanner.scanBackups(xPlaneURL: xPlaneURL)
+
+            await MainActor.run { [weak self] in
+                guard let self = self else { return }
+                self.addons = scannedAddons
+                self.backups = scannedBackups
+                self.isScanning = false
+            }
+        }
     }
 
     func checkOnlinePackages() async {
@@ -196,22 +208,30 @@ final class NavdataManager {
             addons[index].statusMessage = "Creating backup..."
             addons[index].progress = 0.6
 
-            // 3. Safety Backup
-            try createBackup(for: item, xPlaneURL: xPlaneURL)
+            // 3. Safety Backup (offloaded to background)
+            try await Task.detached(priority: .userInitiated) { [weak self] in
+                guard let self = self else { return }
+                try self.createBackup(for: item, xPlaneURL: xPlaneURL)
+            }.value
 
-            // 4. Extract Archive
+            // 4. Extract Archive (offloaded to background)
             log("Extracting archive...")
             addons[index].statusMessage = "Extracting..."
             addons[index].progress = 0.75
 
-            try ZipExtractor.extract(archiveAt: zipDownloadURL, to: extractDir)
+            try await Task.detached(priority: .userInitiated) {
+                try ZipExtractor.extract(archiveAt: zipDownloadURL, to: extractDir)
+            }.value
 
-            // 5. Install Extracted Files into Target Directory
+            // 5. Install Extracted Files into Target Directory (offloaded to background)
             log("Installing files to: \(item.targetURL.path)")
             addons[index].statusMessage = "Installing..."
             addons[index].progress = 0.9
 
-            try installExtractedFiles(from: extractDir, to: item.targetURL)
+            try await Task.detached(priority: .userInitiated) { [weak self] in
+                guard let self = self else { return }
+                try self.installExtractedFiles(from: extractDir, to: item.targetURL)
+            }.value
 
             // 6. Cleanup Temp Directory
             try? FileManager.default.removeItem(at: tempDir)
@@ -225,7 +245,10 @@ final class NavdataManager {
             addons[index].progress = 1.0
 
             // Refresh backups and UI
-            self.backups = scanner.scanBackups(xPlaneURL: xPlaneURL)
+            let scannedBackups = await Task.detached(priority: .userInitiated) {
+                NavdataScanner().scanBackups(xPlaneURL: xPlaneURL)
+            }.value
+            self.backups = scannedBackups
 
         } catch {
             try? FileManager.default.removeItem(at: tempDir)
@@ -248,7 +271,7 @@ final class NavdataManager {
 
     // MARK: - Backup & Restore System
 
-    private func createBackup(for item: DetectedNavdataItem, xPlaneURL: URL) throws {
+    private nonisolated func createBackup(for item: DetectedNavdataItem, xPlaneURL: URL) throws {
         let fileManager = FileManager.default
         guard fileManager.fileExists(atPath: item.targetURL.path) else { return }
 
@@ -288,7 +311,7 @@ final class NavdataManager {
         }
 
         // Write verification.json
-        let cycleInfo = scanner.readCycleInfo(at: item.targetURL)
+        let cycleInfo = NavdataScanner().readCycleInfo(at: item.targetURL)
         let verification = NavdataBackupVerification(
             provider_name: item.definition.name,
             target_relative_path: item.definition.relativeTargetPath,
@@ -301,10 +324,9 @@ final class NavdataManager {
 
         let verificationData = try JSONEncoder().encode(verification)
         try verificationData.write(to: backupSubdir.appendingPathComponent("verification.json"))
-        log("Backup created for '\(item.definition.name)' with \(backupFiles.count) files.")
     }
 
-    private func cleanupOldBackups(in backupRootDir: URL, providerName: String) {
+    private nonisolated func cleanupOldBackups(in backupRootDir: URL, providerName: String) {
         let fileManager = FileManager.default
         guard let entries = try? fileManager.contentsOfDirectory(at: backupRootDir, includingPropertiesForKeys: nil) else { return }
 
@@ -318,7 +340,7 @@ final class NavdataManager {
         }
     }
 
-    private func installExtractedFiles(from sourceDir: URL, to targetDir: URL) throws {
+    private nonisolated func installExtractedFiles(from sourceDir: URL, to targetDir: URL) throws {
         let fileManager = FileManager.default
         try fileManager.createDirectory(at: targetDir, withIntermediateDirectories: true)
 
@@ -336,8 +358,6 @@ final class NavdataManager {
            let indexData = try? Data(contentsOf: indexFileURL),
            let packageIndex = try? FMSPackageIndexParser.parse(data: indexData, simulator: "XP12"),
            !packageIndex.fileMappings.isEmpty {
-
-            log("Installing package using index mapping for '\(packageIndex.addonName)' (\(packageIndex.fileMappings.count) files)...")
 
             for mapping in packageIndex.fileMappings {
                 let srcFile = actualSource.appendingPathComponent(mapping.source)

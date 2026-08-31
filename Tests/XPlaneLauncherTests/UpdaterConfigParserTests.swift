@@ -298,7 +298,8 @@ final class UpdaterConfigParserTests: XCTestCase {
         XCTAssertEqual(mtlURL?.path, fakeCentralIvaoPilot.appendingPathComponent("mtlList.xml").path)
     }
 
-    func testCSLLightsUpdaterDeduplication() throws {
+    @MainActor
+    func testCSLLightsUpdaterDeduplication() async throws {
         let pkgDir = tempDir.appendingPathComponent("TestPackage")
         try fm.createDirectory(at: pkgDir, withIntermediateDirectories: true)
 
@@ -331,7 +332,7 @@ final class UpdaterConfigParserTests: XCTestCase {
         try objContent.write(to: objFile, atomically: true, encoding: .utf8)
 
         var loggedMessages: [String] = []
-        CSLLightsUpdater.shared.processPackage(packageURL: pkgDir, flashingBeacons: true) { msg in
+        await CSLLightsUpdater.shared.processPackage(packageURL: pkgDir, flashingBeacons: true) { msg in
             loggedMessages.append(msg)
         }
 

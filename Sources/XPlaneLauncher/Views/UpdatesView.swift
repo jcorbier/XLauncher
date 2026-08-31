@@ -75,10 +75,17 @@ struct UpdatesView: View {
                 .labelsHidden()
 
                 Button(action: {
-                    updateManager.scanUpdatableAddons()
-                    updateManager.checkAllAddonUpdates()
+                    updateManager.scanAndCheckAllAddonUpdates()
                 }) {
-                    Label("Check for Updates", systemImage: "arrow.clockwise")
+                    if updateManager.isCheckingUpdates {
+                        HStack(spacing: 6) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Checking...")
+                        }
+                    } else {
+                        Label("Check for Updates", systemImage: "arrow.clockwise")
+                    }
                 }
                 .disabled(updateManager.isProcessing)
 

@@ -96,7 +96,7 @@ final class CSLLightsData: Sendable {
 
 // MARK: - Native CSL Lights Updater Engine
 
-final class CSLLightsUpdater: Sendable {
+actor CSLLightsUpdater {
     static let shared = CSLLightsUpdater()
     private var fileManager: FileManager { .default }
     private let data = CSLLightsData.shared
@@ -498,7 +498,7 @@ final class CSLLightsUpdater: Sendable {
 
     // MARK: - Package Processing & Reverting
 
-    func processPackage(packageURL: URL, flashingBeacons: Bool = true, onLog: ((String) -> Void)? = nil) {
+    func processPackage(packageURL: URL, flashingBeacons: Bool = true, onLog: (@Sendable @MainActor (String) -> Void)? = nil) async {
         let xsbFile = packageURL.appendingPathComponent("xsb_aircraft.txt")
         guard fileManager.fileExists(atPath: xsbFile.path) else { return }
 
@@ -510,7 +510,13 @@ final class CSLLightsUpdater: Sendable {
         // Parse xsb_aircraft.txt for aircraft objects
         let aircraftObjects = parseXSB(content: content, parentDir: packageURL)
         var processedFiles = Set<String>()
+        var count = 0
         for obj in aircraftObjects {
+            count += 1
+            if count % 50 == 0 {
+                await Task.yield()
+            }
+
             let fileURL = obj.fileURL
             let normalizedPath = fileURL.standardizedFileURL.path
             guard !processedFiles.contains(normalizedPath) else { continue }
@@ -527,28 +533,28 @@ final class CSLLightsUpdater: Sendable {
             guard let objContent = try? String(contentsOf: bakURL, encoding: .utf8) else { continue }
             if let converted = convertObjectContent(content: objContent, icao: obj.icao, flashingBeacons: flashingBeacons) {
                 try? converted.write(to: fileURL, atomically: true, encoding: .utf8)
-                onLog?("[XP12 Lights] Converted \(fileURL.lastPathComponent) (\(obj.icao))")
+                await onLog?("[XP12 Lights] Converted \(fileURL.lastPathComponent) (\(obj.icao))")
             }
         }
     }
 
-    func revertPackage(packageURL: URL, onLog: ((String) -> Void)? = nil) {
+    func revertPackage(packageURL: URL, onLog: (@Sendable @MainActor (String) -> Void)? = nil) async {
         removeXPMP2Files(in: packageURL)
 
         guard let enumerator = fileManager.enumerator(at: packageURL, includingPropertiesForKeys: nil) else { return }
-        for case let fileURL as URL in enumerator {
+        while let fileURL = enumerator.nextObject() as? URL {
             if fileURL.pathExtension.lowercased() == CSLLightsUpdater.backupExtension {
                 let targetObjURL = fileURL.deletingPathExtension().appendingPathExtension("obj")
                 try? fileManager.removeItem(at: targetObjURL)
                 try? fileManager.moveItem(at: fileURL, to: targetObjURL)
-                onLog?("[XP12 Lights] Restored original \(targetObjURL.lastPathComponent)")
+                await onLog?("[XP12 Lights] Restored original \(targetObjURL.lastPathComponent)")
             }
         }
     }
 
     func removeXPMP2Files(in folderURL: URL) {
         guard let enumerator = fileManager.enumerator(at: folderURL, includingPropertiesForKeys: nil) else { return }
-        for case let fileURL as URL in enumerator {
+        while let fileURL = enumerator.nextObject() as? URL {
             if fileURL.lastPathComponent.lowercased().hasSuffix("xpmp2.obj") {
                 try? fileManager.removeItem(at: fileURL)
             }

@@ -45,16 +45,18 @@ class UpdateManager {
     var launcherDataFolder: URL? {
         didSet {
             guard launcherDataFolder != oldValue else { return }
-            scanUpdatableAddons()
-            checkAutoUpdates()
+            scanUpdatableAddons { [weak self] in
+                self?.checkAutoUpdates()
+            }
         }
     }
 
     var updatableAddons: [UpdatableAddon] = []
+    var isScanning: Bool = false
     var logger: ConsoleLogger { ConsoleLogger.shared }
 
     var isCheckingUpdates: Bool {
-        updatableAddons.contains { $0.isChecking }
+        isScanning || updatableAddons.contains { $0.isChecking }
     }
 
     var isUpdatingAddons: Bool {
@@ -62,7 +64,7 @@ class UpdateManager {
     }
 
     var isProcessing: Bool {
-        updatableAddons.contains { $0.isChecking || $0.isUpdating }
+        isScanning || updatableAddons.contains { $0.isChecking || $0.isUpdating }
     }
 
     func log(_ message: String, level: LogLevel = .info) {
@@ -138,14 +140,15 @@ class UpdateManager {
 
         self.launcherDataFolder = launcherDataFolder
         if launcherDataFolder != nil && updatableAddons.isEmpty {
-            scanUpdatableAddons()
-            checkAutoUpdates()
+            scanUpdatableAddons { [weak self] in
+                self?.checkAutoUpdates()
+            }
         }
     }
 
     // MARK: - Scanning & Parsing
 
-    private func findUpdaterConfig(in folderURL: URL) -> (type: UpdaterType, fileURL: URL)? {
+    private nonisolated static func findUpdaterConfig(in folderURL: URL) -> (type: UpdaterType, fileURL: URL)? {
         if let url = SkunkCraftsUpdaterService.shared.findConfig(in: folderURL) {
             return (.skunkcrafts, url)
         }
@@ -155,7 +158,7 @@ class UpdateManager {
         return nil
     }
 
-    private func parseUpdaterConfig(url: URL, type: UpdaterType, defaultName: String) -> (name: String, version: String?, remoteURL: String?) {
+    private nonisolated static func parseUpdaterConfig(url: URL, type: UpdaterType, defaultName: String) -> (name: String, version: String?, remoteURL: String?) {
         if type == .skunkcrafts {
             if let config = SkunkCraftsUpdaterService.shared.parseConfig(at: url, defaultName: defaultName) {
                 return (config.name, config.version, config.remoteManifestURL)
@@ -168,14 +171,15 @@ class UpdateManager {
         return (defaultName, nil, nil)
     }
 
-    private func scanDirectoryForAddons(subFolderURL: URL, category: AddonCategory, currentDepth: Int = 0, maxDepth: Int = 5) -> [UpdatableAddon] {
+    private nonisolated static func scanDirectoryForAddons(subFolderURL: URL, category: AddonCategory, currentDepth: Int = 0, maxDepth: Int = 5) -> [UpdatableAddon] {
         var results: [UpdatableAddon] = []
         guard currentDepth <= maxDepth else { return results }
 
-        if let contents = try? fileManager.contentsOfDirectory(at: subFolderURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
+        let fm = FileManager.default
+        if let contents = try? fm.contentsOfDirectory(at: subFolderURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
             for itemURL in contents {
                 var isDir: ObjCBool = false
-                guard fileManager.fileExists(atPath: itemURL.path, isDirectory: &isDir), isDir.boolValue else { continue }
+                guard fm.fileExists(atPath: itemURL.path, isDirectory: &isDir), isDir.boolValue else { continue }
 
                 if let updaterInfo = findUpdaterConfig(in: itemURL) {
                     let folderName = itemURL.lastPathComponent
@@ -201,23 +205,40 @@ class UpdateManager {
         return results
     }
 
-    func scanUpdatableAddons() {
+    func scanUpdatableAddons(completion: (@Sendable @MainActor () -> Void)? = nil) {
         guard let dataFolder = launcherDataFolder else {
             updatableAddons = []
+            completion?()
             return
         }
 
-        var allAddons: [UpdatableAddon] = []
+        isScanning = true
 
-        for category in AddonCategory.allCases {
-            let folderURL = pathService.dataFolder(category.dataSubfolder, in: dataFolder)
-            if fileManager.fileExists(atPath: folderURL.path) {
-                let addons = scanDirectoryForAddons(subFolderURL: folderURL, category: category)
-                allAddons.append(contentsOf: addons)
+        Task.detached(priority: .userInitiated) { [weak self] in
+            var allAddons: [UpdatableAddon] = []
+
+            for category in AddonCategory.allCases {
+                let folderURL = PathService.shared.dataFolder(category.dataSubfolder, in: dataFolder)
+                if FileManager.default.fileExists(atPath: folderURL.path) {
+                    let addons = Self.scanDirectoryForAddons(subFolderURL: folderURL, category: category)
+                    allAddons.append(contentsOf: addons)
+                }
+            }
+
+            await MainActor.run {
+                guard let self = self else { return }
+                self.isScanning = false
+                self.updatableAddons = allAddons
+                completion?()
             }
         }
+    }
 
-        self.updatableAddons = allAddons
+    func scanAndCheckAllAddonUpdates() {
+        guard !isProcessing else { return }
+        scanUpdatableAddons { [weak self] in
+            self?.checkAllAddonUpdates()
+        }
     }
 
     // MARK: - Update Checking

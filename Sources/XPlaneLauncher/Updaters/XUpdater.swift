@@ -91,7 +91,7 @@ struct XUpdaterFileItem: Codable, Sendable {
     let compressedSize: Int64?
 }
 
-final class XUpdaterService: Sendable {
+actor XUpdaterService {
     static let shared = XUpdaterService()
     private var fileManager: FileManager { .default }
 
@@ -112,12 +112,25 @@ final class XUpdaterService: Sendable {
         "client-configuration", "productid", "productId", "xupdignore", "description.txt"
     ]
 
-    func findConfig(in folderURL: URL) -> URL? {
+    nonisolated func findConfig(in folderURL: URL) -> URL? {
+        let nativeSubdirectories = ["", ".xupdater", ".x-updater", ".x_updater", "x-updater", "x_updater", "xupdater", "data"]
+        let xUpdaterConfigFiles = [
+            "settings.ini", "settings.cfg",
+            "x-updater.cnf", "x_updater.cnf", "xupdater.cnf",
+            "x-updater.cfg", "x_updater.cfg", "xupdater.cfg",
+            ".x-updater.cfg", ".x_updater.cfg",
+            "x-updater.conf", "x_updater.conf",
+            "x-jet-updater.cfg", "xjetupdater.cfg",
+            "x-updater.json", "x_updater.json", "xupdater.json",
+            ".x-updater.json", ".x_updater.json",
+            "x-updater-profile.json", "x_updater_profile.json", "xupdater_profile.json",
+            "client-configuration", "productid", "productId", "xupdignore", "description.txt"
+        ]
         for sub in nativeSubdirectories {
             let searchDir = sub.isEmpty ? folderURL : folderURL.appendingPathComponent(sub)
             for name in xUpdaterConfigFiles {
                 let fileURL = searchDir.appendingPathComponent(name)
-                if fileManager.fileExists(atPath: fileURL.path) {
+                if FileManager.default.fileExists(atPath: fileURL.path) {
                     return fileURL
                 }
             }
@@ -125,7 +138,7 @@ final class XUpdaterService: Sendable {
         return nil
     }
 
-    private func formatVersionString(_ raw: String) -> String {
+    private nonisolated func formatVersionString(_ raw: String) -> String {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.count == 6, trimmed.allSatisfy(\.isNumber),
            let major = Int(trimmed.prefix(2)),
@@ -136,7 +149,7 @@ final class XUpdaterService: Sendable {
         return trimmed
     }
 
-    func parseConfig(at url: URL, defaultName: String) -> XUpdaterConfig? {
+    nonisolated func parseConfig(at url: URL, defaultName: String) -> XUpdaterConfig? {
         let parentDir = url.deletingLastPathComponent()
         let addonDir = parentDir.lastPathComponent.hasPrefix(".") || parentDir.lastPathComponent.contains("updater") ? parentDir.deletingLastPathComponent() : parentDir
 
@@ -163,7 +176,7 @@ final class XUpdaterService: Sendable {
         for dir in searchDirs {
             for fileName in candidateFiles {
                 let fileURL = dir.appendingPathComponent(fileName)
-                guard fileManager.fileExists(atPath: fileURL.path),
+                guard FileManager.default.fileExists(atPath: fileURL.path),
                       let content = try? String(contentsOf: fileURL, encoding: .utf8) else { continue }
 
                 if fileName.hasSuffix(".json"),
@@ -253,7 +266,7 @@ final class XUpdaterService: Sendable {
         }
 
         if version == nil {
-            if let contents = try? fileManager.contentsOfDirectory(at: addonDir, includingPropertiesForKeys: nil) {
+            if let contents = try? FileManager.default.contentsOfDirectory(at: addonDir, includingPropertiesForKeys: nil) {
                 for item in contents {
                     if item.lastPathComponent.hasPrefix("version-") && item.pathExtension == "txt" {
                         if let raw = try? String(contentsOf: item, encoding: .utf8) {
@@ -543,16 +556,25 @@ final class XUpdaterService: Sendable {
     }
 
     private func computeMD5(of fileURL: URL) -> String? {
-        guard let data = try? Data(contentsOf: fileURL, options: .mappedIfSafe) else { return nil }
-        let digest = Insecure.MD5.hash(data: data)
+        guard let fileHandle = try? FileHandle(forReadingFrom: fileURL) else { return nil }
+        defer { try? fileHandle.close() }
+        var hasher = Insecure.MD5()
+        let bufferSize = 65536
+        while true {
+            let data = fileHandle.readData(ofLength: bufferSize)
+            if data.isEmpty { break }
+            hasher.update(data: data)
+        }
+        let digest = hasher.finalize()
         return digest.map { String(format: "%02hhx", $0) }.joined()
     }
 
-    func resolveLocalFile(itemPath: String, in folderURL: URL) -> (exists: Bool, actualURL: URL?) {
+    nonisolated func resolveLocalFile(itemPath: String, in folderURL: URL) -> (exists: Bool, actualURL: URL?) {
         guard let directURL = try? PathSecurity.validateSubpath(relativePath: itemPath, within: folderURL) else {
             return (false, nil)
         }
-        if fileManager.fileExists(atPath: directURL.path) {
+        let fm = FileManager.default
+        if fm.fileExists(atPath: directURL.path) {
             return (true, directURL)
         }
 
@@ -565,13 +587,13 @@ final class XUpdaterService: Sendable {
             let stem = (itemPath as NSString).deletingPathExtension
             let altPath = stem + altExt
             if let altURL = try? PathSecurity.validateSubpath(relativePath: altPath, within: folderURL) {
-                if fileManager.fileExists(atPath: altURL.path) {
+                if fm.fileExists(atPath: altURL.path) {
                     return (true, altURL)
                 }
 
                 let parentDir = altURL.deletingLastPathComponent()
                 let altTargetName = altURL.lastPathComponent.lowercased()
-                if let contents = try? fileManager.contentsOfDirectory(atPath: parentDir.path) {
+                if let contents = try? fm.contentsOfDirectory(atPath: parentDir.path) {
                     if let match = contents.first(where: { $0.lowercased() == altTargetName }) {
                         let candidateURL = parentDir.appendingPathComponent(match)
                         if PathSecurity.isStrictlyContained(url: candidateURL, within: folderURL) {
@@ -585,7 +607,7 @@ final class XUpdaterService: Sendable {
         // Check general case-insensitive match for the direct file in parent dir
         let parentDir = directURL.deletingLastPathComponent()
         let directTargetName = directURL.lastPathComponent.lowercased()
-        if let contents = try? fileManager.contentsOfDirectory(atPath: parentDir.path) {
+        if let contents = try? fm.contentsOfDirectory(atPath: parentDir.path) {
             if let match = contents.first(where: { $0.lowercased() == directTargetName }) {
                 let candidateURL = parentDir.appendingPathComponent(match)
                 if PathSecurity.isStrictlyContained(url: candidateURL, within: folderURL) {
@@ -600,7 +622,7 @@ final class XUpdaterService: Sendable {
         let parentPath = (itemPath as NSString).deletingLastPathComponent
         let altSubPath = parentPath.isEmpty ? "\(stem)/\(lastComponent)" : "\(parentPath)/\(stem)/\(lastComponent)"
         if let subURL = try? PathSecurity.validateSubpath(relativePath: altSubPath, within: folderURL) {
-            if fileManager.fileExists(atPath: subURL.path) {
+            if fm.fileExists(atPath: subURL.path) {
                 return (true, subURL)
             }
         }
@@ -636,18 +658,30 @@ final class XUpdaterService: Sendable {
                 return (activeConfig.version, false, "Up to date")
             }
 
-            var modifiedCount = 0
-            var missingCount = 0
-            var deleteCount = 0
+            if let rSnap = remoteSnapshotNum, let curSnap = activeConfig.snapshotNum, rSnap > curSnap {
+                let rVer = remoteVersion ?? activeConfig.version
+                await logHandler("[X-Updater] Snapshot mismatch (Local: \(curSnap), Remote: \(rSnap)). Marking addon for update.")
+                return (rVer, true, "Update available (\(rVer ?? "new snapshot"))")
+            }
 
+            if let rVer = remoteVersion, let curVer = activeConfig.version, rVer != curVer {
+                await logHandler("[X-Updater] Version mismatch (Local: \(curVer), Remote: \(rVer)). Marking addon for update.")
+                return (rVer, true, "Update available (\(rVer))")
+            }
+
+            var checkCount = 0
             for item in files {
+                checkCount += 1
+                if checkCount % 50 == 0 {
+                    await Task.yield()
+                }
+
                 let localFileURL = folderURL.appendingPathComponent(item.path)
 
                 if item.state == .delete {
-                    // For files marked to be deleted: only count if currently present locally
                     if fileManager.fileExists(atPath: localFileURL.path) {
-                        deleteCount += 1
-                        await logHandler("[X-Updater] Deprecated file to delete: \(item.path)")
+                        await logHandler("[X-Updater] Deprecated file detected: \(item.path). Marking addon for update.")
+                        return (latestVersion, true, "Needs repair (deprecated file)")
                     }
                     continue
                 }
@@ -658,49 +692,20 @@ final class XUpdaterService: Sendable {
                     let isDDSConversion = fileURL.pathExtension.lowercased() == "dds" && (item.path as NSString).pathExtension.lowercased() == "png"
                     if !isDDSConversion, let remoteMD5 = item.md5?.lowercased(), !remoteMD5.isEmpty {
                         if let localMD5 = computeMD5(of: fileURL)?.lowercased(), localMD5 != remoteMD5 {
-                            modifiedCount += 1
-                            await logHandler("[X-Updater] Modified file: \(item.path) (local: \(localMD5), remote: \(remoteMD5))")
+                            await logHandler("[X-Updater] Modified file detected: \(item.path) (local: \(localMD5), remote: \(remoteMD5)). Marking addon for update.")
+                            return (latestVersion, true, "Needs repair (modified file)")
                         }
                     }
                 } else if item.size == 0 && item.path.contains("marker") {
-                    // Ignore 0-byte runtime markers if absent
                     continue
                 } else {
-                    missingCount += 1
-                    await logHandler("[X-Updater] Missing file: \(item.path)")
+                    await logHandler("[X-Updater] Missing file detected: \(item.path). Marking addon for update.")
+                    return (latestVersion, true, "Needs repair (missing file)")
                 }
             }
 
-            let totalChanges = modifiedCount + missingCount + deleteCount
-            let snapshotMismatch = (remoteSnapshotNum != nil && activeConfig.snapshotNum != nil && remoteSnapshotNum! > activeConfig.snapshotNum!)
-            let isUpdateAvailable = snapshotMismatch || (totalChanges > 0)
-
-            var statusMessage = "Up to date"
-            if isUpdateAvailable {
-                if let rVersion = remoteVersion, rVersion != activeConfig.version {
-                    if totalChanges > 0 {
-                        statusMessage = "Update available (\(rVersion) - \(totalChanges) files)"
-                    } else {
-                        statusMessage = "Update available (\(rVersion))"
-                    }
-                    await logHandler("[X-Updater] Update available: Local '\(activeConfig.version ?? "none")' vs Remote '\(rVersion)'")
-                } else if totalChanges > 0 {
-                    if missingCount > 0 && modifiedCount == 0 {
-                        statusMessage = "Needs repair (\(missingCount) missing file\(missingCount > 1 ? "s" : ""))"
-                    } else if modifiedCount > 0 && missingCount == 0 {
-                        statusMessage = "Needs repair (\(modifiedCount) modified file\(modifiedCount > 1 ? "s" : ""))"
-                    } else {
-                        statusMessage = "Needs repair (\(totalChanges) changed files)"
-                    }
-                    await logHandler("[X-Updater] \(totalChanges) files modified, missing, or deprecated locally")
-                } else {
-                    statusMessage = "Update available"
-                }
-            } else {
-                await logHandler("[X-Updater] \(activeConfig.name) is up to date.")
-            }
-
-            return (latestVersion, isUpdateAvailable, statusMessage)
+            await logHandler("[X-Updater] \(activeConfig.name) is up to date.")
+            return (latestVersion, false, "Up to date")
         } catch {
             await logHandler("[X-Updater] Error checking remote endpoint for \(activeConfig.name): \(error.localizedDescription)")
             return (activeConfig.version, false, "Check failed")
@@ -732,8 +737,14 @@ final class XUpdaterService: Sendable {
         // Filter files needing download or deletion
         var filesToDownload: [XUpdaterFileItem] = []
         var filesToDelete: [XUpdaterFileItem] = []
+        var checkCount = 0
 
         for item in files {
+            checkCount += 1
+            if checkCount % 50 == 0 {
+                await Task.yield()
+            }
+
             guard (try? PathSecurity.validateSubpath(relativePath: item.path, within: addonFolder)) != nil else {
                 await logHandler("[X-Updater] Insecure path rejected in manifest: \(item.path)")
                 continue
