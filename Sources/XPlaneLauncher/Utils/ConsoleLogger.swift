@@ -106,6 +106,11 @@ class ConsoleLogger {
     var entries: [LogEntry] = []
     let maxEntries: Int
 
+    @ObservationIgnored
+    private var pendingEntries: [LogEntry] = []
+    @ObservationIgnored
+    private var isFlushScheduled = false
+
     init(maxEntries: Int = 1000) {
         self.maxEntries = maxEntries
     }
@@ -116,9 +121,36 @@ class ConsoleLogger {
         level: LogLevel = .info
     ) {
         let entry = LogEntry(timestamp: Date(), category: category, level: level, message: message)
-        entries.append(entry)
+        pendingEntries.append(entry)
+
+        if pendingEntries.count >= 50 {
+            flush()
+        } else if !isFlushScheduled {
+            isFlushScheduled = true
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 50_000_000) // 50ms batch throttle
+                self?.flush()
+            }
+        }
+    }
+
+    func flush() {
+        isFlushScheduled = false
+        guard !pendingEntries.isEmpty else { return }
+        entries.append(contentsOf: pendingEntries)
+        pendingEntries.removeAll(keepingCapacity: true)
         if entries.count > maxEntries {
             entries.removeFirst(entries.count - maxEntries)
+        }
+    }
+
+    nonisolated func logAsync(
+        _ message: String,
+        category: LogCategory = .general,
+        level: LogLevel = .info
+    ) {
+        Task { @MainActor in
+            ConsoleLogger.shared.log(message, category: category, level: level)
         }
     }
 
@@ -139,6 +171,7 @@ class ConsoleLogger {
     }
 
     func clear(category: LogCategory? = nil) {
+        pendingEntries.removeAll()
         if let category = category {
             entries.removeAll { $0.category == category }
         } else {

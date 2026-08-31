@@ -159,35 +159,15 @@ struct ConsoleView: View {
             .padding(.horizontal, 10)
             .padding(.top, 6)
 
-            // Console Output Scroll Area
-            ScrollViewReader { proxy in
-                ScrollView {
-                    if filteredEntries.isEmpty {
-                        Text(logger.entries.isEmpty ? "Console is empty." : "No logs matching current filter.")
-                            .font(.system(.caption2, design: .monospaced))
-                            .foregroundStyle(Color.gray)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(8)
-                    } else {
-                        Text(attributedLogText)
-                            .font(.system(.caption2, design: .monospaced))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(8)
-                            .id("bottom")
-                    }
-                }
-                .textSelection(.enabled)
-                .background(Color.black.opacity(0.9))
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-                .padding(.horizontal, 8)
-                .padding(.bottom, 8)
-                .onAppear {
-                    scrollToBottom(proxy: proxy)
-                }
-                .onChange(of: filteredEntries.count) { _, _ in
-                    scrollToBottom(proxy: proxy)
-                }
-            }
+            // Console Output Native NSTextView Area
+            ConsoleTextViewRepresentable(
+                entries: filteredEntries,
+                isFilteredEmpty: filteredEntries.isEmpty,
+                isLoggerEmpty: logger.entries.isEmpty
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .padding(.horizontal, 8)
+            .padding(.bottom, 8)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(NSColor.controlBackgroundColor))
@@ -217,71 +197,6 @@ struct ConsoleView: View {
         }
     }
 
-    private var attributedLogText: AttributedString {
-        var combined = AttributedString()
-        for (index, entry) in filteredEntries.enumerated() {
-            if index > 0 {
-                combined.append(AttributedString("\n"))
-            }
-
-            var timeAttr = AttributedString("[\(entry.timestampString)] ")
-            timeAttr.foregroundColor = .gray
-
-            var catAttr = AttributedString("[\(entry.category.rawValue)] ")
-            catAttr.foregroundColor = categoryColor(for: entry.category)
-            catAttr.inlinePresentationIntent = .stronglyEmphasized
-
-            combined.append(timeAttr)
-            combined.append(catAttr)
-
-            if entry.level != .info {
-                var levelAttr = AttributedString("[\(entry.level.rawValue)] ")
-                levelAttr.foregroundColor = levelColor(for: entry.level)
-                levelAttr.inlinePresentationIntent = .stronglyEmphasized
-                combined.append(levelAttr)
-            }
-
-            var msgAttr = AttributedString(entry.message)
-            msgAttr.foregroundColor = entryColor(for: entry)
-            combined.append(msgAttr)
-        }
-        return combined
-    }
-
-    private func categoryColor(for category: LogCategory) -> Color {
-        switch category {
-        case .profiles: return .blue
-        case .plugins: return .green
-        case .scenery: return .yellow
-        case .aircraft: return .teal
-        case .lua: return .purple
-        case .updates: return .orange
-        case .navdata: return .pink
-        case .csl: return .cyan
-        case .launch: return .mint
-        case .system: return .indigo
-        case .general: return .gray
-        }
-    }
-
-    private func levelColor(for level: LogLevel) -> Color {
-        switch level {
-        case .error: return .red
-        case .warn: return .yellow
-        case .info: return .secondary
-        case .debug: return .purple
-        }
-    }
-
-    private func entryColor(for entry: LogEntry) -> Color {
-        switch entry.level {
-        case .error: return .red
-        case .warn: return .yellow
-        case .debug: return .secondary
-        case .info: return Color.green
-        }
-    }
-
     private func copyAllLogs() {
         guard !filteredEntries.isEmpty else { return }
         let text = filteredEntries.map(\.formatted).joined(separator: "\n")
@@ -308,11 +223,168 @@ struct ConsoleView: View {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
     }
+}
 
-    private func scrollToBottom(proxy: ScrollViewProxy) {
-        guard !filteredEntries.isEmpty else { return }
-        DispatchQueue.main.async {
-            proxy.scrollTo("bottom", anchor: .bottom)
+struct ConsoleTextViewRepresentable: NSViewRepresentable {
+    let entries: [LogEntry]
+    let isFilteredEmpty: Bool
+    let isLoggerEmpty: Bool
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = NSScrollView()
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.autoresizesSubviews = true
+
+        let textView = NSTextView()
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.isRichText = true
+        textView.importsGraphics = false
+        textView.drawsBackground = true
+        textView.backgroundColor = NSColor.black.withAlphaComponent(0.9)
+        textView.textContainer?.containerSize = NSSize(width: scrollView.contentSize.width, height: CGFloat.greatestFiniteMagnitude)
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainerInset = NSSize(width: 8, height: 8)
+        textView.autoresizingMask = [.width]
+
+        scrollView.documentView = textView
+        context.coordinator.textView = textView
+        context.coordinator.updateText(entries: entries, isFilteredEmpty: isFilteredEmpty, isLoggerEmpty: isLoggerEmpty)
+
+        return scrollView
+    }
+
+    func updateNSView(_ nsView: NSScrollView, context: Context) {
+        context.coordinator.updateText(entries: entries, isFilteredEmpty: isFilteredEmpty, isLoggerEmpty: isLoggerEmpty)
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    @MainActor
+    class Coordinator {
+        weak var textView: NSTextView?
+        private var lastRenderedEntriesCount: Int = 0
+        private var lastRenderedFirstId: UUID?
+
+        func updateText(entries: [LogEntry], isFilteredEmpty: Bool, isLoggerEmpty: Bool) {
+            guard let textView = textView, let storage = textView.textStorage else { return }
+
+            if isFilteredEmpty {
+                lastRenderedEntriesCount = 0
+                lastRenderedFirstId = nil
+                let emptyMsg = isLoggerEmpty ? "Console is empty." : "No logs matching current filter."
+                let attr = NSAttributedString(string: emptyMsg, attributes: [
+                    .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular),
+                    .foregroundColor: NSColor.gray
+                ])
+                storage.setAttributedString(attr)
+                return
+            }
+
+            let firstId = entries.first?.id
+            let isIncremental = (firstId == lastRenderedFirstId && entries.count >= lastRenderedEntriesCount && lastRenderedEntriesCount > 0)
+
+            if isIncremental {
+                let newEntries = entries[lastRenderedEntriesCount...]
+                if !newEntries.isEmpty {
+                    let newAttr = buildAttributedString(for: Array(newEntries), leadingNewline: true)
+                    storage.append(newAttr)
+                    lastRenderedEntriesCount = entries.count
+                    scrollToBottom()
+                }
+            } else {
+                let fullAttr = buildAttributedString(for: entries, leadingNewline: false)
+                storage.setAttributedString(fullAttr)
+                lastRenderedEntriesCount = entries.count
+                lastRenderedFirstId = firstId
+                scrollToBottom()
+            }
+        }
+
+        private func scrollToBottom() {
+            guard let textView = textView else { return }
+            textView.scrollToEndOfDocument(nil)
+        }
+
+        private func buildAttributedString(for entries: [LogEntry], leadingNewline: Bool) -> NSAttributedString {
+            let result = NSMutableAttributedString()
+            let fontRegular = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+            let fontBold = NSFont.monospacedSystemFont(ofSize: 11, weight: .bold)
+
+            for (index, entry) in entries.enumerated() {
+                if leadingNewline || index > 0 {
+                    result.append(NSAttributedString(string: "\n", attributes: [.font: fontRegular]))
+                }
+
+                let timeStr = NSAttributedString(string: "[\(entry.timestampString)] ", attributes: [
+                    .font: fontRegular,
+                    .foregroundColor: NSColor.gray
+                ])
+                result.append(timeStr)
+
+                let catColor = nsCategoryColor(for: entry.category)
+                let catStr = NSAttributedString(string: "[\(entry.category.rawValue)] ", attributes: [
+                    .font: fontBold,
+                    .foregroundColor: catColor
+                ])
+                result.append(catStr)
+
+                if entry.level != .info {
+                    let levelColor = nsLevelColor(for: entry.level)
+                    let levelStr = NSAttributedString(string: "[\(entry.level.rawValue)] ", attributes: [
+                        .font: fontBold,
+                        .foregroundColor: levelColor
+                    ])
+                    result.append(levelStr)
+                }
+
+                let msgColor = nsEntryColor(for: entry)
+                let msgStr = NSAttributedString(string: entry.message, attributes: [
+                    .font: fontRegular,
+                    .foregroundColor: msgColor
+                ])
+                result.append(msgStr)
+            }
+            return result
+        }
+
+        private func nsCategoryColor(for category: LogCategory) -> NSColor {
+            switch category {
+            case .profiles: return .systemBlue
+            case .plugins: return .systemGreen
+            case .scenery: return .systemYellow
+            case .aircraft: return .systemTeal
+            case .lua: return .systemPurple
+            case .updates: return .systemOrange
+            case .navdata: return .systemPink
+            case .csl: return .systemCyan
+            case .launch: return .systemMint
+            case .system: return .systemIndigo
+            case .general: return .systemGray
+            }
+        }
+
+        private func nsLevelColor(for level: LogLevel) -> NSColor {
+            switch level {
+            case .error: return .systemRed
+            case .warn: return .systemYellow
+            case .info: return .secondaryLabelColor
+            case .debug: return .systemPurple
+            }
+        }
+
+        private func nsEntryColor(for entry: LogEntry) -> NSColor {
+            switch entry.level {
+            case .error: return .systemRed
+            case .warn: return .systemYellow
+            case .debug: return .secondaryLabelColor
+            case .info: return .systemGreen
+            }
         }
     }
 }
