@@ -116,8 +116,14 @@ actor SkunkCraftsUpdaterService {
         let lines = content.components(separatedBy: .newlines)
         for line in lines {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.isEmpty || trimmed.hasPrefix("#") { continue }
-            let normalized = trimmed.replacingOccurrences(of: "\\", with: "/")
+            if trimmed.isEmpty || trimmed.hasPrefix("#") || trimmed.hasPrefix(";") { continue }
+            var normalized = trimmed.replacingOccurrences(of: "\\", with: "/")
+            while normalized.hasPrefix("/") {
+                normalized.removeFirst()
+            }
+            while normalized.hasSuffix("/") {
+                normalized.removeLast()
+            }
             paths.insert(normalized)
         }
         return paths
@@ -147,23 +153,44 @@ actor SkunkCraftsUpdaterService {
         let lines = content.components(separatedBy: .newlines)
         for line in lines {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.isEmpty || trimmed.hasPrefix("#") { continue }
-            let parts = trimmed.components(separatedBy: "|")
-            if parts.count >= 2 {
-                let key = parts[0].trimmingCharacters(in: .whitespaces).lowercased()
-                if metadataKeys.contains(key) {
-                    continue
-                }
-                let rawPath = parts[0].trimmingCharacters(in: .whitespaces)
-                let path = rawPath.hasPrefix("/") ? String(rawPath.dropFirst()) : rawPath
-                let crc = parts[1].trimmingCharacters(in: .whitespaces)
-                let size = parts.count >= 3 ? Int64(parts[2].trimmingCharacters(in: .whitespaces)) : nil
-                items.append(SkunkCraftsFileItem(relativePath: path, expectedCRC: crc, expectedSize: size))
-            } else if parts.count == 1 && parts[0].contains(".") {
-                let rawPath = parts[0].trimmingCharacters(in: .whitespaces)
-                let path = rawPath.hasPrefix("/") ? String(rawPath.dropFirst()) : rawPath
-                items.append(SkunkCraftsFileItem(relativePath: path, expectedCRC: nil, expectedSize: nil))
+            if trimmed.isEmpty || trimmed.hasPrefix("#") || trimmed.hasPrefix(";") { continue }
+
+            let parts: [String]
+            if trimmed.contains("|") {
+                parts = trimmed.components(separatedBy: "|")
+            } else if trimmed.contains(":") {
+                parts = trimmed.components(separatedBy: ":")
+            } else {
+                parts = [trimmed]
             }
+
+            guard !parts.isEmpty else { continue }
+            let firstPart = parts[0].trimmingCharacters(in: .whitespaces)
+            if metadataKeys.contains(firstPart.lowercased()) {
+                continue
+            }
+
+            var rawPath = firstPart.replacingOccurrences(of: "\\", with: "/")
+            while rawPath.hasPrefix("/") {
+                rawPath.removeFirst()
+            }
+            guard !rawPath.isEmpty else { continue }
+
+            var expectedCRC: String? = nil
+            var expectedSize: Int64? = nil
+
+            if parts.count >= 2 {
+                let secondPart = parts[1].trimmingCharacters(in: .whitespaces)
+                if !secondPart.isEmpty {
+                    expectedCRC = secondPart
+                }
+            }
+            if parts.count >= 3 {
+                let thirdPart = parts[2].trimmingCharacters(in: .whitespaces)
+                expectedSize = Int64(thirdPart)
+            }
+
+            items.append(SkunkCraftsFileItem(relativePath: rawPath, expectedCRC: expectedCRC, expectedSize: expectedSize))
         }
         return items
     }
@@ -187,16 +214,33 @@ actor SkunkCraftsUpdaterService {
 
     nonisolated func parseCRC32(_ string: String) -> UInt32? {
         let trimmed = string.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return nil }
+
+        // 1. Explicit hex with 0x / 0X prefix
+        if trimmed.hasPrefix("0x") || trimmed.hasPrefix("0X") {
+            let hexStr = String(trimmed.dropFirst(2))
+            return UInt32(hexStr, radix: 16)
+        }
+
+        // 2. Unsigned decimal
         if let dec = UInt32(trimmed) {
             return dec
         }
-        if let hex = UInt32(trimmed.replacingOccurrences(of: "0x", with: ""), radix: 16) {
+
+        // 3. Signed decimal (from signed 32-bit CRC generators e.g. Python 2)
+        if let signed = Int32(trimmed) {
+            return UInt32(bitPattern: signed)
+        }
+
+        // 4. Hex without 0x prefix (e.g. "ABCD1234", "a1b2c3d4")
+        if let hex = UInt32(trimmed, radix: 16) {
             return hex
         }
+
         return nil
     }
 
-    private func calculateCRC32UInt32(for url: URL) -> UInt32? {
+    nonisolated func calculateCRC32UInt32(for url: URL) -> UInt32? {
         guard let fileHandle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? fileHandle.close() }
         var crc: uLong = zlib.crc32(0, nil, 0)
@@ -304,10 +348,27 @@ actor SkunkCraftsUpdaterService {
             if !fileManager.fileExists(atPath: localFileURL.path) {
                 await logHandler("[SkunkCrafts] Missing file: \(item.relativePath). Marking addon for update.")
                 return (latestVersion, true, "Update available (modified files)")
-            } else if let expectedCRCStr = item.expectedCRC, let distantCRC = parseCRC32(expectedCRCStr), let localCRC = calculateCRC32UInt32(for: localFileURL) {
-                if localCRC != distantCRC {
-                    await logHandler("[SkunkCrafts] CRC mismatch for \(item.relativePath) (local: \(localCRC), distant: \(distantCRC)). Marking addon for update.")
-                    return (latestVersion, true, "Update available (modified files)")
+            } else if let expectedCRCStr = item.expectedCRC, let distantCRC = parseCRC32(expectedCRCStr) {
+                // 0xFFFFFFFF (4294967295) and 0 are sentinel values in SkunkCrafts manifests for install-only / user config / cache files.
+                // If they already exist on disk, their contents should not be checked or overwritten.
+                if distantCRC != 0xFFFFFFFF && distantCRC != 0 {
+                    if let localCRC = calculateCRC32UInt32(for: localFileURL) {
+                        if localCRC != distantCRC {
+                            await logHandler("[SkunkCrafts] CRC mismatch for \(item.relativePath) (local: \(localCRC), distant: \(distantCRC)). Marking addon for update.")
+                            return (latestVersion, true, "Update available (modified files)")
+                        }
+                    } else {
+                        await logHandler("[SkunkCrafts] Unreadable file: \(item.relativePath). Marking addon for update.")
+                        return (latestVersion, true, "Update available (modified files)")
+                    }
+                }
+            } else if let expectedSize = item.expectedSize {
+                if let attrs = try? fileManager.attributesOfItem(atPath: localFileURL.path),
+                   let localSize = attrs[.size] as? Int64 {
+                    if localSize != expectedSize {
+                        await logHandler("[SkunkCrafts] Size mismatch for \(item.relativePath) (local: \(localSize), distant: \(expectedSize)). Marking addon for update.")
+                        return (latestVersion, true, "Update available (modified files)")
+                    }
                 }
             }
         }
@@ -332,9 +393,24 @@ actor SkunkCraftsUpdaterService {
         }
         guard let baseURL = URL(string: base) else { return }
 
-        await logHandler("[SkunkCrafts] Starting update download for \(config.name)...")
+        await logHandler("[SkunkCrafts] Starting update check for \(config.name)...")
 
-        // 1. Fetch remote whitelist
+        // 1. Fetch remote skunkcrafts_updater.cfg for version comparison
+        var remoteVersion: String? = nil
+        let remoteConfigURL = baseURL.appendingPathComponent("skunkcrafts_updater.cfg")
+        if let configContent = try? await fetchTextContent(from: remoteConfigURL) {
+            let lines = configContent.components(separatedBy: .newlines)
+            for line in lines {
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                let parts = trimmed.components(separatedBy: "|")
+                if parts.count >= 2 && parts[0].trimmingCharacters(in: .whitespaces).lowercased() == "version" {
+                    remoteVersion = parts[1].trimmingCharacters(in: .whitespaces)
+                    break
+                }
+            }
+        }
+
+        // 2. Fetch remote whitelist
         var whitelistItems: [SkunkCraftsFileItem] = []
         let whitelistURL = baseURL.appendingPathComponent("skunkcrafts_updater_whitelist.txt")
         if let whitelistText = try? await fetchTextContent(from: whitelistURL) {
@@ -345,13 +421,13 @@ actor SkunkCraftsUpdaterService {
             whitelistItems.append(SkunkCraftsFileItem(relativePath: "skunkcrafts_updater.cfg", expectedCRC: nil, expectedSize: nil))
         }
 
-        // 2. Fetch remote blacklist & read local ignore
+        // 3. Fetch remote blacklist & read local ignore
         var ignoredSet = parseIgnoreFile(in: addonFolder)
         if let blacklistText = try? await fetchTextContent(from: baseURL.appendingPathComponent("skunkcrafts_updater_blacklist.txt")) {
             ignoredSet.formUnion(parseBlacklist(content: blacklistText))
         }
 
-        // 3. Filter files needing download
+        // 4. Filter files needing download
         var filesToDownload: [SkunkCraftsFileItem] = []
         var checkCount = 0
         for item in whitelistItems {
@@ -373,14 +449,39 @@ actor SkunkCraftsUpdaterService {
                 continue
             }
 
-            if !fileManager.fileExists(atPath: localFileURL.path) {
+            let fileExists = fileManager.fileExists(atPath: localFileURL.path)
+            if !fileExists {
+                await logHandler("[SkunkCrafts] Missing file: \(item.relativePath). Queuing for download.")
                 filesToDownload.append(item)
-            } else if let expectedCRCStr = item.expectedCRC, let distantCRC = parseCRC32(expectedCRCStr), let localCRC = calculateCRC32UInt32(for: localFileURL) {
-                if localCRC != distantCRC {
+            } else if let expectedCRCStr = item.expectedCRC, let distantCRC = parseCRC32(expectedCRCStr) {
+                // 0xFFFFFFFF (4294967295) and 0 are sentinel values in SkunkCrafts manifests for install-only / user config / cache files.
+                if distantCRC != 0xFFFFFFFF && distantCRC != 0 {
+                    if let localCRC = calculateCRC32UInt32(for: localFileURL) {
+                        if localCRC != distantCRC {
+                            await logHandler("[SkunkCrafts] CRC mismatch for \(item.relativePath) (local: \(localCRC), distant: \(distantCRC)). Queuing for download.")
+                            filesToDownload.append(item)
+                        }
+                    } else {
+                        await logHandler("[SkunkCrafts] Unreadable local file: \(item.relativePath). Queuing for repair.")
+                        filesToDownload.append(item)
+                    }
+                }
+            } else if let expectedSize = item.expectedSize {
+                if let attrs = try? fileManager.attributesOfItem(atPath: localFileURL.path),
+                   let localSize = attrs[.size] as? Int64 {
+                    if localSize != expectedSize {
+                        await logHandler("[SkunkCrafts] Size mismatch for \(item.relativePath) (local: \(localSize), distant: \(expectedSize)). Queuing for download.")
+                        filesToDownload.append(item)
+                    }
+                } else {
                     filesToDownload.append(item)
                 }
             } else {
-                filesToDownload.append(item)
+                let isConfigFile = item.relativePath.lowercased().hasPrefix("skunkcrafts_updater") &&
+                    (item.relativePath.lowercased().hasSuffix(".cfg") || item.relativePath.lowercased().hasSuffix(".txt") || item.relativePath.lowercased().hasSuffix(".json"))
+                if isConfigFile && remoteVersion != nil && config.version != nil && remoteVersion != config.version {
+                    filesToDownload.append(item)
+                }
             }
         }
 
@@ -390,9 +491,9 @@ actor SkunkCraftsUpdaterService {
             return
         }
 
-        await logHandler("[SkunkCrafts] Need to download \(filesToDownload.count) file(s)...")
+        await logHandler("[SkunkCrafts] Downloading \(filesToDownload.count) file(s) needing update/repair out of \(whitelistItems.count) total files...")
 
-        // 4. Download and write each file
+        // 5. Download and write each file
         let totalFiles = filesToDownload.count
         for (index, item) in filesToDownload.enumerated() {
             let progress = Double(index) / Double(totalFiles)

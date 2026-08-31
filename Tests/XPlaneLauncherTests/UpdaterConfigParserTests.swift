@@ -87,6 +87,40 @@ final class UpdaterConfigParserTests: XCTestCase {
         XCTAssertNil(items[2].expectedCRC)
     }
 
+    func testParseSkunkCraftsWhitelistColonFormat() {
+        let whitelistContent = """
+        # Metadata
+        name:Some Addon
+        version:2.0.0
+
+        # Files
+        plugins/win.xpl:0x12345678:65536
+        sounds/GPWS/PULL UP.MP3:14678
+        liveries\\custom\\paint.png:4294967295:1024
+        /objects/aircraft.obj:abcd1234:2048
+        """
+
+        let service = SkunkCraftsUpdaterService.shared
+        let items = service.parseWhitelist(content: whitelistContent)
+
+        XCTAssertEqual(items.count, 4)
+        XCTAssertEqual(items[0].relativePath, "plugins/win.xpl")
+        XCTAssertEqual(items[0].expectedCRC, "0x12345678")
+        XCTAssertEqual(items[0].expectedSize, 65536)
+
+        XCTAssertEqual(items[1].relativePath, "sounds/GPWS/PULL UP.MP3")
+        XCTAssertEqual(items[1].expectedCRC, "14678")
+        XCTAssertNil(items[1].expectedSize)
+
+        XCTAssertEqual(items[2].relativePath, "liveries/custom/paint.png")
+        XCTAssertEqual(items[2].expectedCRC, "4294967295")
+        XCTAssertEqual(items[2].expectedSize, 1024)
+
+        XCTAssertEqual(items[3].relativePath, "objects/aircraft.obj")
+        XCTAssertEqual(items[3].expectedCRC, "abcd1234")
+        XCTAssertEqual(items[3].expectedSize, 2048)
+    }
+
     func testSkunkCraftsIgnoreMatching() {
         let service = SkunkCraftsUpdaterService.shared
         let ignoredSet: Set<String> = [
@@ -106,7 +140,31 @@ final class UpdaterConfigParserTests: XCTestCase {
         XCTAssertEqual(service.parseCRC32("4294967295"), UInt32(4294967295))
         XCTAssertEqual(service.parseCRC32("0xFFFFFFFF"), UInt32(0xFFFFFFFF))
         XCTAssertEqual(service.parseCRC32("0x1a2b3c4d"), UInt32(0x1a2b3c4d))
+        XCTAssertEqual(service.parseCRC32("0X1A2B3C4D"), UInt32(0x1a2b3c4d))
+        XCTAssertEqual(service.parseCRC32("abcd1234"), UInt32(0xabcd1234))
+        XCTAssertEqual(service.parseCRC32("ABCD1234"), UInt32(0xabcd1234))
+        XCTAssertEqual(service.parseCRC32("-1"), UInt32(0xFFFFFFFF))
+        XCTAssertEqual(service.parseCRC32("-1053423"), UInt32(bitPattern: -1053423))
         XCTAssertNil(service.parseCRC32("invalid"))
+    }
+
+    func testSkunkCraftsCalculateCRC32() throws {
+        let service = SkunkCraftsUpdaterService.shared
+        let testFile = tempDir.appendingPathComponent("test_crc.txt")
+        // "123456789" is standard test vector for CRC32 -> 0xCBF43926 = 3421780262
+        try "123456789".write(to: testFile, atomically: true, encoding: .utf8)
+
+        let crc = service.calculateCRC32UInt32(for: testFile)
+        XCTAssertEqual(crc, UInt32(0xCBF43926))
+    }
+
+    func testSkunkCraftsSentinelCRCsRecognized() {
+        let service = SkunkCraftsUpdaterService.shared
+        // 4294967295, 0xFFFFFFFF, -1, and 0 are sentinel placeholder CRCs in SkunkCrafts manifests
+        XCTAssertEqual(service.parseCRC32("4294967295"), 0xFFFFFFFF)
+        XCTAssertEqual(service.parseCRC32("0xFFFFFFFF"), 0xFFFFFFFF)
+        XCTAssertEqual(service.parseCRC32("-1"), 0xFFFFFFFF)
+        XCTAssertEqual(service.parseCRC32("0"), 0)
     }
 
     // MARK: - X-Updater Tests
