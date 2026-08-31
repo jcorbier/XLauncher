@@ -155,6 +155,56 @@ final class UpdaterConfigParserTests: XCTestCase {
         XCTAssertEqual(resolved.actualURL?.lastPathComponent, "fuselage.dds")
     }
 
+    func testXUpdaterUpdateLocalSettingsIniWithSixDigitVersion() async throws {
+        let service = XUpdaterService.shared
+        let addonDir = tempDir.appendingPathComponent("FF777")
+        let updaterDir = addonDir.appendingPathComponent(".xupdater")
+        try fm.createDirectory(at: updaterDir, withIntermediateDirectories: true)
+
+        let settingsFile = updaterDir.appendingPathComponent("settings.ini")
+        let initialContent = """
+        [General]
+        product_name = FlightFactor 777-200ER
+        product_version = 020523
+        snapshot_num = 27
+        """
+        try initialContent.write(to: settingsFile, atomically: true, encoding: .utf8)
+
+        // Update settings to snapshot 28 and version 2.5.26
+        await service.updateLocalSettings(in: addonDir, newSnapshotNum: 28, newVersion: "2.5.26")
+
+        let config = service.parseConfig(at: settingsFile, defaultName: "FF777")
+        XCTAssertNotNil(config)
+        XCTAssertEqual(config?.version, "2.5.26")
+        XCTAssertEqual(config?.snapshotNum, 28)
+
+        let writtenContent = try String(contentsOf: settingsFile, encoding: .utf8)
+        XCTAssertTrue(writtenContent.contains("product_version=020526") || writtenContent.contains("product_version = 020526"))
+        XCTAssertTrue(writtenContent.contains("snapshot_num=28") || writtenContent.contains("snapshot_num = 28"))
+    }
+
+    func testXUpdaterUpdateLocalSettingsJson() async throws {
+        let service = XUpdaterService.shared
+        let addonDir = tempDir.appendingPathComponent("CustomAddon")
+        try fm.createDirectory(at: addonDir, withIntermediateDirectories: true)
+
+        let jsonFile = addonDir.appendingPathComponent("x-updater.json")
+        let initialJson: [String: Any] = [
+            "name": "Custom Aircraft",
+            "version": "1.0.0",
+            "snapshot_num": 10
+        ]
+        let data = try JSONSerialization.data(withJSONObject: initialJson, options: .prettyPrinted)
+        try data.write(to: jsonFile)
+
+        await service.updateLocalSettings(in: addonDir, newSnapshotNum: 11, newVersion: "1.1.0")
+
+        let config = service.parseConfig(at: jsonFile, defaultName: "Custom Aircraft")
+        XCTAssertNotNil(config)
+        XCTAssertEqual(config?.version, "1.1.0")
+        XCTAssertEqual(config?.snapshotNum, 11)
+    }
+
     // MARK: - CSL Index Parser Tests
 
     func testCSLIndexParser() {

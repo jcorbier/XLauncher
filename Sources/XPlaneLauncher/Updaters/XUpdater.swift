@@ -97,7 +97,7 @@ actor XUpdaterService {
 
     static let defaultXUpdaterHost = "https://update.x-plane.org"
 
-    private let nativeSubdirectories = ["", ".xupdater", ".x-updater", ".x_updater", "x-updater", "x_updater", "xupdater", "data"]
+    private let nativeSubdirectories = ["", ".xupdater", ".x-updater", ".x_updater", "x-updater", "x_updater", "xupdater"]
 
     private let xUpdaterConfigFiles = [
         "settings.ini", "settings.cfg",
@@ -113,7 +113,7 @@ actor XUpdaterService {
     ]
 
     nonisolated func findConfig(in folderURL: URL) -> URL? {
-        let nativeSubdirectories = ["", ".xupdater", ".x-updater", ".x_updater", "x-updater", "x_updater", "xupdater", "data"]
+        let nativeSubdirectories = ["", ".xupdater", ".x-updater", ".x_updater", "x-updater", "x_updater", "xupdater"]
         let xUpdaterConfigFiles = [
             "settings.ini", "settings.cfg",
             "x-updater.cnf", "x_updater.cnf", "xupdater.cnf",
@@ -616,17 +616,6 @@ actor XUpdaterService {
             }
         }
 
-        // Check alt subfolder path (e.g., stem/stem/file)
-        let lastComponent = (itemPath as NSString).lastPathComponent
-        let stem = (lastComponent as NSString).deletingPathExtension
-        let parentPath = (itemPath as NSString).deletingLastPathComponent
-        let altSubPath = parentPath.isEmpty ? "\(stem)/\(lastComponent)" : "\(parentPath)/\(stem)/\(lastComponent)"
-        if let subURL = try? PathSecurity.validateSubpath(relativePath: altSubPath, within: folderURL) {
-            if fm.fileExists(atPath: subURL.path) {
-                return (true, subURL)
-            }
-        }
-
         return (false, nil)
     }
 
@@ -676,10 +665,9 @@ actor XUpdaterService {
                     await Task.yield()
                 }
 
-                let localFileURL = folderURL.appendingPathComponent(item.path)
-
                 if item.state == .delete {
-                    if fileManager.fileExists(atPath: localFileURL.path) {
+                    guard let directURL = try? PathSecurity.validateSubpath(relativePath: item.path, within: folderURL) else { continue }
+                    if fileManager.fileExists(atPath: directURL.path) {
                         await logHandler("[X-Updater] Deprecated file detected: \(item.path). Marking addon for update.")
                         return (latestVersion, true, "Needs repair (deprecated file)")
                     }
@@ -736,7 +724,7 @@ actor XUpdaterService {
 
         // Filter files needing download or deletion
         var filesToDownload: [XUpdaterFileItem] = []
-        var filesToDelete: [XUpdaterFileItem] = []
+        var filesToDelete: [(item: XUpdaterFileItem, fileURL: URL)] = []
         var checkCount = 0
 
         for item in files {
@@ -750,14 +738,15 @@ actor XUpdaterService {
                 continue
             }
 
-            let (exists, actualURL) = resolveLocalFile(itemPath: item.path, in: addonFolder)
-
             if item.state == .delete {
-                if exists {
-                    filesToDelete.append(item)
+                guard let directURL = try? PathSecurity.validateSubpath(relativePath: item.path, within: addonFolder) else { continue }
+                if fileManager.fileExists(atPath: directURL.path) {
+                    filesToDelete.append((item, directURL))
                 }
                 continue
             }
+
+            let (exists, actualURL) = resolveLocalFile(itemPath: item.path, in: addonFolder)
 
             if !exists {
                 if item.size == 0 && item.path.contains("marker") { continue }
@@ -782,17 +771,23 @@ actor XUpdaterService {
         await logHandler("[X-Updater] Processing \(totalActions) files (\(filesToDownload.count) to download, \(filesToDelete.count) to remove)...")
         var currentAction = 0
 
-        for item in filesToDelete {
+        for deleteEntry in filesToDelete {
+            let item = deleteEntry.item
+            let fileURL = deleteEntry.fileURL
             currentAction += 1
             let progress = Double(currentAction) / Double(totalActions)
             await progressHandler("Removing (\(currentAction)/\(totalActions)): \(item.path)", progress)
-            guard let destinationURL = try? PathSecurity.validateSubpath(relativePath: item.path, within: addonFolder) else {
+            guard PathSecurity.isStrictlyContained(url: fileURL, within: addonFolder) else {
                 await logHandler("[X-Updater] Insecure delete destination rejected: \(item.path)")
                 continue
             }
-            if fileManager.fileExists(atPath: destinationURL.path) {
-                try? fileManager.removeItem(at: destinationURL)
-                await logHandler("[X-Updater] Removed deprecated file \(item.path)")
+            if fileManager.fileExists(atPath: fileURL.path) {
+                do {
+                    try fileManager.removeItem(at: fileURL)
+                    await logHandler("[X-Updater] Removed deprecated file \(item.path)")
+                } catch {
+                    await logHandler("[X-Updater] Failed to remove deprecated file \(item.path): \(error.localizedDescription)")
+                }
             }
         }
 
@@ -826,52 +821,172 @@ actor XUpdaterService {
             await logHandler("[X-Updater] Repaired/Updated \(item.path) (\(finalData.count) bytes)")
         }
 
-        // Update snapshot_num in local settings.ini if available
-        if let newSnapshot = remoteSnapshotNum {
-            updateLocalSettings(in: addonFolder, newSnapshotNum: newSnapshot, newVersion: remoteVersion)
+        // Update snapshot_num and version in local config files if available
+        let manifestPaths = Set(files.map { $0.path.lowercased() })
+        if remoteSnapshotNum != nil || remoteVersion != nil {
+            updateLocalSettings(
+                in: addonFolder,
+                newSnapshotNum: remoteSnapshotNum,
+                newVersion: remoteVersion,
+                manifestPaths: manifestPaths
+            )
         }
 
         await logHandler("[X-Updater] Update / Repair completed successfully.")
         await progressHandler("Up to date", 1.0)
     }
 
-    private func updateLocalSettings(in addonFolder: URL, newSnapshotNum: Int, newVersion: String?) {
-        let candidatePaths = [
-            addonFolder.appendingPathComponent(".xupdater/settings.ini"),
-            addonFolder.appendingPathComponent("x-updater/settings.ini"),
-            addonFolder.appendingPathComponent("settings.ini")
+    private nonisolated func encodeVersionString(_ version: String, like existing: String) -> String {
+        let trimmedExisting = existing.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedExisting.count == 6 && trimmedExisting.allSatisfy(\.isNumber) {
+            let digitsOnly = version.filter(\.isNumber)
+            if digitsOnly.count == 6 {
+                return digitsOnly
+            }
+            let components = version.components(separatedBy: CharacterSet(charactersIn: ".-_ ")).compactMap { Int($0) }
+            if components.count >= 3 {
+                return String(format: "%02d%02d%02d", components[0], components[1], components[2])
+            } else if components.count == 2 {
+                return String(format: "%02d%02d00", components[0], components[1])
+            }
+        }
+        return version
+    }
+
+    func updateLocalSettings(
+        in addonFolder: URL,
+        newSnapshotNum: Int?,
+        newVersion: String?,
+        manifestPaths: Set<String> = []
+    ) {
+        let nativeSubdirectories = ["", ".xupdater", ".x-updater", ".x_updater", "x-updater", "x_updater", "xupdater"]
+        let candidateFiles = [
+            "settings.ini", "settings.cfg",
+            "x-updater.cnf", "x_updater.cnf", "xupdater.cnf",
+            "x-updater.cfg", "x_updater.cfg", "xupdater.cfg",
+            ".x-updater.cfg", ".x_updater.cfg",
+            "x-updater.conf", "x_updater.conf",
+            "x-jet-updater.cfg", "xjetupdater.cfg",
+            "x-updater.json", "x_updater.json", "xupdater.json",
+            ".x-updater.json", ".x_updater.json",
+            "x-updater-profile.json", "x_updater_profile.json", "xupdater_profile.json"
         ]
 
-        for settingsURL in candidatePaths {
-            guard fileManager.fileExists(atPath: settingsURL.path),
-                  let content = try? String(contentsOf: settingsURL, encoding: .utf8) else { continue }
+        var didUpdateAtLeastOneFile = false
+        let nowTimestamp = Int(Date().timeIntervalSince1970)
 
-            var lines = content.components(separatedBy: .newlines)
-            var foundSnapshot = false
-            var foundUpdatedAt = false
-            let nowTimestamp = Int(Date().timeIntervalSince1970)
+        for sub in nativeSubdirectories {
+            let searchDir = sub.isEmpty ? addonFolder : addonFolder.appendingPathComponent(sub)
+            for fileName in candidateFiles {
+                let fileURL = searchDir.appendingPathComponent(fileName)
+                guard fileManager.fileExists(atPath: fileURL.path) else { continue }
 
-            for (idx, line) in lines.enumerated() {
-                let trimmed = line.trimmingCharacters(in: .whitespaces)
-                if trimmed.hasPrefix("snapshot_num=") {
-                    lines[idx] = "snapshot_num=\(newSnapshotNum)"
-                    foundSnapshot = true
-                } else if trimmed.hasPrefix("updated_at=") {
-                    lines[idx] = "updated_at=\(nowTimestamp)"
-                    foundUpdatedAt = true
+                let relativePath = sub.isEmpty ? fileName : "\(sub)/\(fileName)"
+                if manifestPaths.contains(relativePath.lowercased()) {
+                    // Do not overwrite files tracked in the remote manifest (part of addon distribution)
+                    continue
+                }
+
+                if fileName.hasSuffix(".json") {
+                    if let data = try? Data(contentsOf: fileURL),
+                       var json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
+                        var modified = false
+                        if let snapshot = newSnapshotNum {
+                            if json["snapshot_num"] != nil || (json["snapshot"] == nil && json["number"] == nil) {
+                                json["snapshot_num"] = snapshot
+                                modified = true
+                            }
+                            if json["snapshot"] != nil {
+                                json["snapshot"] = snapshot
+                                modified = true
+                            }
+                            if json["number"] != nil {
+                                json["number"] = snapshot
+                                modified = true
+                            }
+                        }
+                        if let ver = newVersion {
+                            if let existing = json["version"] as? String {
+                                json["version"] = encodeVersionString(ver, like: existing)
+                                modified = true
+                            } else if let existing = json["shortDesc"] as? String {
+                                json["shortDesc"] = encodeVersionString(ver, like: existing)
+                                modified = true
+                            } else {
+                                json["version"] = ver
+                                modified = true
+                            }
+                        }
+                        json["updated_at"] = nowTimestamp
+                        modified = true
+
+                        if modified, let outputData = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]) {
+                            try? outputData.write(to: fileURL, options: .atomic)
+                            didUpdateAtLeastOneFile = true
+                        }
+                    }
+                    continue
+                }
+
+                // INI / Key-Value configuration file
+                guard let content = try? String(contentsOf: fileURL, encoding: .utf8) else { continue }
+                var lines = content.components(separatedBy: .newlines)
+                var foundSnapshot = false
+                var foundVersion = false
+                var foundUpdatedAt = false
+
+                for (idx, line) in lines.enumerated() {
+                    let trimmed = line.trimmingCharacters(in: .whitespaces)
+                    if trimmed.isEmpty || trimmed.hasPrefix(";") || trimmed.hasPrefix("#") { continue }
+                    guard let eqIndex = line.firstIndex(of: "=") else { continue }
+                    let key = String(line[..<eqIndex]).trimmingCharacters(in: .whitespaces).lowercased()
+                    let rawKey = String(line[..<eqIndex]).trimmingCharacters(in: .whitespaces)
+                    let rawVal = String(line[line.index(after: eqIndex)...]).trimmingCharacters(in: .whitespaces)
+
+                    if key == "snapshot_num" || key == "snapshot" {
+                        if let snapshot = newSnapshotNum {
+                            lines[idx] = "\(rawKey)=\(snapshot)"
+                            foundSnapshot = true
+                        }
+                    } else if key == "version" || key == "product_version" || key == "build" {
+                        if let ver = newVersion {
+                            let encoded = encodeVersionString(ver, like: rawVal)
+                            lines[idx] = "\(rawKey)=\(encoded)"
+                            foundVersion = true
+                        }
+                    } else if key == "updated_at" {
+                        lines[idx] = "\(rawKey)=\(nowTimestamp)"
+                        foundUpdatedAt = true
+                    }
+                }
+
+                if !foundSnapshot, let snapshot = newSnapshotNum {
+                    lines.append("snapshot_num=\(snapshot)")
+                }
+                if !foundVersion, let ver = newVersion {
+                    lines.append("version=\(ver)")
+                }
+                if !foundUpdatedAt {
+                    lines.append("updated_at=\(nowTimestamp)")
+                }
+
+                let updatedContent = lines.joined(separator: "\n")
+                if (try? updatedContent.write(to: fileURL, atomically: true, encoding: .utf8)) != nil {
+                    didUpdateAtLeastOneFile = true
                 }
             }
+        }
 
-            if !foundSnapshot {
-                lines.append("snapshot_num=\(newSnapshotNum)")
-            }
-            if !foundUpdatedAt {
-                lines.append("updated_at=\(nowTimestamp)")
-            }
-
-            let updatedContent = lines.joined(separator: "\n")
-            try? updatedContent.write(to: settingsURL, atomically: true, encoding: .utf8)
-            break
+        if !didUpdateAtLeastOneFile {
+            let defaultDir = addonFolder.appendingPathComponent(".xupdater")
+            try? fileManager.createDirectory(at: defaultDir, withIntermediateDirectories: true)
+            let defaultURL = defaultDir.appendingPathComponent("settings.ini")
+            var defaultLines: [String] = []
+            if let ver = newVersion { defaultLines.append("version=\(ver)") }
+            if let snapshot = newSnapshotNum { defaultLines.append("snapshot_num=\(snapshot)") }
+            defaultLines.append("updated_at=\(nowTimestamp)")
+            let content = defaultLines.joined(separator: "\n")
+            try? content.write(to: defaultURL, atomically: true, encoding: .utf8)
         }
     }
 }
