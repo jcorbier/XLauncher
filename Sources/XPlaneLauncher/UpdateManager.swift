@@ -108,7 +108,7 @@ class UpdateManager {
         }
     }
 
-    struct UpdatableAddon: Identifiable, Equatable, Hashable {
+    struct UpdatableAddon: Identifiable, Equatable, Hashable, Sendable {
         let id = UUID()
         let name: String
         let addonCategory: AddonCategory
@@ -214,23 +214,22 @@ class UpdateManager {
 
         isScanning = true
 
-        Task.detached(priority: .userInitiated) { [weak self] in
-            var allAddons: [UpdatableAddon] = []
-
-            for category in AddonCategory.allCases {
-                let folderURL = PathService.shared.dataFolder(category.dataSubfolder, in: dataFolder)
-                if FileManager.default.fileExists(atPath: folderURL.path) {
-                    let addons = Self.scanDirectoryForAddons(subFolderURL: folderURL, category: category)
-                    allAddons.append(contentsOf: addons)
+        Task {
+            let allAddons = await Task.detached(priority: .userInitiated) {
+                var results: [UpdatableAddon] = []
+                for category in AddonCategory.allCases {
+                    let folderURL = PathService.shared.dataFolder(category.dataSubfolder, in: dataFolder)
+                    if FileManager.default.fileExists(atPath: folderURL.path) {
+                        let addons = Self.scanDirectoryForAddons(subFolderURL: folderURL, category: category)
+                        results.append(contentsOf: addons)
+                    }
                 }
-            }
+                return results
+            }.value
 
-            await MainActor.run {
-                guard let self = self else { return }
-                self.isScanning = false
-                self.updatableAddons = allAddons
-                completion?()
-            }
+            self.isScanning = false
+            self.updatableAddons = allAddons
+            completion?()
         }
     }
 

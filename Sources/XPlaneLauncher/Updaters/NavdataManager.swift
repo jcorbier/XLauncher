@@ -104,16 +104,16 @@ final class NavdataManager {
         let currentCatalog = catalog
         let currentScanner = self.scanner
 
-        Task.detached(priority: .userInitiated) {
-            let scannedAddons = currentScanner.scanAddons(xPlaneURL: xPlaneURL, launcherDataFolder: launcherFolder, catalog: currentCatalog)
-            let scannedBackups = currentScanner.scanBackups(xPlaneURL: xPlaneURL)
+        Task {
+            let (scannedAddons, scannedBackups) = await Task.detached(priority: .userInitiated) {
+                let addons = currentScanner.scanAddons(xPlaneURL: xPlaneURL, launcherDataFolder: launcherFolder, catalog: currentCatalog)
+                let backups = currentScanner.scanBackups(xPlaneURL: xPlaneURL)
+                return (addons, backups)
+            }.value
 
-            await MainActor.run { [weak self] in
-                guard let self = self else { return }
-                self.addons = scannedAddons
-                self.backups = scannedBackups
-                self.isScanning = false
-            }
+            self.addons = scannedAddons
+            self.backups = scannedBackups
+            self.isScanning = false
         }
     }
 
@@ -209,9 +209,8 @@ final class NavdataManager {
             addons[index].progress = 0.6
 
             // 3. Safety Backup (offloaded to background)
-            try await Task.detached(priority: .userInitiated) { [weak self] in
-                guard let self = self else { return }
-                try self.createBackup(for: item, xPlaneURL: xPlaneURL)
+            try await Task.detached(priority: .userInitiated) {
+                try Self.createBackup(for: item, xPlaneURL: xPlaneURL)
             }.value
 
             // 4. Extract Archive (offloaded to background)
@@ -228,9 +227,8 @@ final class NavdataManager {
             addons[index].statusMessage = "Installing..."
             addons[index].progress = 0.9
 
-            try await Task.detached(priority: .userInitiated) { [weak self] in
-                guard let self = self else { return }
-                try self.installExtractedFiles(from: extractDir, to: item.targetURL)
+            try await Task.detached(priority: .userInitiated) {
+                try Self.installExtractedFiles(from: extractDir, to: item.targetURL)
             }.value
 
             // 6. Cleanup Temp Directory
@@ -271,7 +269,7 @@ final class NavdataManager {
 
     // MARK: - Backup & Restore System
 
-    private nonisolated func createBackup(for item: DetectedNavdataItem, xPlaneURL: URL) throws {
+    private nonisolated static func createBackup(for item: DetectedNavdataItem, xPlaneURL: URL) throws {
         let fileManager = FileManager.default
         guard fileManager.fileExists(atPath: item.targetURL.path) else { return }
 
@@ -326,7 +324,7 @@ final class NavdataManager {
         try verificationData.write(to: backupSubdir.appendingPathComponent("verification.json"))
     }
 
-    private nonisolated func cleanupOldBackups(in backupRootDir: URL, providerName: String) {
+    private nonisolated static func cleanupOldBackups(in backupRootDir: URL, providerName: String) {
         let fileManager = FileManager.default
         guard let entries = try? fileManager.contentsOfDirectory(at: backupRootDir, includingPropertiesForKeys: nil) else { return }
 
@@ -340,7 +338,7 @@ final class NavdataManager {
         }
     }
 
-    private nonisolated func installExtractedFiles(from sourceDir: URL, to targetDir: URL) throws {
+    private nonisolated static func installExtractedFiles(from sourceDir: URL, to targetDir: URL) throws {
         let fileManager = FileManager.default
         try fileManager.createDirectory(at: targetDir, withIntermediateDirectories: true)
 
