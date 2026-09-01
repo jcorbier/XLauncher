@@ -280,10 +280,26 @@ actor SkunkCraftsUpdaterService {
 
         await logHandler("[SkunkCrafts] Checking \(config.name) from \(baseURL.absoluteString)...")
 
+        var localVersion = config.version
+        if localVersion == nil, let cfgURL = findConfig(in: folderURL), let parsed = parseConfig(at: cfgURL, defaultName: config.name) {
+            localVersion = parsed.version
+        }
+
+        let configFileName: String
+        if let cfgURL = findConfig(in: folderURL) {
+            configFileName = cfgURL.lastPathComponent
+        } else {
+            configFileName = "skunkcrafts_updater.cfg"
+        }
+
         // 1. Fetch remote skunkcrafts_updater.cfg
         var remoteVersion: String? = nil
-        let remoteConfigURL = baseURL.appendingPathComponent("skunkcrafts_updater.cfg")
-        if let configContent = try? await fetchTextContent(from: remoteConfigURL) {
+        let remoteConfigURL = baseURL.appendingPathComponent(configFileName)
+        var configContent: String? = try? await fetchTextContent(from: remoteConfigURL)
+        if configContent == nil && configFileName != "skunkcrafts_updater.cfg" {
+            configContent = try? await fetchTextContent(from: baseURL.appendingPathComponent("skunkcrafts_updater.cfg"))
+        }
+        if let configContent = configContent {
             let lines = configContent.components(separatedBy: .newlines)
             for line in lines {
                 let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -304,8 +320,8 @@ actor SkunkCraftsUpdaterService {
             await logHandler("[SkunkCrafts] Fetched skunkcrafts_updater_whitelist.txt (\(whitelistItems.count) entries)")
         }
 
-        if !whitelistItems.contains(where: { $0.relativePath.lowercased() == "skunkcrafts_updater.cfg" }) {
-            whitelistItems.append(SkunkCraftsFileItem(relativePath: "skunkcrafts_updater.cfg", expectedCRC: nil, expectedSize: nil))
+        if !whitelistItems.contains(where: { $0.relativePath.lowercased() == configFileName.lowercased() }) {
+            whitelistItems.append(SkunkCraftsFileItem(relativePath: configFileName, expectedCRC: nil, expectedSize: nil))
         }
 
         // 3. Fetch remote blacklist & read local ignore
@@ -316,11 +332,11 @@ actor SkunkCraftsUpdaterService {
             await logHandler("[SkunkCrafts] Fetched skunkcrafts_updater_blacklist.txt")
         }
 
-        let latestVersion = remoteVersion ?? config.version
-        let versionMismatch = (remoteVersion != nil && config.version != nil && remoteVersion != config.version)
+        let latestVersion = remoteVersion ?? localVersion
+        let versionMismatch = (remoteVersion != nil && localVersion != nil && remoteVersion != localVersion)
         if versionMismatch {
             let rVersion = remoteVersion!
-            await logHandler("[SkunkCrafts] Version mismatch: Local '\(config.version ?? "none")' vs Remote '\(rVersion)'. Marking addon for update.")
+            await logHandler("[SkunkCrafts] Version mismatch: Local '\(localVersion ?? "none")' vs Remote '\(rVersion)'. Marking addon for update.")
             return (rVersion, true, "Update available (\(rVersion))")
         }
 
@@ -395,10 +411,26 @@ actor SkunkCraftsUpdaterService {
 
         await logHandler("[SkunkCrafts] Starting update check for \(config.name)...")
 
+        var localVersion = config.version
+        if localVersion == nil, let cfgURL = findConfig(in: addonFolder), let parsed = parseConfig(at: cfgURL, defaultName: config.name) {
+            localVersion = parsed.version
+        }
+
+        let configFileName: String
+        if let cfgURL = findConfig(in: addonFolder) {
+            configFileName = cfgURL.lastPathComponent
+        } else {
+            configFileName = "skunkcrafts_updater.cfg"
+        }
+
         // 1. Fetch remote skunkcrafts_updater.cfg for version comparison
         var remoteVersion: String? = nil
-        let remoteConfigURL = baseURL.appendingPathComponent("skunkcrafts_updater.cfg")
-        if let configContent = try? await fetchTextContent(from: remoteConfigURL) {
+        let remoteConfigURL = baseURL.appendingPathComponent(configFileName)
+        var configContent: String? = try? await fetchTextContent(from: remoteConfigURL)
+        if configContent == nil && configFileName != "skunkcrafts_updater.cfg" {
+            configContent = try? await fetchTextContent(from: baseURL.appendingPathComponent("skunkcrafts_updater.cfg"))
+        }
+        if let configContent = configContent {
             let lines = configContent.components(separatedBy: .newlines)
             for line in lines {
                 let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -417,8 +449,8 @@ actor SkunkCraftsUpdaterService {
             whitelistItems = parseWhitelist(content: whitelistText)
         }
 
-        if !whitelistItems.contains(where: { $0.relativePath.lowercased() == "skunkcrafts_updater.cfg" }) {
-            whitelistItems.append(SkunkCraftsFileItem(relativePath: "skunkcrafts_updater.cfg", expectedCRC: nil, expectedSize: nil))
+        if !whitelistItems.contains(where: { $0.relativePath.lowercased() == configFileName.lowercased() }) {
+            whitelistItems.append(SkunkCraftsFileItem(relativePath: configFileName, expectedCRC: nil, expectedSize: nil))
         }
 
         // 3. Fetch remote blacklist & read local ignore
@@ -479,7 +511,7 @@ actor SkunkCraftsUpdaterService {
             } else {
                 let isConfigFile = item.relativePath.lowercased().hasPrefix("skunkcrafts_updater") &&
                     (item.relativePath.lowercased().hasSuffix(".cfg") || item.relativePath.lowercased().hasSuffix(".txt") || item.relativePath.lowercased().hasSuffix(".json"))
-                if isConfigFile && remoteVersion != nil && config.version != nil && remoteVersion != config.version {
+                if isConfigFile && (remoteVersion != nil && (localVersion == nil || remoteVersion != localVersion)) {
                     filesToDownload.append(item)
                 }
             }
@@ -616,7 +648,7 @@ extension SkunkCraftsUpdaterService: AddonUpdater {
     ) async throws {
         let config = SkunkCraftsConfig(
             name: addon.name,
-            version: addon.latestVersion ?? addon.currentVersion,
+            version: addon.currentVersion,
             remoteManifestURL: addon.remoteManifestURL,
             baseURL: nil
         )
@@ -634,7 +666,7 @@ extension SkunkCraftsUpdaterService: AddonUpdater {
     ) async throws -> String? {
         let config = SkunkCraftsConfig(
             name: addon.name,
-            version: addon.latestVersion ?? addon.currentVersion,
+            version: addon.currentVersion,
             remoteManifestURL: addon.remoteManifestURL,
             baseURL: nil
         )

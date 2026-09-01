@@ -1063,7 +1063,7 @@ extension XUpdaterService: AddonUpdater {
     ) async throws {
         let config = XUpdaterConfig(
             name: addon.name,
-            version: addon.latestVersion ?? addon.currentVersion,
+            version: addon.currentVersion,
             remoteURL: addon.remoteManifestURL
         )
         try await downloadAndApplyUpdates(
