@@ -73,4 +73,95 @@ final class ProfileService: Sendable {
         copy.name = "\(profile.name) Copy"
         return copy
     }
+
+    // MARK: - Import & Export
+
+    func exportProfile(_ profile: PluginProfile) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return try encoder.encode(profile)
+    }
+
+    func exportAllProfiles(_ profiles: [PluginProfile]) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return try encoder.encode(profiles)
+    }
+
+    func importProfiles(from data: Data, existingProfiles: [PluginProfile]) throws -> [PluginProfile] {
+        let decoder = JSONDecoder()
+        var imported: [PluginProfile] = []
+
+        if let single = try? decoder.decode(PluginProfile.self, from: data) {
+            imported = [single]
+        } else if let array = try? decoder.decode([PluginProfile].self, from: data) {
+            imported = array
+        } else {
+            throw DecodingError.dataCorrupted(
+                DecodingError.Context(
+                    codingPath: [],
+                    debugDescription: "Data is neither a valid single PluginProfile nor an array of PluginProfiles."
+                )
+            )
+        }
+
+        var result: [PluginProfile] = []
+        var existingNames = Set(existingProfiles.map { $0.name.lowercased() })
+        var existingIds = Set(existingProfiles.map { $0.id })
+
+        for var profile in imported {
+            // Ensure unique ID
+            if existingIds.contains(profile.id) {
+                profile.id = UUID()
+            }
+            existingIds.insert(profile.id)
+
+            // Resolve name collisions
+            let baseName = profile.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            var uniqueName = baseName.isEmpty ? "Imported Profile" : baseName
+            var counter = 1
+            while existingNames.contains(uniqueName.lowercased()) {
+                uniqueName = "\(baseName) (Imported\(counter > 1 ? " \(counter)" : ""))"
+                counter += 1
+            }
+            profile.name = uniqueName
+            existingNames.insert(uniqueName.lowercased())
+
+            result.append(profile)
+        }
+
+        return result
+    }
+
+    // MARK: - Sorting
+
+    func sortProfiles(_ profiles: [PluginProfile], by option: ProfileSortOption) -> [PluginProfile] {
+        switch option {
+        case .nameAsc:
+            return profiles.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        case .nameDesc:
+            return profiles.sorted { $0.name.localizedStandardCompare($1.name) == .orderedDescending }
+        case .mostAddons:
+            return profiles.sorted { totalAddonCount(for: $0) > totalAddonCount(for: $1) }
+        case .leastAddons:
+            return profiles.sorted { totalAddonCount(for: $0) < totalAddonCount(for: $1) }
+        }
+    }
+
+    private func totalAddonCount(for profile: PluginProfile) -> Int {
+        profile.aircraftFolderNames.count +
+        profile.pluginFolderNames.count +
+        profile.sceneryFolderNames.count +
+        profile.luaScriptFolderNames.count
+    }
 }
+
+enum ProfileSortOption: String, CaseIterable, Identifiable, Sendable {
+    case nameAsc = "Name (A-Z)"
+    case nameDesc = "Name (Z-A)"
+    case mostAddons = "Most Add-ons"
+    case leastAddons = "Least Add-ons"
+
+    var id: String { rawValue }
+}
+

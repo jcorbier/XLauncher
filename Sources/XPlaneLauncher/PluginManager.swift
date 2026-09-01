@@ -847,7 +847,94 @@ class PluginManager {
         ConsoleLogger.shared.log("Duplicated profile '\(profile.name)' as '\(copy.name)'", category: .profiles)
     }
 
-    private func applyProfile(_ profile: PluginProfile) {
+    func renameProfile(_ profile: PluginProfile, newName: String) {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let index = profiles.firstIndex(where: { $0.id == profile.id }) else { return }
+        let oldName = profiles[index].name
+        profiles[index].name = trimmed
+        profileService.saveProfiles(profiles)
+        ConsoleLogger.shared.log("Renamed profile '\(oldName)' to '\(trimmed)'", category: .profiles)
+    }
+
+    func reorderProfiles(fromOffsets source: IndexSet, toOffset destination: Int) {
+        profiles.move(fromOffsets: source, toOffset: destination)
+        profileService.saveProfiles(profiles)
+        ConsoleLogger.shared.log("Reordered profiles", category: .profiles)
+    }
+
+    func sortProfiles(by option: ProfileSortOption) {
+        profiles = profileService.sortProfiles(profiles, by: option)
+        profileService.saveProfiles(profiles)
+        ConsoleLogger.shared.log("Sorted profiles by \(option.rawValue)", category: .profiles)
+    }
+
+    func exportProfile(_ profile: PluginProfile, to destinationURL: URL) throws {
+        let data = try profileService.exportProfile(profile)
+        try data.write(to: destinationURL, options: .atomic)
+        ConsoleLogger.shared.log("Exported profile '\(profile.name)' to \(destinationURL.lastPathComponent)", category: .profiles)
+    }
+
+    func exportAllProfiles(to destinationURL: URL) throws {
+        let data = try profileService.exportAllProfiles(profiles)
+        try data.write(to: destinationURL, options: .atomic)
+        ConsoleLogger.shared.log("Exported all profiles to \(destinationURL.lastPathComponent)", category: .profiles)
+    }
+
+    @discardableResult
+    func importProfiles(from sourceURL: URL) throws -> [PluginProfile] {
+        let data = try Data(contentsOf: sourceURL)
+        let imported = try profileService.importProfiles(from: data, existingProfiles: profiles)
+        profiles.append(contentsOf: imported)
+        profileService.saveProfiles(profiles)
+        if let first = imported.first {
+            selectedProfileId = first.id
+        }
+        ConsoleLogger.shared.log("Imported \(imported.count) profile(s) from \(sourceURL.lastPathComponent)", category: .profiles)
+        return imported
+    }
+
+    // MARK: - Missing Add-ons Detection
+
+    func missingAddons(for profile: PluginProfile) -> [AddonCategory: [String]] {
+        var missing: [AddonCategory: [String]] = [:]
+
+        let installedPlugins = Set(plugins.map { $0.folderName })
+        let missingPlugins = profile.pluginFolderNames.filter { !installedPlugins.contains($0) }
+        if !missingPlugins.isEmpty {
+            missing[.plugins] = missingPlugins
+        }
+
+        let installedScenery = Set(scenery.map { $0.folderName })
+        let missingScenery = profile.sceneryFolderNames.filter { !installedScenery.contains($0) }
+        if !missingScenery.isEmpty {
+            missing[.scenery] = missingScenery
+        }
+
+        let installedAircraft = Set(aircraft.map { $0.folderName })
+        let missingAircraft = profile.aircraftFolderNames.filter { !installedAircraft.contains($0) }
+        if !missingAircraft.isEmpty {
+            missing[.aircraft] = missingAircraft
+        }
+
+        let installedLua = Set(luaScripts.map { $0.folderName })
+        let missingLua = profile.luaScriptFolderNames.filter { !installedLua.contains($0) }
+        if !missingLua.isEmpty {
+            missing[.luaScripts] = missingLua
+        }
+
+        return missing
+    }
+
+    func hasMissingAddons(for profile: PluginProfile) -> Bool {
+        !missingAddons(for: profile).isEmpty
+    }
+
+    func activateProfile(_ profile: PluginProfile) {
+        selectedProfileId = profile.id
+        applyProfile(profile)
+    }
+
+    func applyProfile(_ profile: PluginProfile) {
         ConsoleLogger.shared.log("Applying profile '\(profile.name)'", category: .profiles)
         for index in plugins.indices {
             let shouldBeEnabled = profile.pluginFolderNames.contains(plugins[index].folderName)

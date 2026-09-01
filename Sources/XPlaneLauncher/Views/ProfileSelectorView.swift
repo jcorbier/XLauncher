@@ -24,32 +24,138 @@ import SwiftUI
 
 struct ProfileSelectorView: View {
     @Environment(PluginManager.self) var pluginManager
+    @Environment(\.openWindow) private var openWindow
     @State private var showingSaveProfileAlert = false
+    @State private var isHovered = false
     @State private var newProfileName = ""
+
+    private var currentProfile: PluginProfile? {
+        pluginManager.selectedProfile
+    }
+
+    private var hasMissingAddons: Bool {
+        guard let profile = currentProfile else { return false }
+        return pluginManager.hasMissingAddons(for: profile)
+    }
+
+    private var totalActiveAddons: Int {
+        guard let profile = currentProfile else {
+            return pluginManager.aircraft.filter { $0.isEnabled }.count +
+                   pluginManager.plugins.filter { $0.isEnabled }.count +
+                   pluginManager.scenery.filter { $0.isEnabled }.count +
+                   pluginManager.luaScripts.filter { $0.isEnabled }.count
+        }
+        return profile.aircraftFolderNames.count +
+               profile.pluginFolderNames.count +
+               profile.sceneryFolderNames.count +
+               profile.luaScriptFolderNames.count
+    }
 
     var body: some View {
         @Bindable var pluginManager = pluginManager
 
         HStack(spacing: 12) {
+            // Profile Selector Button & Menu
             HStack(spacing: 8) {
-                Image(systemName: "person.crop.circle.fill")
-                    .font(.title3)
-                    .foregroundStyle(.blue)
-
                 Text("Profile:")
                     .font(.headline)
+                    .fontWeight(.bold)
+                    .foregroundStyle(.secondary)
 
-                Picker("", selection: $pluginManager.selectedProfileId) {
-                    Text("None / Custom").tag(UUID?.none)
-                    Divider()
-                    ForEach(pluginManager.profiles) { profile in
-                        Text(profile.name).tag(Optional(profile.id))
+                Menu {
+                    Section("Active Profile") {
+                        Button {
+                            pluginManager.selectedProfileId = nil
+                        } label: {
+                            HStack {
+                                Text("None / Custom")
+                                if pluginManager.selectedProfileId == nil {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+
+                        ForEach(pluginManager.profiles) { profile in
+                            Button {
+                                pluginManager.selectedProfileId = profile.id
+                            } label: {
+                                HStack {
+                                    Text(profile.name)
+                                    if pluginManager.selectedProfileId == profile.id {
+                                        Image(systemName: "checkmark")
+                                    }
+                                    if pluginManager.hasMissingAddons(for: profile) {
+                                        Text("⚠️")
+                                    }
+                                }
+                            }
+                        }
                     }
+
+                    Divider()
+
+                    Button {
+                        newProfileName = ""
+                        showingSaveProfileAlert = true
+                    } label: {
+                        Label("Save Current Setup as New Profile...", systemImage: "plus")
+                    }
+
+                    Button {
+                        openWindow(id: "profiles-window")
+                        NSApp.activate(ignoringOtherApps: true)
+                    } label: {
+                        Label("Manage Profiles...", systemImage: "slider.horizontal.3")
+                    }
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: pluginManager.selectedProfileId != nil ? "person.crop.circle.fill" : "person.crop.circle")
+                            .font(.title2)
+                            .foregroundStyle(pluginManager.selectedProfileId != nil ? .blue : .secondary)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(currentProfile?.name ?? "None / Custom")
+                                .font(.headline)
+                                .fontWeight(.bold)
+                                .foregroundStyle(.primary)
+
+                            Text("\(totalActiveAddons) add-ons active")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Spacer(minLength: 10)
+
+                        // Distinct Interactive Dropdown Chevron Pill
+                        HStack(spacing: 2) {
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 5)
+                        .background(Color.primary.opacity(0.06))
+                        .clipShape(RoundedRectangle(cornerRadius: 5))
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .frame(minWidth: 220)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color(NSColor.controlBackgroundColor))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(isHovered ? Color.accentColor.opacity(0.8) : Color.primary.opacity(0.18), lineWidth: isHovered ? 1.5 : 1)
+                    )
+                    .shadow(color: isHovered ? Color.accentColor.opacity(0.15) : Color.clear, radius: 4, x: 0, y: 1)
                 }
-                .labelsHidden()
-                .frame(width: 180)
+                .menuStyle(.borderlessButton)
+                .onHover { isHovered = $0 }
+                .help("Click to switch or select a profile")
             }
 
+            // Status Badges
             if pluginManager.selectedProfileId != nil && pluginManager.isCurrentProfileModified {
                 HStack(spacing: 4) {
                     Circle()
@@ -61,13 +167,30 @@ struct ProfileSelectorView: View {
                         .foregroundStyle(.orange)
                 }
                 .padding(.horizontal, 8)
-                .padding(.vertical, 3)
+                .padding(.vertical, 4)
                 .background(Color.orange.opacity(0.15))
                 .clipShape(Capsule())
             }
 
+            if hasMissingAddons {
+                HStack(spacing: 4) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.caption2)
+                    Text("Missing Add-ons")
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color.red.opacity(0.15))
+                .foregroundStyle(.red)
+                .clipShape(Capsule())
+                .help("Some add-ons configured in this profile were not found in central storage.")
+            }
+
             Spacer()
 
+            // Quick Actions
             HStack(spacing: 8) {
                 Button(action: {
                     if let selectedId = pluginManager.selectedProfileId,
@@ -78,7 +201,7 @@ struct ProfileSelectorView: View {
                     Label("Update", systemImage: "arrow.triangle.2.circlepath")
                 }
                 .disabled(pluginManager.selectedProfileId == nil || !pluginManager.isCurrentProfileModified)
-                .help("Update current profile with current selection")
+                .help("Update current profile with current active selection")
 
                 Button(action: {
                     newProfileName = ""
@@ -89,15 +212,12 @@ struct ProfileSelectorView: View {
                 .help("Save current selection as a new profile")
 
                 Button(action: {
-                    if let selectedId = pluginManager.selectedProfileId,
-                       let profile = pluginManager.profiles.first(where: { $0.id == selectedId }) {
-                        pluginManager.deleteProfile(profile)
-                    }
+                    openWindow(id: "profiles-window")
+                    NSApp.activate(ignoringOtherApps: true)
                 }) {
-                    Image(systemName: "trash")
+                    Label("Manage", systemImage: "slider.horizontal.3")
                 }
-                .disabled(pluginManager.selectedProfileId == nil)
-                .help("Delete selected profile")
+                .help("Open Profile Manager Window")
             }
         }
         .padding(.horizontal, 14)
@@ -105,7 +225,7 @@ struct ProfileSelectorView: View {
         .alert("Save Profile", isPresented: $showingSaveProfileAlert) {
             TextField("Profile Name", text: $newProfileName)
             Button("Save") {
-                if !newProfileName.isEmpty {
+                if !newProfileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     pluginManager.saveProfile(name: newProfileName)
                 }
             }
@@ -115,3 +235,4 @@ struct ProfileSelectorView: View {
         }
     }
 }
+

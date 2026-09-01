@@ -130,6 +130,11 @@ struct XPlaneLauncherApp: App {
                     NotificationCenter.default.post(name: .installAddonRequested, object: nil)
                 }
                 .keyboardShortcut("i", modifiers: .command)
+
+                Button("Manage Profiles...") {
+                    openWindow(id: "profiles-window")
+                }
+                .keyboardShortcut("p", modifiers: .command)
             }
             CommandGroup(replacing: .saveItem) { }
             CommandGroup(replacing: .printItem) { }
@@ -153,6 +158,13 @@ struct XPlaneLauncherApp: App {
                 }
             }
         }
+
+        Window("Profile Manager", id: "profiles-window") {
+            ProfileManagerView()
+                .environment(pluginManager)
+        }
+        .defaultSize(width: 960, height: 640)
+        .windowResizability(.contentMinSize)
 
         Window("Logs", id: "logs-window") {
             LogsDialogView()

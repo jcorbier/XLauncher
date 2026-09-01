@@ -171,4 +171,120 @@ final class ProfileManagementTests: XCTestCase {
         XCTAssertTrue(pluginManager.isEnvVarModified(pluginManager.activeEnvironmentVariables[0]))
         XCTAssertTrue(pluginManager.isCurrentProfileModified)
     }
+
+    // MARK: - Missing Addon Detection
+
+    func testMissingAddonDetection() {
+        let profile = PluginProfile(
+            name: "Test Profile",
+            pluginFolderNames: ["InstalledPlugin", "MissingPlugin"],
+            sceneryFolderNames: ["MissingScenery"],
+            aircraftFolderNames: ["InstalledAircraft"],
+            luaScriptFolderNames: ["MissingLua.lua"]
+        )
+
+        pluginManager.plugins = [Plugin(name: "InstalledPlugin", isEnabled: true, folderName: "InstalledPlugin")]
+        pluginManager.scenery = []
+        pluginManager.aircraft = [Aircraft(name: "InstalledAircraft", isEnabled: true, folderName: "InstalledAircraft")]
+        pluginManager.luaScripts = []
+
+        XCTAssertTrue(pluginManager.hasMissingAddons(for: profile))
+
+        let missing = pluginManager.missingAddons(for: profile)
+        XCTAssertEqual(missing[.plugins], ["MissingPlugin"])
+        XCTAssertEqual(missing[.scenery], ["MissingScenery"])
+        XCTAssertEqual(missing[.luaScripts], ["MissingLua.lua"])
+        XCTAssertNil(missing[.aircraft])
+    }
+
+    // MARK: - Import & Export
+
+    func testProfileExportAndImportSingle() throws {
+        let original = PluginProfile(
+            name: "OriginalProfile",
+            pluginFolderNames: ["Plugin1", "Plugin2"],
+            sceneryFolderNames: ["Scenery1"],
+            aircraftFolderNames: ["Plane1"],
+            luaScriptFolderNames: ["script.lua"]
+        )
+
+        let data = try profileService.exportProfile(original)
+        XCTAssertFalse(data.isEmpty)
+
+        let imported = try profileService.importProfiles(from: data, existingProfiles: [])
+        XCTAssertEqual(imported.count, 1)
+        XCTAssertEqual(imported[0].name, "OriginalProfile")
+        XCTAssertEqual(imported[0].pluginFolderNames, original.pluginFolderNames)
+        XCTAssertEqual(imported[0].sceneryFolderNames, original.sceneryFolderNames)
+        XCTAssertEqual(imported[0].aircraftFolderNames, original.aircraftFolderNames)
+        XCTAssertEqual(imported[0].luaScriptFolderNames, original.luaScriptFolderNames)
+    }
+
+    func testProfileExportAndImportMultiple() throws {
+        let p1 = PluginProfile(name: "Profile 1", pluginFolderNames: ["A"])
+        let p2 = PluginProfile(name: "Profile 2", pluginFolderNames: ["B"])
+
+        let data = try profileService.exportAllProfiles([p1, p2])
+        let imported = try profileService.importProfiles(from: data, existingProfiles: [])
+
+        XCTAssertEqual(imported.count, 2)
+        XCTAssertEqual(imported[0].name, "Profile 1")
+        XCTAssertEqual(imported[1].name, "Profile 2")
+    }
+
+    func testProfileImportNameCollision() throws {
+        let existing = [
+            PluginProfile(name: "Airliner", pluginFolderNames: []),
+            PluginProfile(name: "Airliner (Imported)", pluginFolderNames: [])
+        ]
+
+        let toImport = PluginProfile(name: "Airliner", pluginFolderNames: ["NewPlugin"])
+        let data = try profileService.exportProfile(toImport)
+
+        let imported = try profileService.importProfiles(from: data, existingProfiles: existing)
+        XCTAssertEqual(imported.count, 1)
+        XCTAssertEqual(imported[0].name, "Airliner (Imported 2)")
+    }
+
+    // MARK: - Reorder, Sort, and Rename
+
+    func testReorderProfiles() {
+        let p1 = PluginProfile(name: "First", pluginFolderNames: [])
+        let p2 = PluginProfile(name: "Second", pluginFolderNames: [])
+        let p3 = PluginProfile(name: "Third", pluginFolderNames: [])
+
+        pluginManager.profiles = [p1, p2, p3]
+        pluginManager.reorderProfiles(fromOffsets: IndexSet(integer: 2), toOffset: 0)
+
+        XCTAssertEqual(pluginManager.profiles.map { $0.name }, ["Third", "First", "Second"])
+    }
+
+    func testSortProfiles() {
+        let p1 = PluginProfile(name: "Charlie", pluginFolderNames: ["A", "B", "C"])
+        let p2 = PluginProfile(name: "Alpha", pluginFolderNames: ["A"])
+        let p3 = PluginProfile(name: "Bravo", pluginFolderNames: ["A", "B"])
+
+        pluginManager.profiles = [p1, p2, p3]
+
+        pluginManager.sortProfiles(by: .nameAsc)
+        XCTAssertEqual(pluginManager.profiles.map { $0.name }, ["Alpha", "Bravo", "Charlie"])
+
+        pluginManager.sortProfiles(by: .nameDesc)
+        XCTAssertEqual(pluginManager.profiles.map { $0.name }, ["Charlie", "Bravo", "Alpha"])
+
+        pluginManager.sortProfiles(by: .mostAddons)
+        XCTAssertEqual(pluginManager.profiles.map { $0.name }, ["Charlie", "Bravo", "Alpha"])
+
+        pluginManager.sortProfiles(by: .leastAddons)
+        XCTAssertEqual(pluginManager.profiles.map { $0.name }, ["Alpha", "Bravo", "Charlie"])
+    }
+
+    func testRenameProfile() {
+        let p1 = PluginProfile(name: "OldName", pluginFolderNames: [])
+        pluginManager.profiles = [p1]
+
+        pluginManager.renameProfile(p1, newName: "NewName")
+        XCTAssertEqual(pluginManager.profiles.first?.name, "NewName")
+    }
 }
+
