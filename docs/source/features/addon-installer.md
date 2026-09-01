@@ -37,6 +37,7 @@ Before anything is extracted or copied, the launcher opens an installation sheet
 
 - **Add-on Category**: Shows the automatically detected category. You can change this using the segmented picker if an unusual package was misidentified.
 - **Folder / Package Name**: Pre-filled with the add-on name. You can edit this field to rename the destination folder before installation.
+- **Storage Pool**: When multiple storage pools are configured, choose which storage pool to install the add-on into (defaults to the pool configured for that category or the primary pool).
 - **Install Destination**: Displays the full folder path where the files will be placed.
 - **Enable immediately after installation**: When checked (default), the new add-on is enabled automatically as soon as installation completes.
 

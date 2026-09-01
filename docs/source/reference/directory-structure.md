@@ -4,17 +4,19 @@ This page describes the file and folder layout used by X-Plane Launcher and the 
 
 ---
 
-## Central Data Folder
+## Central Data Folder & Storage Pools
 
-Default location:
+Default primary location:
 ```text
 ~/Library/Application Support/XPlaneLauncher/
 ```
 
+Additional storage pools can be defined on any internal or external drive. Each storage pool contains the standard subdirectories:
+
 ### Subdirectories
 
 ```text
-XPlaneLauncher/
+<StoragePoolRoot>/
 ├── Aircraft/       # Source aircraft add-ons
 ├── Plugins/        # Source plugin add-ons
 ├── Scenery/        # Source custom scenery packages
@@ -25,9 +27,9 @@ XPlaneLauncher/
 
 ## Symlink Mappings
 
-When a profile is activated, X-Plane Launcher creates symbolic links inside the corresponding X-Plane 12 directories:
+When a profile is activated, X-Plane Launcher creates symbolic links inside the corresponding X-Plane 12 directories pointing back to the appropriate storage pool:
 
-| Category | Source Path in Central Folder | Target Path in X-Plane 12 |
+| Category | Source Path in Storage Pool | Target Path in X-Plane 12 |
 | :--- | :--- | :--- |
 | **Aircraft** | `Aircraft/<Folder>` | `<X-Plane 12>/Aircraft/<Folder>` |
 | **Plugins** | `Plugins/<Folder>` | `<X-Plane 12>/Resources/plugins/<Folder>` |
@@ -67,7 +69,8 @@ Preferences are saved in macOS `UserDefaults`:
 | Key | Type | Description |
 | :--- | :--- | :--- |
 | `XPlanePath` | String | Path to the X-Plane 12 folder |
-| `LauncherDataFolder` | String | Path to the custom Central Data Folder |
+| `LauncherDataFolder` | String | Path to the primary Central Data Folder |
+| `StoragePools` | Data (JSON) | Configured storage pool list and category defaults |
 | `PluginProfiles` | Data (JSON) | Saved profiles |
 | `SelectedProfileId` | String (UUID) | ID of the currently selected profile |
 | `SceneryGroups` | Data (JSON) | Scenery group definitions |

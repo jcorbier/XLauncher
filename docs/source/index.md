@@ -19,12 +19,16 @@ It organizes add-ons in a central folder and creates symbolic links into your X-
 ::::{grid} 1 2 2 2
 :gutter: 3
 
-:::{grid-item-card} Profiles
-Save and switch configurations across aircraft, plugins, scenery packs, and FlyWithLua scripts.
+:::{grid-item-card} Profiles & Profile Manager
+Save and switch configurations across aircraft, plugins, scenery packs, and FlyWithLua scripts. Manage, duplicate, compare, and import/export profiles from the profile manager window.
+:::
+
+:::{grid-item-card} Storage Pools
+Store add-ons across multiple internal and external drives with automatic fallback and drive tracking.
 :::
 
 :::{grid-item-card} Symlink Management
-Keep your X-Plane directory tidy. Add-ons remain in a central directory and are linked into X-Plane on demand.
+Keep your X-Plane directory tidy. Add-ons remain in your storage folders and are linked into X-Plane on demand.
 :::
 
 :::{grid-item-card} Scenery Ordering & Groups
@@ -32,7 +36,11 @@ Reorder `scenery_packs.ini` with drag-and-drop, group related scenery entries, a
 :::
 
 :::{grid-item-card} Add-on Installer & Deletion
-Install packages with drag-and-drop, and cleanly delete unwanted add-ons with automated profile and symlink cleanup.
+Install packages with drag-and-drop to any storage pool, and cleanly delete unwanted add-ons with automated profile and symlink cleanup.
+:::
+
+:::{grid-item-card} X-Plane Log Analyzer
+Inspect `Log.txt` to diagnose crashes, detect missing scenery assets, troubleshoot FlyWithLua/SASL errors, and profile startup times.
 :::
 
 :::{grid-item-card} Add-on Updates
@@ -59,8 +67,8 @@ X-Plane Launcher manages your add-ons by separating your source files from your 
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
-│                    Central Data Folder                      │
-│        (~/Library/Application Support/XPlaneLauncher)       │
+│             Storage Pools (Internal / External Drives)      │
+│        (~/Library/Application Support/XPlaneLauncher, etc.) │
 ├──────────────┬──────────────┬───────────────┬───────────────┤
 │   Aircraft/  │   Plugins/   │   Scenery/    │  LuaScripts/  │
 └──────┬───────┴──────┬───────┴───────┬───────┴───────┬───────┘
@@ -77,7 +85,7 @@ X-Plane Launcher manages your add-ons by separating your source files from your 
 └─────────────────────────────────────────────────────────────┘
 ```
 
-When you select a profile, X-Plane Launcher creates or removes filesystem symbolic links (`symlinks`) inside your X-Plane 12 directory pointing back to your central storage folder. Your original add-on files remain untouched in the central location.
+When you select a profile, X-Plane Launcher creates or removes filesystem symbolic links (`symlinks`) inside your X-Plane 12 directory pointing back to your storage folders. Your original add-on files remain untouched in their respective storage pools.
 
 ## Contents
 
@@ -94,6 +102,7 @@ getting-started/quickstart
 :caption: User Guide
 
 user-guide/profiles
+user-guide/storage-pools
 user-guide/aircraft
 user-guide/plugins
 user-guide/scenery
@@ -106,6 +115,7 @@ user-guide/pre-launch-scripts
 :caption: Advanced Features
 
 features/addon-installer
+features/log-analyzer
 features/updates
 features/navdata
 features/csl-models

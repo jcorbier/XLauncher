@@ -6,10 +6,12 @@ X-Plane Launcher lets you organize your add-ons in a central folder, create dist
 
 ## Features
 
-- **Profiles**: Save and switch configurations across aircraft, plugins, scenery packs, and FlyWithLua scripts.
-- **Clean symlink management**: Keep your X-Plane directory tidy. Add-ons stay in a central folder and are symlinked into X-Plane on demand.
+- **Profiles & Profile Manager**: Save and switch configurations across aircraft, plugins, scenery packs, and FlyWithLua scripts. Manage, duplicate, compare, and import/export profiles from a dedicated Profile Manager window.
+- **Multiple Storage Folders (Storage Pools)**: Store add-ons across multiple drives or folders (e.g. fast local SSD for aircraft/plugins, large external disk for scenery). If an external drive is unmounted, add-ons remain safely tracked.
+- **Clean symlink management**: Keep your X-Plane directory tidy. Add-ons stay in your storage folders and are symlinked into X-Plane on demand.
 - **Scenery pack ordering & grouping**: Reorder `scenery_packs.ini` with drag-and-drop, enable or disable packs without deleting files, and organize scenery into groups.
-- **Smart add-on installer & deletion**: Drag and drop `.zip` archives, folders, or `.lua` scripts to install add-ons, or delete them directly from the UI with automated profile cleanup and unlinking.
+- **Smart add-on installer & deletion**: Drag and drop `.zip` archives, folders, or `.lua` scripts to install add-ons to any configured storage pool, or delete them directly from the UI with automated profile cleanup and unlinking.
+- **X-Plane Log Analyzer**: Built-in viewer and diagnostic engine for `Log.txt`. Inspect crashes, find missing scenery objects and textures, track down FlyWithLua/SASL errors, profile startup loading times, and browse archived sessions.
 - **Add-on updates**: Check and install updates for add-ons supported by SkunkCrafts Updater or X-Updater directly from the UI.
 - **In-app self-updates**: Check for new versions, review release notes, and install updates in-place with automatic restart.
 - **Navigation data updates**: Download and update AIRAC cycles directly from Navigraph for X-Plane 12 and supported aircrafts.
@@ -43,14 +45,16 @@ This generates `XLauncher.app` in the project root.
 
 On first launch, a welcome assistant helps you configure your paths:
 - **X-Plane 12 folder**: Root folder containing `X-Plane.app`.
-- **Central Data Folder**: Default is `~/Library/Application Support/XPlaneLauncher/`.
+- **Primary Data Folder**: Default is `~/Library/Application Support/XPlaneLauncher/`.
+
+You can configure additional storage folders (Storage Pools) at any time in **Settings** (for example on external SSDs or secondary drives).
 
 ### Directory layout
 
-Store your add-ons in their respective subdirectories inside the central folder:
+Store your add-ons in their respective subdirectories inside any configured storage folder:
 
 ```text
-~/Library/Application Support/XPlaneLauncher/
+~/Library/Application Support/XPlaneLauncher/ (or any storage pool)
 ├── Aircraft/   <-- Source aircraft
 ├── Plugins/    <-- Source plugins
 ├── Scenery/    <-- Source scenery packs

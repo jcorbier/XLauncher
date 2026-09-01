@@ -15,18 +15,19 @@
 - Open **Settings**.
 - Make sure the **X-Plane Location** field points to the root X-Plane 12 directory containing `X-Plane.app`. A green indicator will confirm when detected.
 
-### Add-ons in Central Data Folder Not Showing in Lists
+### Add-ons in Storage Folders Not Showing or Marked Offline
 - Verify that your subfolder names match the expected names:
   - `Aircraft/`
   - `Plugins/`
   - `Scenery/`
   - `LuaScripts/`
 - Ensure each add-on is placed in its own subfolder (for example, `Aircraft/Zibo_737/`, not loose `.acf` files directly in `Aircraft/`).
-- If storing on an external drive, ensure the drive is mounted with read/write permissions before launching the app.
+- If storing on an external drive, ensure the drive is mounted. If a drive is unmounted, add-ons will show as **Offline** until reconnected.
 
 ### Scenery Appears Out of Order or Hidden by Default Terrain
 - Go to the **Scenery** tab and drag custom airport entries towards the top of the list, above global meshes and orthophotos.
 - Ensure that `scenery_packs.ini` in `<X-Plane 12>/Custom Scenery/` is writable.
+- Use the **X-Plane Logs** analyzer to check for missing scenery library dependencies or corrupted scenery definitions.
 
 ### Pre-Launch Scripts Not Running
 - Verify that the script has executable permissions (`chmod +x /path/to/script.sh`).
@@ -41,6 +42,6 @@
 
 ## Diagnostic Logs
 
-- **Application Logs Window**: Open the full application log viewer by choosing **Window > Logs...** from the menu bar or pressing `⌥⌘L`. This window provides real-time, searchable logs categorized by subsystem (profiles, scenery, plugins, updates, symlinks, navigation data, and simulator launch) with severity filtering and copy support.
+- **X-Plane Log Analyzer**: Open the built-in simulator log analyzer by choosing **File > X-Plane Logs...** or pressing <kbd>⇧⌘L</kbd> (or selecting **X-Plane Logs** in the sidebar). It categorizes crashes, missing scenery assets, SASL/Lua script errors, and loading bottlenecks from `Log.txt`.
+- **Application Logs Window**: Open the launcher application log viewer by choosing **Window > Logs...** or pressing <kbd>⌥⌘L</kbd>. This window provides real-time logs for launcher background tasks (profiles, scenery, plugins, updates, symlinks, and navigation data).
 - **Updates & CSL Operations**: Click the **Console** button in the Updates or CSL tabs to view real-time operation logs and progress messages.
-- **Simulator Log**: Check `<X-Plane 12>/Log.txt` for general X-Plane startup and plugin diagnostic information.

@@ -12,8 +12,20 @@ This page details the options available in the **Settings** view.
 ## General
 
 - **X-Plane Location**: The folder containing your X-Plane 12 installation (where `X-Plane.app` is located). Click the folder button to change the path.
-- **Central Data Folder**: The folder where your source add-ons are stored. Defaults to `~/Library/Application Support/XPlaneLauncher/`.
+- **Central Data Folder**: The primary folder where source add-ons are stored. Defaults to `~/Library/Application Support/XPlaneLauncher/`.
 - **Welcome Guide**: Click **Show Welcome Screen...** to reopen the initial setup assistant.
+
+---
+
+## Storage Pools & Multi-Drive Data Folders
+
+Configure multiple storage locations across internal and external/Thunderbolt drives:
+
+- **Add Storage Pool...**: Add an additional source directory on any mounted volume.
+- **Primary**: Set which pool acts as the default destination for new add-ons.
+- **Default Categories**: Assign specific add-on categories (Aircraft, Plugins, Scenery, Lua Scripts) to a pool.
+- **Drive Metrics**: Displays current mount status, volume name, and available disk capacity.
+- **Edit / Delete**: Rename a pool, update its category assignments, or remove the pool reference (files on disk remain intact).
 
 ---
 
