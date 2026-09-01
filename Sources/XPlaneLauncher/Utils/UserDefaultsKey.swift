@@ -26,6 +26,7 @@ enum UserDefaultsKey: String, CaseIterable, Sendable {
     // Paths & Setup
     case xPlanePath = "XPlanePath"
     case launcherDataFolder = "LauncherDataFolder"
+    case storagePools = "StoragePools"
     case hasCompletedWelcome = "HasCompletedWelcome"
 
     // Profiles & Environment

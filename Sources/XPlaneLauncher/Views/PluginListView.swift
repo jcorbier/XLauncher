@@ -61,6 +61,9 @@ struct PluginListView: View {
         } message: { item in
             Text("Are you sure you want to delete '\(item.name)'?\n\nThis will permanently delete the files from your Central Data Folder ('Plugins/\(item.folderName)'), unlink it from X-Plane, and remove it from all profiles.\n\nThis action cannot be undone.")
         }
+        .onAppear {
+            pluginManager.handleVolumeChange()
+        }
     }
 }
 
@@ -69,19 +72,50 @@ struct PluginRow: View {
     let plugin: PluginManager.Plugin
     var onDelete: (() -> Void)? = nil
 
+    private var isOffline: Bool {
+        pluginManager.isPluginOffline(plugin)
+    }
+
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "puzzlepiece.extension.fill")
+            Image(systemName: plugin.isEnabled && !isOffline ? "puzzlepiece.extension.fill" : "puzzlepiece.extension")
                 .font(.title3)
-                .foregroundStyle(plugin.isEnabled ? .green : .secondary)
+                .foregroundStyle(plugin.isEnabled && !isOffline ? .green : .secondary)
                 .frame(width: 32, height: 32)
-                .background(plugin.isEnabled ? Color.green.opacity(0.12) : Color.secondary.opacity(0.12))
+                .background(plugin.isEnabled && !isOffline ? Color.green.opacity(0.12) : Color.secondary.opacity(0.12))
                 .clipShape(RoundedRectangle(cornerRadius: 6))
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(plugin.name)
-                    .font(.body)
-                    .fontWeight(.medium)
+                HStack(spacing: 6) {
+                    Text(plugin.name)
+                        .font(.body)
+                        .fontWeight(.medium)
+
+                    if isOffline {
+                        HStack(spacing: 3) {
+                            Image(systemName: "externaldrive.badge.xmark")
+                            Text("Offline")
+                        }
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.red.opacity(0.12))
+                        .foregroundStyle(.red)
+                        .clipShape(Capsule())
+                    }
+
+                    if let poolName = plugin.storagePoolName, pluginManager.storagePools.count > 1 {
+                        Text(poolName)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Color(NSColor.windowBackgroundColor))
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                    }
+                }
+
                 Text(plugin.folderName)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -105,21 +139,33 @@ struct PluginRow: View {
                 .clipShape(Capsule())
             }
 
-            Text(plugin.isEnabled ? "Enabled" : "Disabled")
-                .font(.caption2)
-                .fontWeight(.semibold)
-                .foregroundStyle(plugin.isEnabled ? .green : .secondary)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(plugin.isEnabled ? Color.green.opacity(0.12) : Color.secondary.opacity(0.12))
-                .clipShape(Capsule())
+            if isOffline {
+                Text("Offline")
+                    .font(.caption2)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.red)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Color.red.opacity(0.12))
+                    .clipShape(Capsule())
+            } else {
+                Text(plugin.isEnabled ? "Enabled" : "Disabled")
+                    .font(.caption2)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(plugin.isEnabled ? .green : .secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(plugin.isEnabled ? Color.green.opacity(0.12) : Color.secondary.opacity(0.12))
+                    .clipShape(Capsule())
+            }
 
             Toggle("", isOn: Binding(
-                get: { plugin.isEnabled },
+                get: { plugin.isEnabled && !isOffline },
                 set: { _ in pluginManager.togglePlugin(plugin) }
             ))
             .toggleStyle(.switch)
             .labelsHidden()
+            .disabled(isOffline)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -130,10 +176,12 @@ struct PluginRow: View {
                 .stroke(Color(NSColor.separatorColor), lineWidth: 0.5)
         )
         .contextMenu {
-            Button(role: .destructive) {
-                onDelete?()
-            } label: {
-                Label("Delete Add-on...", systemImage: "trash")
+            if !isOffline {
+                Button(role: .destructive) {
+                    onDelete?()
+                } label: {
+                    Label("Delete Add-on...", systemImage: "trash")
+                }
             }
         }
     }

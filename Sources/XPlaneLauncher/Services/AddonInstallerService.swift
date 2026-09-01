@@ -22,13 +22,13 @@
 
 import Foundation
 
-enum AddonCategory: String, CaseIterable, Identifiable, Sendable {
+public enum AddonCategory: String, Codable, CaseIterable, Identifiable, Sendable {
     case aircraft = "Aircraft"
     case scenery = "Custom Scenery"
     case plugins = "Plugins"
     case luaScripts = "FlyWithLua Scripts"
 
-    var id: String { rawValue }
+    public var id: String { rawValue }
 
     var subfolder: DataSubfolder {
         switch self {
@@ -48,12 +48,16 @@ enum AddonCategory: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    var icon: String {
+    var dataSubfolder: DataSubfolder {
+        subfolder
+    }
+
+    public var icon: String {
         switch self {
         case .aircraft: return "airplane"
         case .scenery: return "map"
         case .plugins: return "puzzlepiece.extension"
-        case .luaScripts: return "scroll"
+        case .luaScripts: return "doc.text"
         }
     }
 }
@@ -74,6 +78,7 @@ enum AddonInstallerError: LocalizedError {
     case invalidPackage(String)
     case destinationExists(String)
     case installationFailed(String)
+    case insufficientStorage(String)
 
     var errorDescription: String? {
         switch self {
@@ -83,6 +88,8 @@ enum AddonInstallerError: LocalizedError {
             return "An add-on already exists at destination: \(path)"
         case .installationFailed(let reason):
             return "Installation failed: \(reason)"
+        case .insufficientStorage(let details):
+            return "Insufficient storage space: \(details)"
         }
     }
 }
@@ -276,6 +283,35 @@ final class AddonInstallerService: Sendable {
     }
 
     // MARK: - Installation Execution
+
+    func install(
+        analysis: AddonPackageAnalysis,
+        category: AddonCategory,
+        packageName: String,
+        storagePool: StoragePool,
+        progressHandler: (@Sendable (_ fraction: Double, _ message: String) -> Void)? = nil
+    ) async throws -> URL {
+        guard storagePool.isOnline else {
+            throw AddonInstallerError.installationFailed("Selected storage pool '\(storagePool.name)' is offline or unmounted.")
+        }
+
+        if let metrics = storagePool.volumeMetrics {
+            let requiredBytes = analysis.totalUncompressedSize + (analysis.isArchive ? analysis.totalUncompressedSize : 0)
+            if metrics.availableCapacity > 0 && metrics.availableCapacity < requiredBytes {
+                let requiredStr = ByteCountFormatter.string(fromByteCount: Int64(requiredBytes), countStyle: .file)
+                let availStr = ByteCountFormatter.string(fromByteCount: Int64(metrics.availableCapacity), countStyle: .file)
+                throw AddonInstallerError.insufficientStorage("Requires \(requiredStr) but '\(storagePool.name)' only has \(availStr) available.")
+            }
+        }
+
+        return try await install(
+            analysis: analysis,
+            category: category,
+            packageName: packageName,
+            launcherDataFolder: storagePool.url,
+            progressHandler: progressHandler
+        )
+    }
 
     func install(
         analysis: AddonPackageAnalysis,

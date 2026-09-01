@@ -74,8 +74,10 @@ struct XPlaneLauncherApp: App {
                         appUpdateManager.checkForUpdates(manual: false)
                     }
                 }
+                .onChange(of: pluginManager.storagePools) { _, newPools in
+                    updateManager.storagePools = newPools
+                }
                 .onChange(of: pluginManager.launcherDataFolder) { _, newValue in
-                    updateManager.launcherDataFolder = newValue
                     cslManager.launcherDataFolder = newValue
                     if pluginManager.enableNavdataSupport {
                         navdataManager.launcherDataFolder = newValue

@@ -62,38 +62,10 @@ struct SettingsView: View {
 
             ScrollView {
                 VStack(spacing: 16) {
-                    GroupBox("Data Folders") {
+                    StoragePoolsSettingsSection()
+
+                    GroupBox("General & Assistance") {
                         VStack(alignment: .leading, spacing: 12) {
-                            Text("The central data folder is used to manage and symlink add-ons across X-Plane installations.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Central Data Folder")
-                                        .font(.subheadline)
-                                        .fontWeight(.medium)
-                                    Text(pluginManager.launcherDataFolder?.path ?? "Not configured")
-                                        .font(.caption)
-                                        .foregroundStyle(pluginManager.launcherDataFolder != nil ? .primary : .secondary)
-                                }
-
-                                Spacer()
-
-                                Button("Browse...") {
-                                    let panel = NSOpenPanel()
-                                    panel.canChooseFiles = false
-                                    panel.canChooseDirectories = true
-                                    panel.allowsMultipleSelection = false
-                                    panel.prompt = "Select Central Data Folder"
-                                    if panel.runModal() == .OK {
-                                        pluginManager.launcherDataFolder = panel.url
-                                    }
-                                }
-                            }
-
-                            Divider()
-
                             HStack {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text("Welcome Guide")
@@ -111,6 +83,7 @@ struct SettingsView: View {
                                 }
                             }
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(8)
                     }
 

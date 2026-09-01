@@ -43,34 +43,48 @@ class PluginManager {
     private let sceneryService = SceneryService.shared
     private let profileService = ProfileService.shared
     private let launchService = LaunchService.shared
+    private let storagePoolService = StoragePoolService.shared
 
     private let defaults = UserDefaults.standard
     private var isLoading = true
     private var isRestoringState = false
 
-    // MARK: - Paths
+    // MARK: - Storage Pools & Paths
 
-    var xPlanePath: URL? {
+    var storagePools: [StoragePool] = [] {
         didSet {
             guard !isLoading else { return }
-            savePath()
-            scanPlugins()
-            scanScenery()
-            scanAircraft()
-            scanLuaScripts()
-        }
-    }
-
-    var launcherDataFolder: URL? {
-        didSet {
-            guard !isLoading else { return }
-            savePath()
+            saveStoragePools()
             ensureLauncherDataDirectories()
             repairStaleLinks()
             scanPlugins()
             scanScenery()
             scanAircraft()
             scanLuaScripts()
+            refreshStoragePoolStats()
+        }
+    }
+
+    var storagePoolStats: [UUID: StoragePoolStats] = [:]
+
+    var primaryStoragePool: StoragePool? {
+        storagePools.first(where: { $0.isPrimary }) ?? storagePools.first
+    }
+
+    var launcherDataFolder: URL? {
+        get {
+            primaryStoragePool?.url
+        }
+        set {
+            guard let newURL = newValue else { return }
+            if let primaryIdx = storagePools.firstIndex(where: { $0.isPrimary }) {
+                storagePools[primaryIdx].url = newURL
+            } else if !storagePools.isEmpty {
+                storagePools[0].url = newURL
+                storagePools[0].isPrimary = true
+            } else {
+                storagePools = [StoragePool(name: "Primary Storage", url: newURL, isPrimary: true, defaultCategories: AddonCategory.allCases)]
+            }
         }
     }
 
@@ -88,6 +102,17 @@ class PluginManager {
 
     var luaScriptsDataFolder: URL? {
         launcherDataFolder.map { pathService.dataFolder(.luaScripts, in: $0) }
+    }
+
+    var xPlanePath: URL? {
+        didSet {
+            guard !isLoading else { return }
+            savePath()
+            scanPlugins()
+            scanScenery()
+            scanAircraft()
+            scanLuaScripts()
+        }
     }
 
     var flyWithLuaScriptsFolder: URL? {
@@ -286,17 +311,7 @@ class PluginManager {
     // MARK: - Initialization
 
     init() {
-        if let defaultFolder = PathService.defaultLauncherDataFolder {
-            self.launcherDataFolder = defaultFolder
-        }
-
-        if let savedDataPath = defaults.string(forKey: .launcherDataFolder) {
-            let url = URL(fileURLWithPath: savedDataPath)
-            if pathService.isDirectory(at: url) {
-                self.launcherDataFolder = url
-            }
-        }
-
+        self.storagePools = storagePoolService.loadStoragePools()
         ensureLauncherDataDirectories()
 
         // Load profiles & migrate legacy shellScriptPath if present
@@ -332,6 +347,7 @@ class PluginManager {
         scanScenery()
         scanAircraft()
         scanLuaScripts()
+        refreshStoragePoolStats()
 
         self.scriptEnvironment = profileService.loadScriptEnvironment()
         self.sceneryGroups = profileService.loadSceneryGroups()
@@ -342,25 +358,183 @@ class PluginManager {
 
         logProfileStartupState()
 
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.handleVolumeChange()
+            }
+        }
+
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didMountNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.handleVolumeChange()
+            }
+        }
+
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didUnmountNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.handleVolumeChange()
+            }
+        }
+
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didRenameVolumeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.handleVolumeChange()
+            }
+        }
+
         isLoading = false
     }
 
     // MARK: - Directory & Persistence Helpers
 
     func ensureLauncherDataDirectories() {
-        guard let dataFolder = launcherDataFolder else { return }
-        pathService.ensureDirectories(for: dataFolder)
+        pathService.ensureDirectories(for: storagePools)
     }
 
     func savePath() {
         if let path = xPlanePath {
             defaults.set(path.path, forKey: .xPlanePath)
         }
-        if let path = launcherDataFolder {
-            defaults.set(path.path, forKey: .launcherDataFolder)
-        } else {
-            defaults.removeObject(forKey: .launcherDataFolder)
+    }
+
+    func saveStoragePools() {
+        storagePoolService.saveStoragePools(storagePools)
+    }
+
+    func addStoragePool(url: URL, name: String, isPrimary: Bool = false, defaultCategories: [AddonCategory] = []) {
+        var newPools = storagePools
+        if isPrimary {
+            for i in 0..<newPools.count { newPools[i].isPrimary = false }
         }
+        let pool = StoragePool(
+            name: name,
+            url: url,
+            isPrimary: isPrimary || newPools.isEmpty,
+            defaultCategories: defaultCategories
+        )
+        newPools.append(pool)
+        self.storagePools = newPools
+        pathService.ensureDirectories(for: pool.url)
+        repairStaleLinks()
+        rescanAll()
+        refreshStoragePoolStats()
+        ConsoleLogger.shared.log("Added storage pool '\(pool.name)' at \(pool.url.path)", category: .general)
+    }
+
+    func removeStoragePool(id: UUID) {
+        guard let pool = storagePools.first(where: { $0.id == id }) else { return }
+        storagePools.removeAll { $0.id == id }
+        if !storagePools.isEmpty && !storagePools.contains(where: { $0.isPrimary }) {
+            storagePools[0].isPrimary = true
+        }
+        saveStoragePools()
+        repairStaleLinks()
+        rescanAll()
+        refreshStoragePoolStats()
+        ConsoleLogger.shared.log("Removed storage pool '\(pool.name)'", category: .general)
+    }
+
+    func setPrimaryStoragePool(id: UUID) {
+        for i in 0..<storagePools.count {
+            storagePools[i].isPrimary = (storagePools[i].id == id)
+        }
+        saveStoragePools()
+        refreshStoragePoolStats()
+        if let primary = primaryStoragePool {
+            ConsoleLogger.shared.log("Set '\(primary.name)' as primary storage pool", category: .general)
+        }
+    }
+
+    func updateStoragePool(id: UUID, name: String, defaultCategories: [AddonCategory]) {
+        if let index = storagePools.firstIndex(where: { $0.id == id }) {
+            storagePools[index].name = name
+            storagePools[index].defaultCategories = defaultCategories
+            saveStoragePools()
+            refreshStoragePoolStats()
+        }
+    }
+
+    func refreshStoragePoolStats() {
+        var stats: [UUID: StoragePoolStats] = [:]
+        for pool in storagePools {
+            stats[pool.id] = storagePoolService.calculateStats(for: pool)
+        }
+        self.storagePoolStats = stats
+    }
+
+    func rescanAll() {
+        scanPlugins()
+        scanScenery()
+        scanAircraft()
+        scanLuaScripts()
+    }
+
+    @MainActor
+    func handleVolumeChange() {
+        guard !isLoading else { return }
+        refreshStoragePoolStats()
+        repairStaleLinks()
+        rescanAll()
+    }
+
+    func isPluginOffline(_ plugin: Plugin) -> Bool {
+        if plugin.isOffline { return true }
+        if let poolId = plugin.storagePoolId, let pool = storagePools.first(where: { $0.id == poolId }), !pool.isOnline {
+            return true
+        }
+        if let sourceURL = plugin.sourceURL, !FileManager.default.fileExists(atPath: sourceURL.path) {
+            return true
+        }
+        return false
+    }
+
+    func isSceneryOffline(_ item: Scenery) -> Bool {
+        if item.isOffline { return true }
+        if let poolId = item.storagePoolId, let pool = storagePools.first(where: { $0.id == poolId }), !pool.isOnline {
+            return true
+        }
+        if let sourceURL = item.sourceURL, !FileManager.default.fileExists(atPath: sourceURL.path) {
+            return true
+        }
+        return false
+    }
+
+    func isAircraftOffline(_ item: Aircraft) -> Bool {
+        if item.isOffline { return true }
+        if let poolId = item.storagePoolId, let pool = storagePools.first(where: { $0.id == poolId }), !pool.isOnline {
+            return true
+        }
+        if let sourceURL = item.sourceURL, !FileManager.default.fileExists(atPath: sourceURL.path) {
+            return true
+        }
+        return false
+    }
+
+    func isLuaScriptOffline(_ item: LuaScript) -> Bool {
+        if item.isOffline { return true }
+        if let poolId = item.storagePoolId, let pool = storagePools.first(where: { $0.id == poolId }), !pool.isOnline {
+            return true
+        }
+        if let sourceURL = item.sourceURL, !FileManager.default.fileExists(atPath: sourceURL.path) {
+            return true
+        }
+        return false
     }
 
     func saveScriptEnvironment() {
@@ -379,56 +553,51 @@ class PluginManager {
     func repairStaleLinks() {
         guard let xPlanePath = xPlanePath else { return }
 
-        if let dataFolder = pluginsDataFolder {
+        symlinkService.repairStaleLinks(
+            in: pathService.pluginsTargetFolder(for: xPlanePath),
+            using: symlinkService.linkSources(in: storagePools, subfolder: .plugins)
+        )
+
+        symlinkService.repairStaleLinks(
+            in: pathService.aircraftTargetFolder(for: xPlanePath),
+            using: symlinkService.linkSources(in: storagePools, subfolder: .aircraft)
+        )
+
+        symlinkService.repairStaleLinks(
+            in: pathService.customSceneryFolder(for: xPlanePath),
+            using: symlinkService.linkSources(in: storagePools, subfolder: .scenery)
+        )
+
+        if let targetFolder = flyWithLuaScriptsFolder {
             symlinkService.repairStaleLinks(
-                in: pathService.pluginsTargetFolder(for: xPlanePath),
-                using: symlinkService.linkSources(in: dataFolder)
+                in: targetFolder,
+                using: symlinkService.luaScriptLinkSources(in: storagePools)
             )
         }
-
-        if let dataFolder = aircraftDataFolder {
+        if let modulesFolder = flyWithLuaModulesFolder {
             symlinkService.repairStaleLinks(
-                in: pathService.aircraftTargetFolder(for: xPlanePath),
-                using: symlinkService.linkSources(in: dataFolder)
+                in: modulesFolder,
+                using: symlinkService.luaModuleLinkSources(in: storagePools)
             )
-        }
-
-        if let dataFolder = sceneryDataFolder {
-            symlinkService.repairStaleLinks(
-                in: pathService.customSceneryFolder(for: xPlanePath),
-                using: symlinkService.linkSources(in: dataFolder)
-            )
-        }
-
-        if let dataFolder = luaScriptsDataFolder {
-            if let targetFolder = flyWithLuaScriptsFolder {
-                symlinkService.repairStaleLinks(
-                    in: targetFolder,
-                    using: symlinkService.luaScriptLinkSources(in: dataFolder)
-                )
-            }
-            if let modulesFolder = flyWithLuaModulesFolder {
-                symlinkService.repairStaleLinks(
-                    in: modulesFolder,
-                    using: symlinkService.luaModuleLinkSources(in: dataFolder)
-                )
-            }
         }
     }
 
     // MARK: - Scanning
 
     func scanPlugins() {
-        guard let xPlanePath = xPlanePath,
-              let pluginsURL = pluginsDataFolder else {
+        guard let xPlanePath = xPlanePath else {
             plugins = []
             return
         }
 
         let targetFolder = pathService.pluginsTargetFolder(for: xPlanePath)
         do {
-            self.plugins = try symlinkService.scanPlugins(dataFolder: pluginsURL, targetFolder: targetFolder)
-            ConsoleLogger.shared.log("Scanned \(self.plugins.count) plugins (\(self.plugins.filter { $0.isEnabled }.count) enabled)", category: .plugins)
+            self.plugins = try symlinkService.scanPlugins(
+                storagePools: storagePools,
+                targetFolder: targetFolder,
+                knownPlugins: plugins
+            )
+            ConsoleLogger.shared.log("Scanned \(self.plugins.count) plugins (\(self.plugins.filter { $0.isEnabled }.count) enabled, \(self.plugins.filter { $0.isOffline }.count) offline)", category: .plugins)
         } catch {
             self.lastErrorMessage = "Error scanning plugins: \(error.localizedDescription)"
             ConsoleLogger.shared.log("Error scanning plugins: \(error.localizedDescription)", category: .plugins, level: .error)
@@ -436,16 +605,19 @@ class PluginManager {
     }
 
     func scanAircraft() {
-        guard let xPlanePath = xPlanePath,
-              let aircraftFolder = aircraftDataFolder else {
+        guard let xPlanePath = xPlanePath else {
             aircraft = []
             return
         }
 
         let targetFolder = pathService.aircraftTargetFolder(for: xPlanePath)
         do {
-            self.aircraft = try symlinkService.scanAircraft(dataFolder: aircraftFolder, targetFolder: targetFolder)
-            ConsoleLogger.shared.log("Scanned \(self.aircraft.count) aircraft (\(self.aircraft.filter { $0.isEnabled }.count) enabled)", category: .aircraft)
+            self.aircraft = try symlinkService.scanAircraft(
+                storagePools: storagePools,
+                targetFolder: targetFolder,
+                knownAircraft: aircraft
+            )
+            ConsoleLogger.shared.log("Scanned \(self.aircraft.count) aircraft (\(self.aircraft.filter { $0.isEnabled }.count) enabled, \(self.aircraft.filter { $0.isOffline }.count) offline)", category: .aircraft)
         } catch {
             self.lastErrorMessage = "Error scanning aircraft: \(error.localizedDescription)"
             ConsoleLogger.shared.log("Error scanning aircraft: \(error.localizedDescription)", category: .aircraft, level: .error)
@@ -453,16 +625,16 @@ class PluginManager {
     }
 
     func scanLuaScripts() {
-        guard let luaScriptsFolder = luaScriptsDataFolder else {
-            luaScripts = []
-            return
-        }
-
         let targetFolder = flyWithLuaScriptsFolder
         let modulesFolder = flyWithLuaModulesFolder
         do {
-            self.luaScripts = try symlinkService.scanLuaScripts(dataFolder: luaScriptsFolder, targetFolder: targetFolder, modulesTargetFolder: modulesFolder)
-            ConsoleLogger.shared.log("Scanned \(self.luaScripts.count) Lua scripts (\(self.luaScripts.filter { $0.isEnabled }.count) enabled)", category: .lua)
+            self.luaScripts = try symlinkService.scanLuaScripts(
+                storagePools: storagePools,
+                targetFolder: targetFolder,
+                modulesTargetFolder: modulesFolder,
+                knownScripts: luaScripts
+            )
+            ConsoleLogger.shared.log("Scanned \(self.luaScripts.count) Lua scripts (\(self.luaScripts.filter { $0.isEnabled }.count) enabled, \(self.luaScripts.filter { $0.isOffline }.count) offline)", category: .lua)
         } catch {
             self.lastErrorMessage = "Error scanning Lua scripts: \(error.localizedDescription)"
             ConsoleLogger.shared.log("Error scanning Lua scripts: \(error.localizedDescription)", category: .lua, level: .error)
@@ -480,10 +652,11 @@ class PluginManager {
         do {
             self.scenery = try sceneryService.scanScenery(
                 customSceneryFolder: customSceneryURL,
-                managedSceneryFolder: sceneryDataFolder,
-                iniURL: iniURL
+                storagePools: storagePools,
+                iniURL: iniURL,
+                knownScenery: scenery
             )
-            ConsoleLogger.shared.log("Scanned \(self.scenery.count) scenery packs (\(self.scenery.filter { $0.isEnabled }.count) enabled)", category: .scenery)
+            ConsoleLogger.shared.log("Scanned \(self.scenery.count) scenery packs (\(self.scenery.filter { $0.isEnabled }.count) enabled, \(self.scenery.filter { $0.isOffline }.count) offline)", category: .scenery)
         } catch {
             self.lastErrorMessage = "Error scanning Custom Scenery: \(error.localizedDescription)"
             ConsoleLogger.shared.log("Error scanning Custom Scenery: \(error.localizedDescription)", category: .scenery, level: .error)
@@ -506,14 +679,31 @@ class PluginManager {
 
     // MARK: - Toggles
 
+    private func findSourceURL(folderName: String, subfolder: DataSubfolder) -> URL? {
+        for pool in storagePools where pool.isOnline {
+            let sub = PathService.shared.dataFolder(subfolder, in: pool.url).appendingPathComponent(folderName)
+            if FileManager.default.fileExists(atPath: sub.path) {
+                return sub
+            }
+        }
+        return nil
+    }
+
     func togglePlugin(_ plugin: Plugin) {
-        guard let xPlanePath = xPlanePath,
-              let pluginsFolder = pluginsDataFolder else { return }
+        guard !isPluginOffline(plugin) else {
+            self.lastErrorMessage = "Cannot toggle offline plugin '\(plugin.name)'. The storage volume is not mounted."
+            return
+        }
+        guard let xPlanePath = xPlanePath else { return }
+        guard let sourceURL = plugin.sourceURL ?? findSourceURL(folderName: plugin.folderName, subfolder: .plugins) else {
+            self.lastErrorMessage = "Cannot find source files for plugin '\(plugin.name)'."
+            return
+        }
 
         let targetFolder = pathService.pluginsTargetFolder(for: xPlanePath)
         let newEnabled = !plugin.isEnabled
         do {
-            try symlinkService.setPluginEnabled(folderName: plugin.folderName, enabled: newEnabled, dataFolder: pluginsFolder, targetFolder: targetFolder)
+            try symlinkService.setPluginEnabled(folderName: plugin.folderName, enabled: newEnabled, sourceURL: sourceURL, targetFolder: targetFolder)
             if let index = plugins.firstIndex(where: { $0.id == plugin.id }) {
                 plugins[index].isEnabled = newEnabled
                 ConsoleLogger.shared.log("\(newEnabled ? "Enabled" : "Disabled") plugin '\(plugin.name)'", category: .plugins)
@@ -533,14 +723,21 @@ class PluginManager {
     }
 
     func toggleAircraft(_ item: Aircraft) {
-        guard let xPlanePath = xPlanePath,
-              let aircraftFolder = aircraftDataFolder else { return }
+        guard !isAircraftOffline(item) else {
+            self.lastErrorMessage = "Cannot toggle offline aircraft '\(item.name)'. The storage volume is not mounted."
+            return
+        }
+        guard let xPlanePath = xPlanePath else { return }
+        guard let sourceURL = item.sourceURL ?? findSourceURL(folderName: item.folderName, subfolder: .aircraft) else {
+            self.lastErrorMessage = "Cannot find source files for aircraft '\(item.name)'."
+            return
+        }
 
         let targetFolder = pathService.aircraftTargetFolder(for: xPlanePath)
         let newEnabled = !item.isEnabled
 
         do {
-            try symlinkService.setAircraftEnabled(folderName: item.folderName, enabled: newEnabled, dataFolder: aircraftFolder, targetFolder: targetFolder)
+            try symlinkService.setAircraftEnabled(folderName: item.folderName, enabled: newEnabled, sourceURL: sourceURL, targetFolder: targetFolder)
             if let index = aircraft.firstIndex(where: { $0.id == item.id }) {
                 aircraft[index].isEnabled = newEnabled
                 ConsoleLogger.shared.log("\(newEnabled ? "Enabled" : "Disabled") aircraft '\(item.name)'", category: .aircraft)
@@ -560,14 +757,21 @@ class PluginManager {
     }
 
     func toggleLuaScript(_ item: LuaScript) {
-        guard let targetFolder = flyWithLuaScriptsFolder,
-              let sourceRoot = luaScriptsDataFolder else { return }
+        guard !isLuaScriptOffline(item) else {
+            self.lastErrorMessage = "Cannot toggle offline Lua script '\(item.name)'. The storage volume is not mounted."
+            return
+        }
+        guard let targetFolder = flyWithLuaScriptsFolder else { return }
+        guard let sourceURL = item.sourceURL ?? findSourceURL(folderName: item.folderName, subfolder: .luaScripts) else {
+            self.lastErrorMessage = "Cannot find source files for Lua script '\(item.name)'."
+            return
+        }
 
         let modulesFolder = flyWithLuaModulesFolder
         let newEnabled = !item.isEnabled
 
         do {
-            try symlinkService.setLuaScriptEnabled(item: item, enabled: newEnabled, dataFolder: sourceRoot, targetFolder: targetFolder, modulesTargetFolder: modulesFolder)
+            try symlinkService.setLuaScriptEnabled(item: item, enabled: newEnabled, sourceURL: sourceURL, targetFolder: targetFolder, modulesTargetFolder: modulesFolder)
             if let index = luaScripts.firstIndex(where: { $0.id == item.id }) {
                 luaScripts[index].isEnabled = newEnabled
                 ConsoleLogger.shared.log("\(newEnabled ? "Enabled" : "Disabled") Lua script '\(item.name)'", category: .lua)
@@ -587,6 +791,10 @@ class PluginManager {
     }
 
     func toggleScenery(_ item: Scenery) {
+        guard !isSceneryOffline(item) else {
+            self.lastErrorMessage = "Cannot toggle offline scenery '\(item.name)'. The storage volume is not mounted."
+            return
+        }
         guard let index = scenery.firstIndex(where: { $0.id == item.id }) else { return }
         guard item.isToggleable else { return }
 
@@ -594,15 +802,17 @@ class PluginManager {
         let wasEnabled = newItem.isEnabled
 
         if !wasEnabled {
-            if let xPlanePath = xPlanePath, let sceneryFolder = sceneryDataFolder {
+            if let xPlanePath = xPlanePath {
                 let customScenery = pathService.customSceneryFolder(for: xPlanePath)
-                do {
-                    try sceneryService.linkScenery(folderName: newItem.folderName, managedSceneryFolder: sceneryFolder, customSceneryFolder: customScenery)
-                    newItem.isManaged = true
-                } catch {
-                    self.lastErrorMessage = "Failed to enable scenery '\(newItem.name)': \(error.localizedDescription)"
-                    ConsoleLogger.shared.log("Failed to enable scenery '\(newItem.name)': \(error.localizedDescription)", category: .scenery, level: .error)
-                    return
+                if let sourceURL = newItem.sourceURL ?? findSourceURL(folderName: newItem.folderName, subfolder: .scenery) {
+                    do {
+                        try sceneryService.linkScenery(folderName: newItem.folderName, sourceURL: sourceURL, customSceneryFolder: customScenery)
+                        newItem.isManaged = true
+                    } catch {
+                        self.lastErrorMessage = "Failed to enable scenery '\(newItem.name)': \(error.localizedDescription)"
+                        ConsoleLogger.shared.log("Failed to enable scenery '\(newItem.name)': \(error.localizedDescription)", category: .scenery, level: .error)
+                        return
+                    }
                 }
             }
             newItem.isEnabled = true
@@ -654,9 +864,14 @@ class PluginManager {
         }
     }
 
+    func removeFromGroup(_ item: Scenery) {
+        self.sceneryGroups = sceneryService.removeFromGroup(sceneryItem: item, existingGroups: sceneryGroups)
+    }
+
     func moveScenery(from source: IndexSet, to destination: Int) {
         scenery.move(fromOffsets: source, toOffset: destination)
         saveSceneryOrder()
+        ConsoleLogger.shared.log("Reordered scenery packs", category: .scenery)
     }
 
     func moveSceneryToGroup(items: [Scenery], group: SceneryGroup) {
@@ -773,35 +988,53 @@ class PluginManager {
         }
     }
 
-    func removeFromGroup(_ sceneryItem: Scenery) {
-        for (idx, group) in sceneryGroups.enumerated() {
-            if group.childFolderNames.contains(sceneryItem.folderName) {
-                sceneryGroups[idx].childFolderNames.removeAll(where: { $0 == sceneryItem.folderName })
-            }
-        }
-    }
+    // MARK: - Profile Management
 
-    // MARK: - Profiles
-
-    func saveProfile(name: String) {
-        let enabledPlugins = plugins.filter { $0.isEnabled }.map { $0.folderName }
-        let enabledScenery = scenery.filter { $0.isEnabled }.map { $0.folderName }
-        let enabledAircraft = aircraft.filter { $0.isEnabled }.map { $0.folderName }
-        let enabledLua = luaScripts.filter { $0.isEnabled }.map { $0.folderName }
+    func createProfile(name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
 
         let newProfile = PluginProfile(
-            name: name,
-            pluginFolderNames: enabledPlugins,
-            sceneryFolderNames: enabledScenery,
-            aircraftFolderNames: enabledAircraft,
-            luaScriptFolderNames: enabledLua,
+            name: trimmed,
+            pluginFolderNames: plugins.filter { $0.isEnabled }.map { $0.folderName },
+            sceneryFolderNames: scenery.filter { $0.isEnabled }.map { $0.folderName },
+            aircraftFolderNames: aircraft.filter { $0.isEnabled }.map { $0.folderName },
+            luaScriptFolderNames: luaScripts.filter { $0.isEnabled }.map { $0.folderName },
             scripts: activeScripts,
             environmentVariables: activeEnvironmentVariables
         )
+
         profiles.append(newProfile)
         profileService.saveProfiles(profiles)
         selectedProfileId = newProfile.id
-        ConsoleLogger.shared.log("Saved new profile '\(name)'", category: .profiles)
+        ConsoleLogger.shared.log("Created profile '\(trimmed)'", category: .profiles)
+    }
+
+    func saveProfile(name: String) {
+        createProfile(name: name)
+    }
+
+    func saveCurrentStateToProfile(_ profile: PluginProfile) {
+        guard let index = profiles.firstIndex(where: { $0.id == profile.id }) else { return }
+
+        var updatedProfile = profiles[index]
+        updatedProfile.pluginFolderNames = plugins.filter { $0.isEnabled }.map { $0.folderName }
+        updatedProfile.sceneryFolderNames = scenery.filter { $0.isEnabled }.map { $0.folderName }
+        updatedProfile.aircraftFolderNames = aircraft.filter { $0.isEnabled }.map { $0.folderName }
+        updatedProfile.luaScriptFolderNames = luaScripts.filter { $0.isEnabled }.map { $0.folderName }
+        updatedProfile.scripts = activeScripts
+        updatedProfile.environmentVariables = activeEnvironmentVariables
+
+        profiles[index] = updatedProfile
+        profileService.saveProfiles(profiles)
+        ConsoleLogger.shared.log("Saved state to profile '\(updatedProfile.name)'", category: .profiles)
+    }
+
+    func revertProfile(_ profile: PluginProfile) {
+        applyProfile(profile)
+        self.activeScripts = profile.scripts
+        self.activeEnvironmentVariables = profile.environmentVariables
+        ConsoleLogger.shared.log("Reverted profile '\(profile.name)' to saved state", category: .profiles)
     }
 
     func updateProfile(_ profile: PluginProfile) {
@@ -893,7 +1126,25 @@ class PluginManager {
         return imported
     }
 
-    // MARK: - Missing Add-ons Detection
+    // MARK: - Missing & Offline Add-ons Detection
+
+    func offlineAddons(for profile: PluginProfile) -> [AddonCategory: [String]] {
+        var offline: [AddonCategory: [String]] = [:]
+
+        let offlinePlugins = plugins.filter { isPluginOffline($0) && profile.pluginFolderNames.contains($0.folderName) }.map { $0.folderName }
+        if !offlinePlugins.isEmpty { offline[.plugins] = offlinePlugins }
+
+        let offlineScenery = scenery.filter { isSceneryOffline($0) && profile.sceneryFolderNames.contains($0.folderName) }.map { $0.folderName }
+        if !offlineScenery.isEmpty { offline[.scenery] = offlineScenery }
+
+        let offlineAircraft = aircraft.filter { isAircraftOffline($0) && profile.aircraftFolderNames.contains($0.folderName) }.map { $0.folderName }
+        if !offlineAircraft.isEmpty { offline[.aircraft] = offlineAircraft }
+
+        let offlineLua = luaScripts.filter { isLuaScriptOffline($0) && profile.luaScriptFolderNames.contains($0.folderName) }.map { $0.folderName }
+        if !offlineLua.isEmpty { offline[.luaScripts] = offlineLua }
+
+        return offline
+    }
 
     func missingAddons(for profile: PluginProfile) -> [AddonCategory: [String]] {
         var missing: [AddonCategory: [String]] = [:]
@@ -938,28 +1189,28 @@ class PluginManager {
         ConsoleLogger.shared.log("Applying profile '\(profile.name)'", category: .profiles)
         for index in plugins.indices {
             let shouldBeEnabled = profile.pluginFolderNames.contains(plugins[index].folderName)
-            if plugins[index].isEnabled != shouldBeEnabled {
+            if plugins[index].isEnabled != shouldBeEnabled && !plugins[index].isOffline {
                 togglePlugin(plugins[index])
             }
         }
 
         for index in scenery.indices {
             let shouldBeEnabled = profile.sceneryFolderNames.contains(scenery[index].folderName)
-            if scenery[index].isEnabled != shouldBeEnabled {
+            if scenery[index].isEnabled != shouldBeEnabled && !scenery[index].isOffline {
                 toggleScenery(scenery[index])
             }
         }
 
         for index in aircraft.indices {
             let shouldBeEnabled = profile.aircraftFolderNames.contains(aircraft[index].folderName)
-            if aircraft[index].isEnabled != shouldBeEnabled {
+            if aircraft[index].isEnabled != shouldBeEnabled && !aircraft[index].isOffline {
                 toggleAircraft(aircraft[index])
             }
         }
 
         for index in luaScripts.indices {
             let shouldBeEnabled = profile.luaScriptFolderNames.contains(luaScripts[index].folderName)
-            if luaScripts[index].isEnabled != shouldBeEnabled {
+            if luaScripts[index].isEnabled != shouldBeEnabled && !luaScripts[index].isOffline {
                 toggleLuaScript(luaScripts[index])
             }
         }
@@ -1002,21 +1253,30 @@ class PluginManager {
     }
 
     func deletePlugin(_ plugin: Plugin) {
-        guard let dataFolder = pluginsDataFolder else { return }
+        guard !isPluginOffline(plugin) else {
+            self.lastErrorMessage = "Cannot delete '\(plugin.name)' because its storage drive is currently disconnected."
+            return
+        }
+
         do {
             if let xPlanePath = xPlanePath {
                 let targetFolder = pathService.pluginsTargetFolder(for: xPlanePath)
-                try? symlinkService.setPluginEnabled(folderName: plugin.folderName, enabled: false, dataFolder: dataFolder, targetFolder: targetFolder)
+                let cleanName = try? PathSecurity.sanitizePathComponent(plugin.folderName)
+                if let clean = cleanName,
+                   let linkURL = try? PathSecurity.validateSubpath(relativePath: clean, within: targetFolder) {
+                    try? FileManager.default.removeItem(at: linkURL)
+                }
             }
 
-            let cleanName = try PathSecurity.sanitizePathComponent(plugin.folderName)
-            let sourceURL = try PathSecurity.validateSubpath(relativePath: cleanName, within: dataFolder)
-            if FileManager.default.fileExists(atPath: sourceURL.path) {
-                try FileManager.default.removeItem(at: sourceURL)
+            if let sourceURL = plugin.sourceURL ?? findSourceURL(folderName: plugin.folderName, subfolder: .plugins) {
+                if FileManager.default.fileExists(atPath: sourceURL.path) {
+                    try FileManager.default.removeItem(at: sourceURL)
+                }
             }
 
             removeAddonFromAllProfiles(folderName: plugin.folderName, category: .plugins)
             scanPlugins()
+            refreshStoragePoolStats()
             ConsoleLogger.shared.log("Deleted plugin '\(plugin.name)'", category: .plugins)
         } catch {
             self.lastErrorMessage = "Failed to delete plugin '\(plugin.name)': \(error.localizedDescription)"
@@ -1025,21 +1285,30 @@ class PluginManager {
     }
 
     func deleteAircraft(_ item: Aircraft) {
-        guard let dataFolder = aircraftDataFolder else { return }
+        guard !isAircraftOffline(item) else {
+            self.lastErrorMessage = "Cannot delete '\(item.name)' because its storage drive is currently disconnected."
+            return
+        }
+
         do {
             if let xPlanePath = xPlanePath {
                 let targetFolder = pathService.aircraftTargetFolder(for: xPlanePath)
-                try? symlinkService.setAircraftEnabled(folderName: item.folderName, enabled: false, dataFolder: dataFolder, targetFolder: targetFolder)
+                let cleanName = try? PathSecurity.sanitizePathComponent(item.folderName)
+                if let clean = cleanName,
+                   let linkURL = try? PathSecurity.validateSubpath(relativePath: clean, within: targetFolder) {
+                    try? FileManager.default.removeItem(at: linkURL)
+                }
             }
 
-            let cleanName = try PathSecurity.sanitizePathComponent(item.folderName)
-            let sourceURL = try PathSecurity.validateSubpath(relativePath: cleanName, within: dataFolder)
-            if FileManager.default.fileExists(atPath: sourceURL.path) {
-                try FileManager.default.removeItem(at: sourceURL)
+            if let sourceURL = item.sourceURL ?? findSourceURL(folderName: item.folderName, subfolder: .aircraft) {
+                if FileManager.default.fileExists(atPath: sourceURL.path) {
+                    try FileManager.default.removeItem(at: sourceURL)
+                }
             }
 
             removeAddonFromAllProfiles(folderName: item.folderName, category: .aircraft)
             scanAircraft()
+            refreshStoragePoolStats()
             ConsoleLogger.shared.log("Deleted aircraft '\(item.name)'", category: .aircraft)
         } catch {
             self.lastErrorMessage = "Failed to delete aircraft '\(item.name)': \(error.localizedDescription)"
@@ -1048,21 +1317,26 @@ class PluginManager {
     }
 
     func deleteLuaScript(_ item: LuaScript) {
-        guard let dataFolder = luaScriptsDataFolder else { return }
+        guard !isLuaScriptOffline(item) else {
+            self.lastErrorMessage = "Cannot delete '\(item.name)' because its storage drive is currently disconnected."
+            return
+        }
+
         do {
-            if let targetFolder = flyWithLuaScriptsFolder {
+            if let targetFolder = flyWithLuaScriptsFolder, let sourceURL = item.sourceURL ?? findSourceURL(folderName: item.folderName, subfolder: .luaScripts) {
                 let modulesFolder = flyWithLuaModulesFolder
-                try? symlinkService.setLuaScriptEnabled(item: item, enabled: false, dataFolder: dataFolder, targetFolder: targetFolder, modulesTargetFolder: modulesFolder)
+                try? symlinkService.setLuaScriptEnabled(item: item, enabled: false, sourceURL: sourceURL, targetFolder: targetFolder, modulesTargetFolder: modulesFolder)
             }
 
-            let cleanName = try PathSecurity.sanitizePathComponent(item.folderName)
-            let sourceURL = try PathSecurity.validateSubpath(relativePath: cleanName, within: dataFolder)
-            if FileManager.default.fileExists(atPath: sourceURL.path) {
-                try FileManager.default.removeItem(at: sourceURL)
+            if let sourceURL = item.sourceURL ?? findSourceURL(folderName: item.folderName, subfolder: .luaScripts) {
+                if FileManager.default.fileExists(atPath: sourceURL.path) {
+                    try FileManager.default.removeItem(at: sourceURL)
+                }
             }
 
             removeAddonFromAllProfiles(folderName: item.folderName, category: .luaScripts)
             scanLuaScripts()
+            refreshStoragePoolStats()
             ConsoleLogger.shared.log("Deleted Lua script '\(item.name)'", category: .lua)
         } catch {
             self.lastErrorMessage = "Failed to delete Lua script '\(item.name)': \(error.localizedDescription)"
@@ -1075,7 +1349,10 @@ class PluginManager {
             self.lastErrorMessage = "Cannot delete unmanaged scenery '\(item.name)'."
             return
         }
-        guard let dataFolder = sceneryDataFolder else { return }
+        guard !isSceneryOffline(item) else {
+            self.lastErrorMessage = "Cannot delete '\(item.name)' because its storage drive is currently disconnected."
+            return
+        }
 
         do {
             if let xPlanePath = xPlanePath {
@@ -1083,10 +1360,10 @@ class PluginManager {
                 try? sceneryService.unlinkScenery(folderName: item.folderName, customSceneryFolder: customScenery)
             }
 
-            let cleanName = try PathSecurity.sanitizePathComponent(item.folderName)
-            let sourceURL = try PathSecurity.validateSubpath(relativePath: cleanName, within: dataFolder)
-            if FileManager.default.fileExists(atPath: sourceURL.path) {
-                try FileManager.default.removeItem(at: sourceURL)
+            if let sourceURL = item.sourceURL ?? findSourceURL(folderName: item.folderName, subfolder: .scenery) {
+                if FileManager.default.fileExists(atPath: sourceURL.path) {
+                    try FileManager.default.removeItem(at: sourceURL)
+                }
             }
 
             removeFromGroup(item)
@@ -1094,6 +1371,7 @@ class PluginManager {
             saveSceneryOrder()
             removeAddonFromAllProfiles(folderName: item.folderName, category: .scenery)
             scanScenery()
+            refreshStoragePoolStats()
             ConsoleLogger.shared.log("Deleted scenery '\(item.name)'", category: .scenery)
         } catch {
             self.lastErrorMessage = "Failed to delete scenery '\(item.name)': \(error.localizedDescription)"
@@ -1113,38 +1391,46 @@ class PluginManager {
 
     func deleteScript(_ script: ProfileScript) {
         let name = URL(fileURLWithPath: script.path).lastPathComponent
-        activeScripts.removeAll { $0.id == script.id }
+        activeScripts.removeAll { $0.id == script.id || $0.path == script.path }
         if let profile = selectedProfile {
-            ConsoleLogger.shared.log("Profile '\(profile.name)': removed script '\(name)'", category: .profiles)
+            ConsoleLogger.shared.log("Profile '\(profile.name)': deleted script '\(name)'", category: .profiles)
         }
     }
 
     func toggleScript(_ script: ProfileScript) {
-        if let index = activeScripts.firstIndex(where: { $0.id == script.id }) {
+        if let index = activeScripts.firstIndex(where: { $0.id == script.id || $0.path == script.path }) {
             activeScripts[index].isEnabled.toggle()
             let name = URL(fileURLWithPath: script.path).lastPathComponent
+            let isEnabled = activeScripts[index].isEnabled
             if let profile = selectedProfile {
-                ConsoleLogger.shared.log("Profile '\(profile.name)': script '\(name)' is now \(activeScripts[index].isEnabled ? "enabled" : "disabled")", category: .profiles)
+                ConsoleLogger.shared.log("Profile '\(profile.name)': \(isEnabled ? "enabled" : "disabled") script '\(name)'", category: .profiles)
             }
         }
     }
 
+    // MARK: - Profile Environment Variables
+
     func addProfileEnvVar(key: String = "NEW_VAR", value: String = "VALUE") {
-        activeEnvironmentVariables.append(ScriptEnvVar(key: key, value: value))
+        let trimmedKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedKey.isEmpty else { return }
+        let newVar = ScriptEnvVar(key: trimmedKey, value: value)
+        activeEnvironmentVariables.append(newVar)
         if let profile = selectedProfile {
-            ConsoleLogger.shared.log("Profile '\(profile.name)': added environment variable '\(key)'", category: .profiles)
+            ConsoleLogger.shared.log("Profile '\(profile.name)': added environment variable '\(trimmedKey)'", category: .profiles)
         }
     }
 
     func deleteProfileEnvVar(id: UUID) {
-        let key = activeEnvironmentVariables.first(where: { $0.id == id })?.key ?? "var"
-        activeEnvironmentVariables.removeAll { $0.id == id }
-        if let profile = selectedProfile {
-            ConsoleLogger.shared.log("Profile '\(profile.name)': removed environment variable '\(key)'", category: .profiles)
+        if let index = activeEnvironmentVariables.firstIndex(where: { $0.id == id }) {
+            let key = activeEnvironmentVariables[index].key
+            activeEnvironmentVariables.remove(at: index)
+            if let profile = selectedProfile {
+                ConsoleLogger.shared.log("Profile '\(profile.name)': deleted environment variable '\(key)'", category: .profiles)
+            }
         }
     }
 
-    // MARK: - Launch & Execution
+    // MARK: - Launching
 
     func launchXPlane() {
         guard let xPlanePath = xPlanePath else { return }

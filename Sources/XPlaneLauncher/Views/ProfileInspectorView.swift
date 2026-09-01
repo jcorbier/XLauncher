@@ -33,6 +33,10 @@ struct ProfileInspectorView: View {
         pluginManager.missingAddons(for: profile)
     }
 
+    private var offlineAddons: [AddonCategory: [String]] {
+        pluginManager.offlineAddons(for: profile)
+    }
+
     private var isActive: Bool {
         pluginManager.selectedProfileId == profile.id
     }
@@ -87,6 +91,20 @@ struct ProfileInspectorView: View {
                                 .background(Color.blue.opacity(0.15))
                                 .foregroundStyle(.blue)
                                 .clipShape(Capsule())
+                        }
+
+                        if !offlineAddons.isEmpty {
+                            HStack(spacing: 3) {
+                                Image(systemName: "externaldrive.badge.xmark")
+                                Text("\(offlineAddons.values.reduce(0, { $0 + $1.count })) Offline")
+                            }
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.orange.opacity(0.15))
+                            .foregroundStyle(.orange)
+                            .clipShape(Capsule())
                         }
 
                         if !missingAddons.isEmpty {
@@ -252,6 +270,49 @@ struct ProfileInspectorView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
+                    // Offline Add-ons Alert
+                    if !offlineAddons.isEmpty {
+                        GroupBox {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "externaldrive.badge.xmark")
+                                        .foregroundStyle(.orange)
+                                    Text("Offline Add-ons (Storage Volume Disconnected)")
+                                        .fontWeight(.bold)
+                                        .foregroundStyle(.orange)
+                                }
+
+                                Text("The following add-ons are enabled in this profile but reside on currently unmounted storage drives. They will be restored automatically once the drive is reconnected:")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+
+                                Divider()
+
+                                ForEach(Array(offlineAddons.keys), id: \.self) { category in
+                                    if let items = offlineAddons[category], !items.isEmpty {
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(category.rawValue)
+                                                .font(.caption2)
+                                                .fontWeight(.bold)
+                                                .foregroundStyle(.secondary)
+
+                                            ForEach(items, id: \.self) { item in
+                                                HStack(spacing: 6) {
+                                                    Image(systemName: "externaldrive")
+                                                        .foregroundStyle(.orange)
+                                                    Text(item)
+                                                        .font(.caption)
+                                                        .fontDesign(.monospaced)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            .padding(4)
+                        }
+                    }
+
                     // Missing Add-ons Alert
                     if !missingAddons.isEmpty {
                         GroupBox {
@@ -264,7 +325,7 @@ struct ProfileInspectorView: View {
                                         .foregroundStyle(.red)
                                 }
 
-                                Text("The following add-ons are enabled in this profile but not found in your central data folder:")
+                                Text("The following add-ons are enabled in this profile but not found in any registered storage pool:")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
 

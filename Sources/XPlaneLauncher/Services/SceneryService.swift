@@ -30,16 +30,22 @@ final class SceneryService: Sendable {
 
     // MARK: - Filesystem Helpers
 
-    /// Reports whether a directory entry exists, without resolving symbolic links.
-    /// `FileManager.fileExists` follows links, so a link whose target moved away
-    /// reads as "missing" even though the entry is still there.
+    /// Reports whether a directory entry exists (including broken symlinks).
     private func entryExists(at url: URL) -> Bool {
-        (try? fileManager.attributesOfItem(atPath: url.path)) != nil
+        var statBuf = stat()
+        return lstat(url.path, &statBuf) == 0
     }
 
     private func isSymlink(at url: URL) -> Bool {
-        let attributes = try? fileManager.attributesOfItem(atPath: url.path)
-        return (attributes?[.type] as? String) == FileAttributeType.typeSymbolicLink.rawValue
+        var statBuf = stat()
+        if lstat(url.path, &statBuf) == 0 {
+            return (statBuf.st_mode & S_IFMT) == S_IFLNK
+        }
+        return false
+    }
+
+    private func symlinkDestination(at url: URL) -> String? {
+        try? fileManager.destinationOfSymbolicLink(atPath: url.path)
     }
 
     /// A real directory, or a symbolic link that is meant to point at one —
@@ -57,12 +63,50 @@ final class SceneryService: Sendable {
         managedSceneryFolder: URL?,
         iniURL: URL?
     ) throws -> [Scenery] {
-        // Ensure managed scenery packs are linked in Custom Scenery
-        if let managedURL = managedSceneryFolder, fileManager.fileExists(atPath: managedURL.path) {
+        let pools: [StoragePool]
+        if let managedURL = managedSceneryFolder {
+            let pool = StoragePool(name: "Default", url: managedURL, isPrimary: true)
+            pools = [pool]
+        } else {
+            pools = []
+        }
+        return try scanScenery(
+            customSceneryFolder: customSceneryFolder,
+            storagePools: pools,
+            iniURL: iniURL
+        )
+    }
+
+    func scanScenery(
+        customSceneryFolder: URL,
+        storagePools: [StoragePool],
+        iniURL: URL?,
+        knownScenery: [Scenery] = []
+    ) throws -> [Scenery] {
+        var poolByFolderName: [String: StoragePool] = [:]
+        var sourceURLByFolderName: [String: URL] = [:]
+
+        // 0. Discover managed packs across all online storage pools and ensure they are linked
+        for pool in storagePools where pool.isOnline {
+            let primaryManagedURL = PathService.shared.dataFolder(.scenery, in: pool.url)
+            let managedURL: URL
+            if fileManager.fileExists(atPath: primaryManagedURL.path) {
+                managedURL = primaryManagedURL
+            } else if fileManager.fileExists(atPath: pool.url.path) {
+                managedURL = pool.url
+            } else {
+                continue
+            }
+
             if let contents = try? fileManager.contentsOfDirectory(at: managedURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
                 for url in contents {
                     if isDirectoryOrLink(at: url) {
-                        try? linkScenery(folderName: url.lastPathComponent, managedSceneryFolder: managedURL, customSceneryFolder: customSceneryFolder)
+                        let name = url.lastPathComponent
+                        if poolByFolderName[name] == nil {
+                            poolByFolderName[name] = pool
+                            sourceURLByFolderName[name] = url
+                        }
+                        try? linkScenery(folderName: name, sourceURL: url, customSceneryFolder: customSceneryFolder)
                     }
                 }
             }
@@ -94,19 +138,29 @@ final class SceneryService: Sendable {
         // 2. Scan "Custom Scenery" for items NOT in INI
         var installedButNotInIni: [Scenery] = []
         if fileManager.fileExists(atPath: customSceneryFolder.path) {
-            let csContents = try fileManager.contentsOfDirectory(at: customSceneryFolder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
+            let csContents = (try? fileManager.contentsOfDirectory(at: customSceneryFolder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
             for url in csContents {
                 if url.lastPathComponent == kXPlaneCustomSceneryFileName { continue }
 
                 if isDirectoryOrLink(at: url) {
                     let name = url.lastPathComponent
                     if !foundFolderNames.contains(name) {
+                        let isManagedLink = isSymlink(at: url)
+                        let dest = isManagedLink ? symlinkDestination(at: url) : nil
+                        let targetExists = fileManager.fileExists(atPath: url.path)
+                        let matchingPool = poolByFolderName[name] ?? storagePools.first(where: { dest != nil && dest!.hasPrefix($0.url.path) })
+                        let sourceURL = sourceURLByFolderName[name] ?? dest.map { URL(fileURLWithPath: $0) }
+                        let isOffline = isManagedLink && (!targetExists || matchingPool?.isOnline == false)
                         installedButNotInIni.append(Scenery(
                             name: name,
                             isEnabled: true,
                             folderName: name,
-                            isManaged: isSymlink(at: url),
-                            iniLine: "SCENERY_PACK Custom Scenery/\(name)/"
+                            isManaged: isManagedLink,
+                            iniLine: "SCENERY_PACK Custom Scenery/\(name)/",
+                            storagePoolId: matchingPool?.id,
+                            storagePoolName: matchingPool?.name,
+                            sourceURL: sourceURL,
+                            isOffline: isOffline
                         ))
                     }
                 }
@@ -115,20 +169,49 @@ final class SceneryService: Sendable {
 
         // 3. Construct final list
         var finalScenery: [Scenery] = []
-        finalScenery.append(contentsOf: installedButNotInIni.sorted { $0.name < $1.name })
+        var processedFolderNames = Set<String>()
+
+        for item in installedButNotInIni.sorted(by: { $0.name < $1.name }) {
+            finalScenery.append(item)
+            processedFolderNames.insert(item.folderName)
+        }
 
         for item in iniItems {
             let path = customSceneryFolder.appendingPathComponent(item.folderName)
             let isSpecialIdx = item.folderName.hasPrefix("*")
 
             if isSpecialIdx || entryExists(at: path) {
+                let isManagedLink = !isSpecialIdx && isSymlink(at: path)
+                let dest = isManagedLink ? symlinkDestination(at: path) : nil
+                let targetExists = isSpecialIdx || fileManager.fileExists(atPath: path.path)
+                let matchingPool = poolByFolderName[item.folderName] ?? storagePools.first(where: { dest != nil && dest!.hasPrefix($0.url.path) })
+                let sourceURL = sourceURLByFolderName[item.folderName] ?? dest.map { URL(fileURLWithPath: $0) }
+                let isOffline = isManagedLink && (!targetExists || matchingPool?.isOnline == false)
+
                 finalScenery.append(Scenery(
                     name: item.folderName,
-                    isEnabled: item.enabled,
+                    isEnabled: isOffline ? false : item.enabled,
                     folderName: item.folderName,
-                    isManaged: !isSpecialIdx && isSymlink(at: path),
-                    iniLine: item.line
+                    isManaged: isManagedLink,
+                    iniLine: item.line,
+                    storagePoolId: matchingPool?.id,
+                    storagePoolName: matchingPool?.name,
+                    sourceURL: sourceURL,
+                    isOffline: isOffline
                 ))
+                processedFolderNames.insert(item.folderName)
+            }
+        }
+
+        // 4. Preserve known items from offline storage pools
+        for known in knownScenery where !processedFolderNames.contains(known.folderName) {
+            let isPoolOffline = storagePools.first(where: { $0.id == known.storagePoolId })?.isOnline == false
+            if isPoolOffline || known.isOffline {
+                var offlineItem = known
+                offlineItem.isOffline = true
+                offlineItem.isEnabled = false
+                finalScenery.append(offlineItem)
+                processedFolderNames.insert(known.folderName)
             }
         }
 
@@ -153,7 +236,7 @@ final class SceneryService: Sendable {
                 content += line + "\n"
             } else {
                 let path = customSceneryFolder.appendingPathComponent(item.folderName)
-                if entryExists(at: path) {
+                if entryExists(at: path) || item.isOffline {
                     content += line + "\n"
                 }
             }
@@ -168,8 +251,13 @@ final class SceneryService: Sendable {
 
     func linkScenery(folderName: String, managedSceneryFolder: URL, customSceneryFolder: URL) throws {
         let cleanName = try PathSecurity.sanitizePathComponent(folderName)
-        let linkURL = try PathSecurity.validateSubpath(relativePath: cleanName, within: customSceneryFolder)
         let sourceURL = try PathSecurity.validateSubpath(relativePath: cleanName, within: managedSceneryFolder)
+        try linkScenery(folderName: folderName, sourceURL: sourceURL, customSceneryFolder: customSceneryFolder)
+    }
+
+    func linkScenery(folderName: String, sourceURL: URL, customSceneryFolder: URL) throws {
+        let cleanName = try PathSecurity.sanitizePathComponent(folderName)
+        let linkURL = try PathSecurity.validateSubpath(relativePath: cleanName, within: customSceneryFolder)
 
         guard fileManager.fileExists(atPath: sourceURL.path) else {
             throw AppError.pathNotFound(sourceURL.path)

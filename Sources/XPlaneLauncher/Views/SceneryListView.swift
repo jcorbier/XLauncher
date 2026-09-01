@@ -88,6 +88,9 @@ struct SceneryListView: View {
         } message: { item in
             Text("Are you sure you want to delete '\(item.name)'?\n\nThis will permanently delete the files from your Central Data Folder ('Scenery/\(item.folderName)'), unlink it from X-Plane, remove it from scenery_packs.ini, and remove it from all profiles.\n\nThis action cannot be undone.")
         }
+        .onAppear {
+            pluginManager.handleVolumeChange()
+        }
     }
 
     // MARK: - Data Source
@@ -313,19 +316,50 @@ struct SceneryRow: View {
     var onDelete: (() -> Void)? = nil
     var onCreateGroup: (() -> Void)? = nil
 
+    private var isOffline: Bool {
+        pluginManager.isSceneryOffline(item)
+    }
+
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: item.isEnabled ? "map.fill" : "map")
+            Image(systemName: item.isEnabled && !isOffline ? "map.fill" : "map")
                 .font(.title3)
-                .foregroundStyle(item.isEnabled ? .green : .secondary)
+                .foregroundStyle(item.isEnabled && !isOffline ? .green : .secondary)
                 .frame(width: 32, height: 32)
-                .background(item.isEnabled ? Color.green.opacity(0.12) : Color.secondary.opacity(0.12))
+                .background(item.isEnabled && !isOffline ? Color.green.opacity(0.12) : Color.secondary.opacity(0.12))
                 .clipShape(RoundedRectangle(cornerRadius: 6))
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(item.name)
-                    .font(.body)
-                    .fontWeight(.medium)
+                HStack(spacing: 6) {
+                    Text(item.name)
+                        .font(.body)
+                        .fontWeight(.medium)
+
+                    if isOffline {
+                        HStack(spacing: 3) {
+                            Image(systemName: "externaldrive.badge.xmark")
+                            Text("Offline")
+                        }
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.red.opacity(0.12))
+                        .foregroundStyle(.red)
+                        .clipShape(Capsule())
+                    }
+
+                    if let poolName = item.storagePoolName, pluginManager.storagePools.count > 1 {
+                        Text(poolName)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Color(NSColor.windowBackgroundColor))
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                    }
+                }
+
                 Text(item.folderName)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -349,22 +383,33 @@ struct SceneryRow: View {
                 .clipShape(Capsule())
             }
 
-            Text(item.isEnabled ? "Enabled" : "Disabled")
-                .font(.caption2)
-                .fontWeight(.semibold)
-                .foregroundStyle(item.isEnabled ? .green : .secondary)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(item.isEnabled ? Color.green.opacity(0.12) : Color.secondary.opacity(0.12))
-                .clipShape(Capsule())
+            if isOffline {
+                Text("Offline")
+                    .font(.caption2)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.red)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Color.red.opacity(0.12))
+                    .clipShape(Capsule())
+            } else {
+                Text(item.isEnabled ? "Enabled" : "Disabled")
+                    .font(.caption2)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(item.isEnabled ? .green : .secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(item.isEnabled ? Color.green.opacity(0.12) : Color.secondary.opacity(0.12))
+                    .clipShape(Capsule())
+            }
 
             Toggle("", isOn: Binding(
-                get: { item.isEnabled },
+                get: { item.isEnabled && !isOffline },
                 set: { _ in pluginManager.toggleScenery(item) }
             ))
             .toggleStyle(.switch)
             .labelsHidden()
-            .disabled(!item.isToggleable)
+            .disabled(!item.isToggleable || isOffline)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -385,7 +430,7 @@ struct SceneryRow: View {
                     pluginManager.removeFromGroup(item)
                 }
             }
-            if item.isManaged {
+            if item.isManaged && !isOffline {
                 Button(role: .destructive) {
                     onDelete?()
                 } label: {
@@ -393,7 +438,7 @@ struct SceneryRow: View {
                 }
             }
         }
-        .deleteDisabled(!item.isManaged)
+        .deleteDisabled(!item.isManaged || isOffline)
         .contentShape(Rectangle())
         .dropDestination(for: String.self) { items, location in
             var itemsToMove: [PluginManager.Scenery] = []

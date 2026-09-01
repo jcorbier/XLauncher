@@ -54,6 +54,12 @@ final class PathService: Sendable {
         }
     }
 
+    func ensureDirectories(for pools: [StoragePool]) {
+        for pool in pools where pool.isOnline {
+            ensureDirectories(for: pool.url)
+        }
+    }
+
     func pluginsTargetFolder(for xPlanePath: URL) -> URL {
         xPlanePath.appendingPathComponent("Resources").appendingPathComponent("plugins")
     }

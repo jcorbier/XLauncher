@@ -59,6 +59,9 @@ struct AircraftListView: View {
         } message: { item in
             Text("Are you sure you want to delete '\(item.name)'?\n\nThis will permanently delete the files from your Central Data Folder ('Aircraft/\(item.folderName)'), unlink it from X-Plane, and remove it from all profiles.\n\nThis action cannot be undone.")
         }
+        .onAppear {
+            pluginManager.handleVolumeChange()
+        }
     }
 }
 
@@ -67,19 +70,50 @@ struct AircraftRow: View {
     let aircraft: PluginManager.Aircraft
     var onDelete: (() -> Void)? = nil
 
+    private var isOffline: Bool {
+        pluginManager.isAircraftOffline(aircraft)
+    }
+
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: "airplane")
                 .font(.title3)
-                .foregroundStyle(aircraft.isEnabled ? .green : .secondary)
+                .foregroundStyle(aircraft.isEnabled && !isOffline ? .green : .secondary)
                 .frame(width: 32, height: 32)
-                .background(aircraft.isEnabled ? Color.green.opacity(0.12) : Color.secondary.opacity(0.12))
+                .background(aircraft.isEnabled && !isOffline ? Color.green.opacity(0.12) : Color.secondary.opacity(0.12))
                 .clipShape(RoundedRectangle(cornerRadius: 6))
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(aircraft.name)
-                    .font(.body)
-                    .fontWeight(.medium)
+                HStack(spacing: 6) {
+                    Text(aircraft.name)
+                        .font(.body)
+                        .fontWeight(.medium)
+
+                    if isOffline {
+                        HStack(spacing: 3) {
+                            Image(systemName: "externaldrive.badge.xmark")
+                            Text("Offline")
+                        }
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.red.opacity(0.12))
+                        .foregroundStyle(.red)
+                        .clipShape(Capsule())
+                    }
+
+                    if let poolName = aircraft.storagePoolName, pluginManager.storagePools.count > 1 {
+                        Text(poolName)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Color(NSColor.windowBackgroundColor))
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                    }
+                }
+
                 Text(aircraft.folderName)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -103,21 +137,33 @@ struct AircraftRow: View {
                 .clipShape(Capsule())
             }
 
-            Text(aircraft.isEnabled ? "Enabled" : "Disabled")
-                .font(.caption2)
-                .fontWeight(.semibold)
-                .foregroundStyle(aircraft.isEnabled ? .green : .secondary)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(aircraft.isEnabled ? Color.green.opacity(0.12) : Color.secondary.opacity(0.12))
-                .clipShape(Capsule())
+            if isOffline {
+                Text("Offline")
+                    .font(.caption2)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.red)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Color.red.opacity(0.12))
+                    .clipShape(Capsule())
+            } else {
+                Text(aircraft.isEnabled ? "Enabled" : "Disabled")
+                    .font(.caption2)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(aircraft.isEnabled ? .green : .secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(aircraft.isEnabled ? Color.green.opacity(0.12) : Color.secondary.opacity(0.12))
+                    .clipShape(Capsule())
+            }
 
             Toggle("", isOn: Binding(
-                get: { aircraft.isEnabled },
+                get: { aircraft.isEnabled && !isOffline },
                 set: { _ in pluginManager.toggleAircraft(aircraft) }
             ))
             .toggleStyle(.switch)
             .labelsHidden()
+            .disabled(isOffline)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -128,10 +174,12 @@ struct AircraftRow: View {
                 .stroke(Color(NSColor.separatorColor), lineWidth: 0.5)
         )
         .contextMenu {
-            Button(role: .destructive) {
-                onDelete?()
-            } label: {
-                Label("Delete Add-on...", systemImage: "trash")
+            if !isOffline {
+                Button(role: .destructive) {
+                    onDelete?()
+                } label: {
+                    Label("Delete Add-on...", systemImage: "trash")
+                }
             }
         }
     }

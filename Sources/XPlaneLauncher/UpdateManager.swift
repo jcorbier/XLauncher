@@ -42,11 +42,22 @@ class UpdateManager {
         }
     }
 
-    var launcherDataFolder: URL? {
+    var storagePools: [StoragePool] = [] {
         didSet {
-            guard launcherDataFolder != oldValue else { return }
+            guard storagePools != oldValue else { return }
             scanUpdatableAddons { [weak self] in
                 self?.checkAutoUpdates()
+            }
+        }
+    }
+
+    var launcherDataFolder: URL? {
+        get { storagePools.first(where: { $0.isPrimary })?.url ?? storagePools.first?.url }
+        set {
+            if let newURL = newValue {
+                storagePools = [StoragePool(name: "Primary Storage", url: newURL, isPrimary: true)]
+            } else {
+                storagePools = []
             }
         }
     }
@@ -125,7 +136,7 @@ class UpdateManager {
         var remoteManifestURL: String?
     }
 
-    init(launcherDataFolder: URL? = nil) {
+    init(storagePools: [StoragePool] = []) {
         if defaults.object(forKey: .autoCheckSkunkCraftsUpdates) == nil {
             self.automaticallyCheckSkunkCraftsUpdates = true
         } else {
@@ -138,12 +149,17 @@ class UpdateManager {
             self.automaticallyCheckXUpdaterUpdates = defaults.bool(forKey: .autoCheckXUpdaterUpdates)
         }
 
-        self.launcherDataFolder = launcherDataFolder
-        if launcherDataFolder != nil && updatableAddons.isEmpty {
+        self.storagePools = storagePools
+        if !storagePools.isEmpty && updatableAddons.isEmpty {
             scanUpdatableAddons { [weak self] in
                 self?.checkAutoUpdates()
             }
         }
+    }
+
+    convenience init(launcherDataFolder: URL) {
+        let pool = StoragePool(name: "Primary Storage", url: launcherDataFolder, isPrimary: true)
+        self.init(storagePools: [pool])
     }
 
     // MARK: - Scanning & Parsing
@@ -206,7 +222,8 @@ class UpdateManager {
     }
 
     func scanUpdatableAddons(completion: (@Sendable @MainActor () -> Void)? = nil) {
-        guard let dataFolder = launcherDataFolder else {
+        let activePools = storagePools.filter { $0.isOnline }
+        guard !activePools.isEmpty else {
             updatableAddons = []
             completion?()
             return
@@ -217,11 +234,13 @@ class UpdateManager {
         Task {
             let allAddons = await Task.detached(priority: .userInitiated) {
                 var results: [UpdatableAddon] = []
-                for category in AddonCategory.allCases {
-                    let folderURL = PathService.shared.dataFolder(category.dataSubfolder, in: dataFolder)
-                    if FileManager.default.fileExists(atPath: folderURL.path) {
-                        let addons = Self.scanDirectoryForAddons(subFolderURL: folderURL, category: category)
-                        results.append(contentsOf: addons)
+                for pool in activePools {
+                    for category in AddonCategory.allCases {
+                        let folderURL = PathService.shared.dataFolder(category.dataSubfolder, in: pool.url)
+                        if FileManager.default.fileExists(atPath: folderURL.path) {
+                            let addons = Self.scanDirectoryForAddons(subFolderURL: folderURL, category: category)
+                            results.append(contentsOf: addons)
+                        }
                     }
                 }
                 return results

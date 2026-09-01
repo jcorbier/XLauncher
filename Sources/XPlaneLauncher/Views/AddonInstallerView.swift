@@ -30,6 +30,7 @@ struct AddonInstallerView: View {
 
     @State private var selectedCategory: AddonCategory
     @State private var packageName: String
+    @State private var selectedStoragePoolId: UUID?
     @State private var enableImmediately: Bool = true
     @State private var isInstalling: Bool = false
     @State private var progressFraction: Double = 0.0
@@ -42,9 +43,18 @@ struct AddonInstallerView: View {
         _packageName = State(initialValue: analysis.suggestedPackageName)
     }
 
+    private var activeStoragePool: StoragePool? {
+        if let id = selectedStoragePoolId,
+           let pool = pluginManager.storagePools.first(where: { $0.id == id && $0.isOnline }) {
+            return pool
+        }
+        return StoragePoolService.shared.resolveDestinationPool(category: selectedCategory, in: pluginManager.storagePools)
+            ?? pluginManager.primaryStoragePool
+    }
+
     private var destinationPreviewPath: String {
-        guard let dataFolder = pluginManager.launcherDataFolder else { return "Central Data Folder not configured" }
-        return PathService.shared.dataFolder(selectedCategory.subfolder, in: dataFolder)
+        guard let pool = activeStoragePool else { return "No online storage pool configured" }
+        return PathService.shared.dataFolder(selectedCategory.subfolder, in: pool.url)
             .appendingPathComponent(packageName.isEmpty ? "..." : packageName)
             .path
     }
@@ -129,6 +139,49 @@ struct AddonInstallerView: View {
                             }
                             .pickerStyle(.segmented)
                             .disabled(isInstalling)
+                            .onChange(of: selectedCategory) { _, newCategory in
+                                if let routed = StoragePoolService.shared.resolveDestinationPool(category: newCategory, in: pluginManager.storagePools) {
+                                    selectedStoragePoolId = routed.id
+                                }
+                            }
+                        }
+
+                        // Storage Location Picker
+                        if pluginManager.storagePools.count > 1 {
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack {
+                                    Text("Destination Storage Pool")
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                    Spacer()
+                                    if let pool = activeStoragePool, let metrics = pool.volumeMetrics {
+                                        Text("\(ByteCountFormatter.string(fromByteCount: Int64(metrics.availableCapacity), countStyle: .file)) free")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+
+                                Picker("", selection: Binding(
+                                    get: { activeStoragePool?.id ?? pluginManager.storagePools.first?.id ?? UUID() },
+                                    set: { selectedStoragePoolId = $0 }
+                                )) {
+                                    ForEach(pluginManager.storagePools) { pool in
+                                        HStack {
+                                            Text(pool.name)
+                                            if pool.isPrimary {
+                                                Text("(Primary)")
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                            if !pool.isOnline {
+                                                Text("(Offline)")
+                                                    .foregroundStyle(.red)
+                                            }
+                                        }
+                                        .tag(pool.id)
+                                    }
+                                }
+                                .disabled(isInstalling)
+                            }
                         }
 
                         // Package Name TextField
@@ -144,9 +197,22 @@ struct AddonInstallerView: View {
 
                         // Destination Path Preview
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Install Destination")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                            HStack {
+                                Text("Install Destination")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                if let pool = activeStoragePool {
+                                    HStack(spacing: 4) {
+                                        Circle()
+                                            .fill(pool.isOnline ? Color.green : Color.red)
+                                            .frame(width: 6, height: 6)
+                                        Text(pool.name)
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
 
                             Text(destinationPreviewPath)
                                 .font(.system(.caption, design: .monospaced))
@@ -195,6 +261,11 @@ struct AddonInstallerView: View {
                 }
                 .padding(20)
             }
+            .onAppear {
+                if let routed = StoragePoolService.shared.resolveDestinationPool(category: selectedCategory, in: pluginManager.storagePools) {
+                    selectedStoragePoolId = routed.id
+                }
+            }
 
             Divider()
 
@@ -213,18 +284,18 @@ struct AddonInstallerView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
-                .disabled(isInstalling || packageName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || pluginManager.launcherDataFolder == nil)
+                .disabled(isInstalling || packageName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || activeStoragePool == nil || activeStoragePool?.isOnline == false)
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 12)
             .background(Color(NSColor.windowBackgroundColor))
         }
-        .frame(minWidth: 520, idealWidth: 560, maxWidth: 640, minHeight: 460, idealHeight: 520, maxHeight: 600)
+        .frame(minWidth: 520, idealWidth: 560, maxWidth: 640, minHeight: 480, idealHeight: 540, maxHeight: 620)
     }
 
     private func startInstallation() {
-        guard let dataFolder = pluginManager.launcherDataFolder else {
-            errorMessage = "Central Data Folder is not configured."
+        guard let targetPool = activeStoragePool, targetPool.isOnline else {
+            errorMessage = "Selected storage pool is offline or not configured."
             return
         }
 
@@ -242,7 +313,7 @@ struct AddonInstallerView: View {
                     analysis: analysis,
                     category: targetCategory,
                     packageName: name,
-                    launcherDataFolder: dataFolder,
+                    storagePool: targetPool,
                     progressHandler: { fraction, msg in
                         Task { @MainActor in
                             self.progressFraction = fraction
@@ -252,7 +323,7 @@ struct AddonInstallerView: View {
                 )
 
                 await MainActor.run {
-                    ConsoleLogger.shared.log("Installed \(targetCategory.rawValue) '\(name)' to \(installedURL.path)", category: targetCategory.logCategory)
+                    ConsoleLogger.shared.log("Installed \(targetCategory.rawValue) '\(name)' to \(installedURL.path) (\(targetPool.name))", category: targetCategory.logCategory)
 
                     // Rescan and optionally enable
                     switch targetCategory {
@@ -280,6 +351,7 @@ struct AddonInstallerView: View {
                         }
                     }
 
+                    pluginManager.refreshStoragePoolStats()
                     dismiss()
                 }
             } catch {

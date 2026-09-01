@@ -27,12 +27,29 @@ struct Plugin: Identifiable, Equatable, Hashable, Sendable {
     let name: String
     var isEnabled: Bool
     let folderName: String
+    var storagePoolId: UUID?
+    var storagePoolName: String?
+    var sourceURL: URL?
+    var isOffline: Bool
 
-    init(id: UUID = UUID(), name: String, isEnabled: Bool, folderName: String) {
+    init(
+        id: UUID = UUID(),
+        name: String,
+        isEnabled: Bool,
+        folderName: String,
+        storagePoolId: UUID? = nil,
+        storagePoolName: String? = nil,
+        sourceURL: URL? = nil,
+        isOffline: Bool = false
+    ) {
         self.id = id
         self.name = name
         self.isEnabled = isEnabled
         self.folderName = folderName
+        self.storagePoolId = storagePoolId
+        self.storagePoolName = storagePoolName
+        self.sourceURL = sourceURL
+        self.isOffline = isOffline
     }
 }
 
@@ -41,12 +58,29 @@ struct Aircraft: Identifiable, Equatable, Hashable, Sendable {
     let name: String
     var isEnabled: Bool
     let folderName: String
+    var storagePoolId: UUID?
+    var storagePoolName: String?
+    var sourceURL: URL?
+    var isOffline: Bool
 
-    init(id: UUID = UUID(), name: String, isEnabled: Bool, folderName: String) {
+    init(
+        id: UUID = UUID(),
+        name: String,
+        isEnabled: Bool,
+        folderName: String,
+        storagePoolId: UUID? = nil,
+        storagePoolName: String? = nil,
+        sourceURL: URL? = nil,
+        isOffline: Bool = false
+    ) {
         self.id = id
         self.name = name
         self.isEnabled = isEnabled
         self.folderName = folderName
+        self.storagePoolId = storagePoolId
+        self.storagePoolName = storagePoolName
+        self.sourceURL = sourceURL
+        self.isOffline = isOffline
     }
 }
 
@@ -56,13 +90,31 @@ struct LuaScript: Identifiable, Equatable, Hashable, Sendable {
     var isEnabled: Bool
     let folderName: String
     let isDirectory: Bool
+    var storagePoolId: UUID?
+    var storagePoolName: String?
+    var sourceURL: URL?
+    var isOffline: Bool
 
-    init(id: UUID = UUID(), name: String, isEnabled: Bool, folderName: String, isDirectory: Bool = false) {
+    init(
+        id: UUID = UUID(),
+        name: String,
+        isEnabled: Bool,
+        folderName: String,
+        isDirectory: Bool = false,
+        storagePoolId: UUID? = nil,
+        storagePoolName: String? = nil,
+        sourceURL: URL? = nil,
+        isOffline: Bool = false
+    ) {
         self.id = id
         self.name = name
         self.isEnabled = isEnabled
         self.folderName = folderName
         self.isDirectory = isDirectory
+        self.storagePoolId = storagePoolId
+        self.storagePoolName = storagePoolName
+        self.sourceURL = sourceURL
+        self.isOffline = isOffline
     }
 }
 
@@ -73,18 +125,37 @@ struct Scenery: Identifiable, Equatable, Hashable, Sendable {
     var folderName: String
     var isManaged: Bool
     var iniLine: String
+    var storagePoolId: UUID?
+    var storagePoolName: String?
+    var sourceURL: URL?
+    var isOffline: Bool
 
     var isToggleable: Bool {
         !folderName.hasPrefix("*")
     }
 
-    init(id: UUID = UUID(), name: String, isEnabled: Bool, folderName: String, isManaged: Bool, iniLine: String = "") {
+    init(
+        id: UUID = UUID(),
+        name: String,
+        isEnabled: Bool,
+        folderName: String,
+        isManaged: Bool,
+        iniLine: String = "",
+        storagePoolId: UUID? = nil,
+        storagePoolName: String? = nil,
+        sourceURL: URL? = nil,
+        isOffline: Bool = false
+    ) {
         self.id = id
         self.name = name
         self.isEnabled = isEnabled
         self.folderName = folderName
         self.isManaged = isManaged
         self.iniLine = iniLine
+        self.storagePoolId = storagePoolId
+        self.storagePoolName = storagePoolName
+        self.sourceURL = sourceURL
+        self.isOffline = isOffline
     }
 }
 

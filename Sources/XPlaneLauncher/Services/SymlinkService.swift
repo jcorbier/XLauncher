@@ -29,16 +29,22 @@ final class SymlinkService: Sendable {
 
     // MARK: - Link Management
 
-    /// Reports whether a directory entry exists, without resolving symbolic links.
-    /// `FileManager.fileExists` follows links, so a link whose target moved away
-    /// reads as "missing" even though the entry is still there.
+    /// Reports whether a directory entry exists (including broken symlinks).
     private func entryExists(at url: URL) -> Bool {
-        (try? fileManager.attributesOfItem(atPath: url.path)) != nil
+        var statBuf = stat()
+        return lstat(url.path, &statBuf) == 0
     }
 
     private func isSymlink(at url: URL) -> Bool {
-        let attributes = try? fileManager.attributesOfItem(atPath: url.path)
-        return (attributes?[.type] as? String) == FileAttributeType.typeSymbolicLink.rawValue
+        var statBuf = stat()
+        if lstat(url.path, &statBuf) == 0 {
+            return (statBuf.st_mode & S_IFMT) == S_IFLNK
+        }
+        return false
+    }
+
+    private func symlinkDestination(at url: URL) -> String? {
+        try? fileManager.destinationOfSymbolicLink(atPath: url.path)
     }
 
     /// Points `linkURL` at `sourceURL`, replacing a link left over from an earlier
@@ -69,6 +75,19 @@ final class SymlinkService: Sendable {
             return [:]
         }
         return Dictionary(uniqueKeysWithValues: contents.map { ($0.lastPathComponent, $0) })
+    }
+
+    /// Aggregates link sources from multiple storage pools for a specific subfolder.
+    func linkSources(in pools: [StoragePool], subfolder: DataSubfolder) -> [String: URL] {
+        var aggregated: [String: URL] = [:]
+        for pool in pools where pool.isOnline {
+            let folder = PathService.shared.dataFolder(subfolder, in: pool.url)
+            let sources = linkSources(in: folder)
+            for (key, val) in sources where aggregated[key] == nil {
+                aggregated[key] = val
+            }
+        }
+        return aggregated
     }
 
     private struct LuaStructure {
@@ -139,6 +158,19 @@ final class SymlinkService: Sendable {
         return sources
     }
 
+    /// Aggregates Lua script link sources across multiple storage pools.
+    func luaScriptLinkSources(in pools: [StoragePool]) -> [String: URL] {
+        var aggregated: [String: URL] = [:]
+        for pool in pools where pool.isOnline {
+            let folder = PathService.shared.dataFolder(.luaScripts, in: pool.url)
+            let sources = luaScriptLinkSources(in: folder)
+            for (key, val) in sources where aggregated[key] == nil {
+                aggregated[key] = val
+            }
+        }
+        return aggregated
+    }
+
     /// Modules for structured Lua add-ons.
     func luaModuleLinkSources(in dataFolder: URL) -> [String: URL] {
         guard let contents = try? fileManager.contentsOfDirectory(at: dataFolder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else {
@@ -159,6 +191,19 @@ final class SymlinkService: Sendable {
             }
         }
         return sources
+    }
+
+    /// Aggregates Lua module link sources across multiple storage pools.
+    func luaModuleLinkSources(in pools: [StoragePool]) -> [String: URL] {
+        var aggregated: [String: URL] = [:]
+        for pool in pools where pool.isOnline {
+            let folder = PathService.shared.dataFolder(.luaScripts, in: pool.url)
+            let sources = luaModuleLinkSources(in: folder)
+            for (key, val) in sources where aggregated[key] == nil {
+                aggregated[key] = val
+            }
+        }
+        return aggregated
     }
 
     /// Repoints links that no longer resolve at a source of the same name, which is
@@ -195,21 +240,88 @@ final class SymlinkService: Sendable {
     // MARK: - Plugins
 
     func scanPlugins(dataFolder: URL, targetFolder: URL) throws -> [Plugin] {
-        var isDir: ObjCBool = false
-        guard fileManager.fileExists(atPath: dataFolder.path, isDirectory: &isDir), isDir.boolValue else {
-            return []
+        let pool = StoragePool(name: "Default", url: dataFolder, isPrimary: true)
+        return try scanPlugins(storagePools: [pool], targetFolder: targetFolder)
+    }
+
+    func scanPlugins(storagePools: [StoragePool], targetFolder: URL, knownPlugins: [Plugin] = []) throws -> [Plugin] {
+        var list: [Plugin] = []
+        var scannedNames = Set<String>()
+
+        for pool in storagePools where pool.isOnline {
+            let primaryFolder = PathService.shared.dataFolder(.plugins, in: pool.url)
+            let pluginsFolder: URL
+            if fileManager.fileExists(atPath: primaryFolder.path) {
+                pluginsFolder = primaryFolder
+            } else if fileManager.fileExists(atPath: pool.url.path) {
+                pluginsFolder = pool.url
+            } else {
+                continue
+            }
+
+            var isDir: ObjCBool = false
+            guard fileManager.fileExists(atPath: pluginsFolder.path, isDirectory: &isDir), isDir.boolValue else {
+                continue
+            }
+
+            let contents = (try? fileManager.contentsOfDirectory(at: pluginsFolder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+            for folder in contents {
+                var folderCheck: ObjCBool = false
+                if fileManager.fileExists(atPath: folder.path, isDirectory: &folderCheck), folderCheck.boolValue {
+                    let folderName = folder.lastPathComponent
+                    guard !scannedNames.contains(folderName) else { continue }
+                    scannedNames.insert(folderName)
+
+                    let targetLink = targetFolder.appendingPathComponent(folderName)
+                    let isEnabled = fileManager.fileExists(atPath: targetLink.path)
+                    list.append(Plugin(
+                        name: folderName,
+                        isEnabled: isEnabled,
+                        folderName: folderName,
+                        storagePoolId: pool.id,
+                        storagePoolName: pool.name,
+                        sourceURL: folder,
+                        isOffline: false
+                    ))
+                }
+            }
         }
 
-        let contents = try fileManager.contentsOfDirectory(at: dataFolder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
-        var list: [Plugin] = []
+        // Discover any existing symlinks in targetFolder pointing to offline pools or whose targets are missing
+        if fileManager.fileExists(atPath: targetFolder.path),
+           let targetContents = try? fileManager.contentsOfDirectory(at: targetFolder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
+            for linkURL in targetContents {
+                if isSymlink(at: linkURL) {
+                    let folderName = linkURL.lastPathComponent
+                    guard !scannedNames.contains(folderName) else { continue }
+                    let dest = symlinkDestination(at: linkURL)
+                    let targetExists = fileManager.fileExists(atPath: linkURL.path)
+                    let matchingPool = storagePools.first(where: { dest != nil && dest!.hasPrefix($0.url.path) })
+                    if !targetExists || matchingPool?.isOnline == false {
+                        scannedNames.insert(folderName)
+                        list.append(Plugin(
+                            name: folderName,
+                            isEnabled: false,
+                            folderName: folderName,
+                            storagePoolId: matchingPool?.id,
+                            storagePoolName: matchingPool?.name,
+                            sourceURL: dest.map { URL(fileURLWithPath: $0) },
+                            isOffline: true
+                        ))
+                    }
+                }
+            }
+        }
 
-        for folder in contents {
-            var folderCheck: ObjCBool = false
-            if fileManager.fileExists(atPath: folder.path, isDirectory: &folderCheck), folderCheck.boolValue {
-                let folderName = folder.lastPathComponent
-                let targetLink = targetFolder.appendingPathComponent(folderName)
-                let isEnabled = fileManager.fileExists(atPath: targetLink.path)
-                list.append(Plugin(name: folderName, isEnabled: isEnabled, folderName: folderName))
+        // Preserve known items from offline storage pools
+        for known in knownPlugins where !scannedNames.contains(known.folderName) {
+            let isPoolOffline = storagePools.first(where: { $0.id == known.storagePoolId })?.isOnline == false
+            if isPoolOffline || known.isOffline {
+                var offlineItem = known
+                offlineItem.isOffline = true
+                offlineItem.isEnabled = false
+                list.append(offlineItem)
+                scannedNames.insert(known.folderName)
             }
         }
 
@@ -219,6 +331,11 @@ final class SymlinkService: Sendable {
     func setPluginEnabled(folderName: String, enabled: Bool, dataFolder: URL, targetFolder: URL) throws {
         let cleanName = try PathSecurity.sanitizePathComponent(folderName)
         let sourceURL = try PathSecurity.validateSubpath(relativePath: cleanName, within: dataFolder)
+        try setPluginEnabled(folderName: folderName, enabled: enabled, sourceURL: sourceURL, targetFolder: targetFolder)
+    }
+
+    func setPluginEnabled(folderName: String, enabled: Bool, sourceURL: URL, targetFolder: URL) throws {
+        let cleanName = try PathSecurity.sanitizePathComponent(folderName)
         let linkURL = try PathSecurity.validateSubpath(relativePath: cleanName, within: targetFolder)
 
         if enabled {
@@ -231,21 +348,88 @@ final class SymlinkService: Sendable {
     // MARK: - Aircraft
 
     func scanAircraft(dataFolder: URL, targetFolder: URL) throws -> [Aircraft] {
-        var isDir: ObjCBool = false
-        guard fileManager.fileExists(atPath: dataFolder.path, isDirectory: &isDir), isDir.boolValue else {
-            return []
+        let pool = StoragePool(name: "Default", url: dataFolder, isPrimary: true)
+        return try scanAircraft(storagePools: [pool], targetFolder: targetFolder)
+    }
+
+    func scanAircraft(storagePools: [StoragePool], targetFolder: URL, knownAircraft: [Aircraft] = []) throws -> [Aircraft] {
+        var list: [Aircraft] = []
+        var scannedNames = Set<String>()
+
+        for pool in storagePools where pool.isOnline {
+            let primaryFolder = PathService.shared.dataFolder(.aircraft, in: pool.url)
+            let aircraftFolder: URL
+            if fileManager.fileExists(atPath: primaryFolder.path) {
+                aircraftFolder = primaryFolder
+            } else if fileManager.fileExists(atPath: pool.url.path) {
+                aircraftFolder = pool.url
+            } else {
+                continue
+            }
+
+            var isDir: ObjCBool = false
+            guard fileManager.fileExists(atPath: aircraftFolder.path, isDirectory: &isDir), isDir.boolValue else {
+                continue
+            }
+
+            let contents = (try? fileManager.contentsOfDirectory(at: aircraftFolder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+            for folder in contents {
+                var folderCheck: ObjCBool = false
+                if fileManager.fileExists(atPath: folder.path, isDirectory: &folderCheck), folderCheck.boolValue {
+                    let folderName = folder.lastPathComponent
+                    guard !scannedNames.contains(folderName) else { continue }
+                    scannedNames.insert(folderName)
+
+                    let targetLink = targetFolder.appendingPathComponent(folderName)
+                    let isEnabled = fileManager.fileExists(atPath: targetLink.path)
+                    list.append(Aircraft(
+                        name: folderName,
+                        isEnabled: isEnabled,
+                        folderName: folderName,
+                        storagePoolId: pool.id,
+                        storagePoolName: pool.name,
+                        sourceURL: folder,
+                        isOffline: false
+                    ))
+                }
+            }
         }
 
-        let contents = try fileManager.contentsOfDirectory(at: dataFolder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
-        var list: [Aircraft] = []
+        // Discover any existing symlinks in targetFolder pointing to offline pools or whose targets are missing
+        if fileManager.fileExists(atPath: targetFolder.path),
+           let targetContents = try? fileManager.contentsOfDirectory(at: targetFolder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
+            for linkURL in targetContents {
+                if isSymlink(at: linkURL) {
+                    let folderName = linkURL.lastPathComponent
+                    guard !scannedNames.contains(folderName) else { continue }
+                    let dest = symlinkDestination(at: linkURL)
+                    let targetExists = fileManager.fileExists(atPath: linkURL.path)
+                    let matchingPool = storagePools.first(where: { dest != nil && dest!.hasPrefix($0.url.path) })
+                    if !targetExists || matchingPool?.isOnline == false {
+                        scannedNames.insert(folderName)
+                        list.append(Aircraft(
+                            name: folderName,
+                            isEnabled: false,
+                            folderName: folderName,
+                            storagePoolId: matchingPool?.id,
+                            storagePoolName: matchingPool?.name,
+                            sourceURL: dest.map { URL(fileURLWithPath: $0) },
+                            isOffline: true
+                        ))
+                    }
+                }
+            }
+        }
 
-        for folder in contents {
-            var folderCheck: ObjCBool = false
-            if fileManager.fileExists(atPath: folder.path, isDirectory: &folderCheck), folderCheck.boolValue {
-                let folderName = folder.lastPathComponent
-                let targetLink = targetFolder.appendingPathComponent(folderName)
-                let isEnabled = fileManager.fileExists(atPath: targetLink.path)
-                list.append(Aircraft(name: folderName, isEnabled: isEnabled, folderName: folderName))
+        // Preserve known items from offline storage pools
+        for known in knownAircraft where !scannedNames.contains(known.folderName) {
+            let isPoolOffline = storagePools.first(where: { $0.id == known.storagePoolId })?.isOnline == false
+            if isPoolOffline || known.isOffline {
+                var offlineItem = known
+                offlineItem.isOffline = true
+                offlineItem.isEnabled = false
+                list.append(offlineItem)
+                scannedNames.insert(known.folderName)
             }
         }
 
@@ -255,6 +439,11 @@ final class SymlinkService: Sendable {
     func setAircraftEnabled(folderName: String, enabled: Bool, dataFolder: URL, targetFolder: URL) throws {
         let cleanName = try PathSecurity.sanitizePathComponent(folderName)
         let sourceURL = try PathSecurity.validateSubpath(relativePath: cleanName, within: dataFolder)
+        try setAircraftEnabled(folderName: folderName, enabled: enabled, sourceURL: sourceURL, targetFolder: targetFolder)
+    }
+
+    func setAircraftEnabled(folderName: String, enabled: Bool, sourceURL: URL, targetFolder: URL) throws {
+        let cleanName = try PathSecurity.sanitizePathComponent(folderName)
         let linkURL = try PathSecurity.validateSubpath(relativePath: cleanName, within: targetFolder)
 
         if enabled {
@@ -267,53 +456,120 @@ final class SymlinkService: Sendable {
     // MARK: - FlyWithLua Scripts
 
     func scanLuaScripts(dataFolder: URL, targetFolder: URL?, modulesTargetFolder: URL? = nil) throws -> [LuaScript] {
-        var isDir: ObjCBool = false
-        guard fileManager.fileExists(atPath: dataFolder.path, isDirectory: &isDir), isDir.boolValue else {
-            return []
-        }
+        let pool = StoragePool(name: "Default", url: dataFolder, isPrimary: true)
+        return try scanLuaScripts(storagePools: [pool], targetFolder: targetFolder, modulesTargetFolder: modulesTargetFolder)
+    }
 
+    func scanLuaScripts(storagePools: [StoragePool], targetFolder: URL?, modulesTargetFolder: URL? = nil, knownScripts: [LuaScript] = []) throws -> [LuaScript] {
+        var list: [LuaScript] = []
+        var scannedNames = Set<String>()
         let resolvedModulesFolder = resolveModulesTargetFolder(from: targetFolder, explicitModulesTarget: modulesTargetFolder)
 
-        let contents = try fileManager.contentsOfDirectory(at: dataFolder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
-        var list: [LuaScript] = []
+        for pool in storagePools where pool.isOnline {
+            let primaryFolder = PathService.shared.dataFolder(.luaScripts, in: pool.url)
+            let dataFolder: URL
+            if fileManager.fileExists(atPath: primaryFolder.path) {
+                dataFolder = primaryFolder
+            } else if fileManager.fileExists(atPath: pool.url.path) {
+                dataFolder = pool.url
+            } else {
+                continue
+            }
 
-        for item in contents {
-            var folderCheck: ObjCBool = false
-            if fileManager.fileExists(atPath: item.path, isDirectory: &folderCheck) {
-                let folderName = item.lastPathComponent
-                let isDirBool = folderCheck.boolValue
+            var isDir: ObjCBool = false
+            guard fileManager.fileExists(atPath: dataFolder.path, isDirectory: &isDir), isDir.boolValue else {
+                continue
+            }
 
-                var isEnabled = false
-                if let targetFolder = targetFolder {
-                    if isDirBool {
-                        let structure = inspectLuaDirectory(at: item)
-                        if structure.isStructured {
-                            if let scriptsDir = structure.scriptsDir,
-                               let childContents = try? fileManager.contentsOfDirectory(at: scriptsDir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]),
-                               let firstChild = childContents.first {
-                                let childLink = targetFolder.appendingPathComponent(firstChild.lastPathComponent)
-                                isEnabled = fileManager.fileExists(atPath: childLink.path)
-                            } else if let modulesDir = structure.modulesDir,
-                                      let modulesTarget = resolvedModulesFolder,
-                                      let childContents = try? fileManager.contentsOfDirectory(at: modulesDir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]),
-                                      let firstChild = childContents.first {
-                                let childLink = modulesTarget.appendingPathComponent(firstChild.lastPathComponent)
-                                isEnabled = fileManager.fileExists(atPath: childLink.path)
+            let contents = (try? fileManager.contentsOfDirectory(at: dataFolder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+            for item in contents {
+                var folderCheck: ObjCBool = false
+                if fileManager.fileExists(atPath: item.path, isDirectory: &folderCheck) {
+                    let folderName = item.lastPathComponent
+                    guard !scannedNames.contains(folderName) else { continue }
+                    scannedNames.insert(folderName)
+                    let isDirBool = folderCheck.boolValue
+
+                    var isEnabled = false
+                    if let targetFolder = targetFolder {
+                        if isDirBool {
+                            let structure = inspectLuaDirectory(at: item)
+                            if structure.isStructured {
+                                if let scriptsDir = structure.scriptsDir,
+                                   let childContents = try? fileManager.contentsOfDirectory(at: scriptsDir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]),
+                                   let firstChild = childContents.first {
+                                    let childLink = targetFolder.appendingPathComponent(firstChild.lastPathComponent)
+                                    isEnabled = fileManager.fileExists(atPath: childLink.path)
+                                } else if let modulesDir = structure.modulesDir,
+                                          let modulesTarget = resolvedModulesFolder,
+                                          let childContents = try? fileManager.contentsOfDirectory(at: modulesDir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]),
+                                          let firstChild = childContents.first {
+                                    let childLink = modulesTarget.appendingPathComponent(firstChild.lastPathComponent)
+                                    isEnabled = fileManager.fileExists(atPath: childLink.path)
+                                }
+                            } else {
+                                if let childContents = try? fileManager.contentsOfDirectory(at: item, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]),
+                                   let firstChild = childContents.first {
+                                    let childLink = targetFolder.appendingPathComponent(firstChild.lastPathComponent)
+                                    isEnabled = fileManager.fileExists(atPath: childLink.path)
+                                }
                             }
                         } else {
-                            if let childContents = try? fileManager.contentsOfDirectory(at: item, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]),
-                               let firstChild = childContents.first {
-                                let childLink = targetFolder.appendingPathComponent(firstChild.lastPathComponent)
-                                isEnabled = fileManager.fileExists(atPath: childLink.path)
-                            }
+                            let targetLink = targetFolder.appendingPathComponent(folderName)
+                            isEnabled = fileManager.fileExists(atPath: targetLink.path)
                         }
-                    } else {
-                        let targetLink = targetFolder.appendingPathComponent(folderName)
-                        isEnabled = fileManager.fileExists(atPath: targetLink.path)
+                    }
+
+                    list.append(LuaScript(
+                        name: folderName,
+                        isEnabled: isEnabled,
+                        folderName: folderName,
+                        isDirectory: isDirBool,
+                        storagePoolId: pool.id,
+                        storagePoolName: pool.name,
+                        sourceURL: item,
+                        isOffline: false
+                    ))
+                }
+            }
+        }
+
+        // Discover any existing symlinks in targetFolder pointing to offline pools or whose targets are missing
+        if let targetFolder = targetFolder, fileManager.fileExists(atPath: targetFolder.path),
+           let targetContents = try? fileManager.contentsOfDirectory(at: targetFolder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
+            for linkURL in targetContents {
+                if isSymlink(at: linkURL) {
+                    let folderName = linkURL.lastPathComponent
+                    guard !scannedNames.contains(folderName) else { continue }
+                    let dest = symlinkDestination(at: linkURL)
+                    let targetExists = fileManager.fileExists(atPath: linkURL.path)
+                    let matchingPool = storagePools.first(where: { dest != nil && dest!.hasPrefix($0.url.path) })
+                    if !targetExists || matchingPool?.isOnline == false {
+                        scannedNames.insert(folderName)
+                        list.append(LuaScript(
+                            name: folderName,
+                            isEnabled: false,
+                            folderName: folderName,
+                            isDirectory: false,
+                            storagePoolId: matchingPool?.id,
+                            storagePoolName: matchingPool?.name,
+                            sourceURL: dest.map { URL(fileURLWithPath: $0) },
+                            isOffline: true
+                        ))
                     }
                 }
+            }
+        }
 
-                list.append(LuaScript(name: folderName, isEnabled: isEnabled, folderName: folderName, isDirectory: isDirBool))
+        // Preserve known items from offline storage pools
+        for known in knownScripts where !scannedNames.contains(known.folderName) {
+            let isPoolOffline = storagePools.first(where: { $0.id == known.storagePoolId })?.isOnline == false
+            if isPoolOffline || known.isOffline {
+                var offlineItem = known
+                offlineItem.isOffline = true
+                offlineItem.isEnabled = false
+                list.append(offlineItem)
+                scannedNames.insert(known.folderName)
             }
         }
 
@@ -323,11 +579,15 @@ final class SymlinkService: Sendable {
     func setLuaScriptEnabled(item: LuaScript, enabled: Bool, dataFolder: URL, targetFolder: URL, modulesTargetFolder: URL? = nil) throws {
         let cleanName = try PathSecurity.sanitizePathComponent(item.folderName)
         let itemSourceURL = try PathSecurity.validateSubpath(relativePath: cleanName, within: dataFolder)
+        try setLuaScriptEnabled(item: item, enabled: enabled, sourceURL: itemSourceURL, targetFolder: targetFolder, modulesTargetFolder: modulesTargetFolder)
+    }
+
+    func setLuaScriptEnabled(item: LuaScript, enabled: Bool, sourceURL: URL, targetFolder: URL, modulesTargetFolder: URL? = nil) throws {
         let resolvedModulesFolder = resolveModulesTargetFolder(from: targetFolder, explicitModulesTarget: modulesTargetFolder)
 
         if enabled {
             if item.isDirectory {
-                let structure = inspectLuaDirectory(at: itemSourceURL)
+                let structure = inspectLuaDirectory(at: sourceURL)
                 if structure.isStructured {
                     if let scriptsDir = structure.scriptsDir {
                         try? fileManager.createDirectory(at: targetFolder, withIntermediateDirectories: true)
@@ -349,7 +609,7 @@ final class SymlinkService: Sendable {
                     }
                 } else {
                     try? fileManager.createDirectory(at: targetFolder, withIntermediateDirectories: true)
-                    let children = try fileManager.contentsOfDirectory(at: itemSourceURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
+                    let children = try fileManager.contentsOfDirectory(at: sourceURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
                     for child in children {
                         let childCleanName = try PathSecurity.sanitizePathComponent(child.lastPathComponent)
                         let linkURL = try PathSecurity.validateSubpath(relativePath: childCleanName, within: targetFolder)
@@ -358,12 +618,13 @@ final class SymlinkService: Sendable {
                 }
             } else {
                 try? fileManager.createDirectory(at: targetFolder, withIntermediateDirectories: true)
+                let cleanName = try PathSecurity.sanitizePathComponent(item.folderName)
                 let linkURL = try PathSecurity.validateSubpath(relativePath: cleanName, within: targetFolder)
-                try createOrReplaceLink(at: linkURL, to: itemSourceURL)
+                try createOrReplaceLink(at: linkURL, to: sourceURL)
             }
         } else {
             if item.isDirectory {
-                let structure = inspectLuaDirectory(at: itemSourceURL)
+                let structure = inspectLuaDirectory(at: sourceURL)
                 if structure.isStructured {
                     if let scriptsDir = structure.scriptsDir,
                        let children = try? fileManager.contentsOfDirectory(at: scriptsDir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
@@ -384,7 +645,7 @@ final class SymlinkService: Sendable {
                         }
                     }
                 } else {
-                    if let children = try? fileManager.contentsOfDirectory(at: itemSourceURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
+                    if let children = try? fileManager.contentsOfDirectory(at: sourceURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
                         for child in children {
                             if let childCleanName = try? PathSecurity.sanitizePathComponent(child.lastPathComponent),
                                let linkURL = try? PathSecurity.validateSubpath(relativePath: childCleanName, within: targetFolder) {
@@ -394,6 +655,7 @@ final class SymlinkService: Sendable {
                     }
                 }
             } else {
+                let cleanName = try PathSecurity.sanitizePathComponent(item.folderName)
                 let linkURL = try PathSecurity.validateSubpath(relativePath: cleanName, within: targetFolder)
                 try removeLink(at: linkURL)
             }
