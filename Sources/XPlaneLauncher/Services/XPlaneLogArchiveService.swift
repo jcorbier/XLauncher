@@ -107,22 +107,22 @@ public final class XPlaneLogArchiveService {
         self.isLoading = true
         self.errorMessage = nil
 
-        Task.detached(priority: .userInitiated) { [weak self, item, parser = self.parser, engine = self.engine] in
+        Task {
+            let parser = self.parser
+            let engine = self.engine
             do {
-                let entries = try parser.parseFile(at: item.url)
-                let report = engine.analyze(entries: entries, fileItem: item)
+                let report = try await Task.detached(priority: .userInitiated) {
+                    let entries = try parser.parseFile(at: item.url)
+                    return engine.analyze(entries: entries, fileItem: item)
+                }.value
 
-                await MainActor.run {
-                    guard let self = self, self.selectedLogFile?.url == item.url else { return }
-                    self.currentReport = report
-                    self.isLoading = false
-                }
+                guard self.selectedLogFile?.url == item.url else { return }
+                self.currentReport = report
+                self.isLoading = false
             } catch {
-                await MainActor.run {
-                    guard let self = self, self.selectedLogFile?.url == item.url else { return }
-                    self.errorMessage = "Failed to parse log file: \(error.localizedDescription)"
-                    self.isLoading = false
-                }
+                guard self.selectedLogFile?.url == item.url else { return }
+                self.errorMessage = "Failed to parse log file: \(error.localizedDescription)"
+                self.isLoading = false
             }
         }
     }
