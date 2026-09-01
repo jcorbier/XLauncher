@@ -86,6 +86,14 @@ final class PathService: Sendable {
         xPlanePath.appendingPathComponent("Resources").appendingPathComponent("plugins").appendingPathComponent("IVAO_CSL").appendingPathComponent("CSL")
     }
 
+    func logTxtURL(for xPlanePath: URL) -> URL {
+        xPlanePath.appendingPathComponent("Log.txt")
+    }
+
+    func logArchiveFolder(for xPlanePath: URL) -> URL {
+        xPlanePath.appendingPathComponent("Output").appendingPathComponent("Log Archive")
+    }
+
     func isDirectory(at url: URL) -> Bool {
         var isDir: ObjCBool = false
         return fileManager.fileExists(atPath: url.path, isDirectory: &isDir) && isDir.boolValue

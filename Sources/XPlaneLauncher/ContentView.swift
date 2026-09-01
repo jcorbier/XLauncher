@@ -52,6 +52,7 @@ struct ContentView: View {
         case addonUpdates = "Add-ons"
         case csl = "CSL Models"
         case navdata = "Navigation Data"
+        case xPlaneLogs = "X-Plane Logs"
         case settings = "Settings"
         case about = "About"
 
@@ -67,6 +68,7 @@ struct ContentView: View {
             case .addonUpdates: return "arrow.triangle.2.circlepath.circle"
             case .csl: return "airplane.circle"
             case .navdata: return "point.topleft.down.to.point.bottomright.curvepath"
+            case .xPlaneLogs: return "doc.text.magnifyingglass"
             case .settings: return "gearshape"
             case .about: return "info.circle"
             }
@@ -88,7 +90,7 @@ struct ContentView: View {
         }
 
         static var systemCategories: [NavigationCategory] {
-            [.settings]
+            [.xPlaneLogs, .settings]
         }
 
         var isAddonCategory: Bool {
@@ -256,6 +258,8 @@ struct ContentView: View {
                         CSLListView()
                     case .navdata:
                         NavdataListView()
+                    case .xPlaneLogs:
+                        XPlaneLogsView()
                     case .settings:
                         SettingsView()
                     case .about:

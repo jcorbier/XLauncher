@@ -135,6 +135,11 @@ struct XPlaneLauncherApp: App {
                     openWindow(id: "profiles-window")
                 }
                 .keyboardShortcut("p", modifiers: .command)
+
+                Button("X-Plane Logs...") {
+                    openWindow(id: "xplane-logs-window")
+                }
+                .keyboardShortcut("l", modifiers: [.command, .shift])
             }
             CommandGroup(replacing: .saveItem) { }
             CommandGroup(replacing: .printItem) { }
@@ -171,6 +176,14 @@ struct XPlaneLauncherApp: App {
         }
         .keyboardShortcut("l", modifiers: [.command, .option])
         .defaultSize(width: 800, height: 500)
+        .windowResizability(.contentMinSize)
+
+        Window("X-Plane Logs", id: "xplane-logs-window") {
+            XPlaneLogsView()
+                .environment(pluginManager)
+        }
+        .keyboardShortcut("l", modifiers: [.command, .shift])
+        .defaultSize(width: 900, height: 600)
         .windowResizability(.contentMinSize)
     }
 }
