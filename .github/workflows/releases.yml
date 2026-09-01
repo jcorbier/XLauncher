@@ -190,7 +190,14 @@ jobs:
             cp XLauncher-macOS.zip sparkle_staging/
             echo "$SPARKLE_PRIVATE_KEY" > sparkle_key.txt
             DOWNLOAD_PREFIX="https://github.com/jcorbier/XLauncher/releases/download/${TAG_NAME}/"
-            "$GENERATE_APPCAST" --download-url-prefix "$DOWNLOAD_PREFIX" --ed-key-file sparkle_key.txt sparkle_staging/ || true
+
+            CHANNEL_ARGS=""
+            if [ "$IS_PRERELEASE" = "true" ]; then
+              echo "Tagging appcast item with beta channel..."
+              CHANNEL_ARGS="--channel beta"
+            fi
+
+            "$GENERATE_APPCAST" --download-url-prefix "$DOWNLOAD_PREFIX" $CHANNEL_ARGS --ed-key-file sparkle_key.txt sparkle_staging/ || true
             if [ -f "sparkle_staging/appcast.xml" ]; then
               cp sparkle_staging/appcast.xml ./appcast.xml
             fi
