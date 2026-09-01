@@ -62,6 +62,54 @@ struct SettingsView: View {
 
             ScrollView {
                 VStack(spacing: 16) {
+                    GroupBox("X-Plane Installation") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Select your X-Plane 12 root folder to enable simulator launching, add-on symlinking, and scenery management.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("X-Plane Location")
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                    Text(pluginManager.xPlanePath?.path ?? "Not configured")
+                                        .font(.caption)
+                                        .fontDesign(.monospaced)
+                                        .foregroundStyle(pluginManager.xPlanePath != nil ? .primary : .secondary)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                }
+
+                                Spacer()
+
+                                Button("Browse...") {
+                                    let panel = NSOpenPanel()
+                                    panel.canChooseFiles = false
+                                    panel.canChooseDirectories = true
+                                    panel.allowsMultipleSelection = false
+                                    panel.prompt = "Select X-Plane Folder"
+                                    if panel.runModal() == .OK {
+                                        pluginManager.xPlanePath = panel.url
+                                    }
+                                }
+                            }
+
+                            if let path = pluginManager.xPlanePath {
+                                let isXPlaneDetected = FileManager.default.fileExists(atPath: path.appendingPathComponent("X-Plane.app").path) || FileManager.default.fileExists(atPath: path.appendingPathComponent("X-Plane-x86_64").path)
+                                HStack(spacing: 4) {
+                                    Image(systemName: isXPlaneDetected ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                                        .foregroundStyle(isXPlaneDetected ? .green : .yellow)
+                                    Text(isXPlaneDetected ? "X-Plane 12 installation detected" : "X-Plane executable not found in this folder")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(8)
+                    }
+
                     StoragePoolsSettingsSection()
 
                     GroupBox("General & Assistance") {
