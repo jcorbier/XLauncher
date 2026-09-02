@@ -119,6 +119,7 @@ class PluginManager {
 
     var xPlanePath: URL? {
         didSet {
+            MenuBarCompanionManager.shared.xPlanePath = xPlanePath
             guard !isLoading else { return }
             savePath()
             scanPlugins()
@@ -1766,11 +1767,35 @@ class PluginManager {
             }
         }
 
+        MenuBarCompanionManager.shared.xPlanePath = xPlanePath
+
         launchService.launchXPlane(
             at: xPlanePath,
             arguments: parsedLaunchArguments,
-            onSuccess: {
-                NSApp.terminate(nil)
+            onSuccess: { runningApp in
+                let sessionManager = SimSessionManager.shared
+                let companionManager = MenuBarCompanionManager.shared
+
+                sessionManager.startSession(process: runningApp, profileName: profileName) {
+                    // Post-sim termination callback
+                    switch sessionManager.simExitBehavior {
+                    case .reopenWindow:
+                        companionManager.exitCompanionMode(restoreWindow: true)
+                    case .quitLauncher:
+                        companionManager.exitCompanionMode(restoreWindow: false)
+                        NSApp.terminate(nil)
+                    }
+                }
+
+                switch sessionManager.launchBehavior {
+                case .minimizeToMenuBar:
+                    companionManager.enterCompanionMode(hideWindow: true)
+                case .keepWindowOpen:
+                    companionManager.enterCompanionMode(hideWindow: false)
+                case .quitLauncher:
+                    sessionManager.endSession()
+                    NSApp.terminate(nil)
+                }
             },
             onFailure: { [weak self] error in
                 self?.lastErrorMessage = "Failed to launch X-Plane: \(error.localizedDescription)"

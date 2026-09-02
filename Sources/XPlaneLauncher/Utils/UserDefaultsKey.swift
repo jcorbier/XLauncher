@@ -51,6 +51,10 @@ enum UserDefaultsKey: String, CaseIterable, Sendable {
     case autoCheckCSLUpdates = "AutoCheckCSLUpdates"
     case autoCheckNavdataUpdates = "AutoCheckNavdataUpdates"
 
+    // Launch & Companion Mode
+    case launchBehavior = "LaunchBehavior"
+    case simExitBehavior = "SimExitBehavior"
+
     // App Updates
     case appUpdateAutoCheckOnLaunch = "AppUpdateAutoCheckOnLaunch"
     case appUpdateIncludePrereleases = "AppUpdateIncludePrereleases"

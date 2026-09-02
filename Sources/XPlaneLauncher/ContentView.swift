@@ -33,6 +33,7 @@ struct ContentView: View {
     @Environment(CSLManager.self) var cslManager
     @Environment(AppUpdateManager.self) var appUpdateManager
     @Environment(NavdataManager.self) var navdataManager
+    @Environment(SimSessionManager.self) var simSessionManager
     @Binding var showWelcomeScreen: Bool
     @State private var selectedCategory: NavigationCategory? = .aircraft
     @State private var installerAnalysis: AddonPackageAnalysis? = nil
@@ -298,7 +299,7 @@ struct ContentView: View {
                 HStack {
                     Spacer()
                     LaunchButton()
-                        .frame(maxWidth: 320)
+                        .frame(maxWidth: simSessionManager.isSimRunning ? 520 : 320)
                     Spacer()
                 }
                 .padding(12)

@@ -28,6 +28,7 @@ struct SettingsView: View {
     @Environment(CSLManager.self) var cslManager
     @Environment(UpdateManager.self) var updateManager
     @Environment(NavdataManager.self) var navdataManager
+    @Environment(SimSessionManager.self) var simSessionManager
     @State private var selectedEnvVarId: PluginManager.ScriptEnvVar.ID?
     @State private var showWelcomeSheet: Bool = false
     @State private var showReleaseNotesSheet: Bool = false
@@ -49,6 +50,7 @@ struct SettingsView: View {
         @Bindable var cslManager = cslManager
         @Bindable var updateManager = updateManager
         @Bindable var navdataManager = navdataManager
+        @Bindable var simSessionManager = simSessionManager
 
         VStack(spacing: 0) {
             // Header Bar
@@ -131,6 +133,50 @@ struct SettingsView: View {
 
                                 Button("Show Welcome Screen...") {
                                     showWelcomeSheet = true
+                                }
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(8)
+                    }
+
+                    GroupBox("Simulator Launch & Companion Mode") {
+                        VStack(alignment: .leading, spacing: 14) {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("When X-Plane launches:")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+
+                                Picker("", selection: $simSessionManager.launchBehavior) {
+                                    ForEach(LaunchBehavior.allCases) { behavior in
+                                        Text(behavior.displayName).tag(behavior)
+                                    }
+                                }
+                                .pickerStyle(.radioGroup)
+
+                                Text(simSessionManager.launchBehavior.description)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            if simSessionManager.launchBehavior == .minimizeToMenuBar {
+                                Divider()
+
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text("When X-Plane exits:")
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+
+                                    Picker("", selection: $simSessionManager.simExitBehavior) {
+                                        ForEach(SimExitBehavior.allCases) { behavior in
+                                            Text(behavior.displayName).tag(behavior)
+                                        }
+                                    }
+                                    .pickerStyle(.radioGroup)
+
+                                    Text(simSessionManager.simExitBehavior.description)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
                                 }
                             }
                         }

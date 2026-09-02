@@ -75,7 +75,7 @@ final class LaunchService {
     func launchXPlane(
         at xPlanePath: URL,
         arguments: [String] = [],
-        onSuccess: @escaping @MainActor () -> Void,
+        onSuccess: @escaping @MainActor (NSRunningApplication?) -> Void,
         onFailure: @escaping @MainActor (Error) -> Void
     ) {
         let appURL = xPlanePath.appendingPathComponent("X-Plane.app")
@@ -96,14 +96,14 @@ final class LaunchService {
         if !arguments.isEmpty {
             config.arguments = arguments
         }
-        workspace.openApplication(at: appURL, configuration: config) { _, error in
+        workspace.openApplication(at: appURL, configuration: config) { app, error in
             Task { @MainActor in
                 if let error = error {
                     ConsoleLogger.shared.log("Failed to launch X-Plane: \(error.localizedDescription)", category: .launch, level: .error)
                     onFailure(error)
                 } else {
                     ConsoleLogger.shared.log("Launched X-Plane successfully", category: .launch)
-                    onSuccess()
+                    onSuccess(app)
                 }
             }
         }

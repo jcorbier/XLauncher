@@ -32,6 +32,7 @@ struct XPlaneLauncherApp: App {
     @State private var appUpdateManager = AppUpdateManager()
     @State private var authManager: NavigraphAuthManager
     @State private var navdataManager: NavdataManager
+    @State private var simSessionManager = SimSessionManager.shared
     @State private var showWelcomeScreen = false
     init() {
         let auth = NavigraphAuthManager()
@@ -40,7 +41,7 @@ struct XPlaneLauncherApp: App {
     }
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: "main-window") {
             ContentView(showWelcomeScreen: $showWelcomeScreen)
                 .environment(pluginManager)
                 .environment(updateManager)
@@ -48,8 +49,27 @@ struct XPlaneLauncherApp: App {
                 .environment(appUpdateManager)
                 .environment(authManager)
                 .environment(navdataManager)
+                .environment(simSessionManager)
                 .frame(minWidth: 600, minHeight: 500)
+                .background(WindowAccessor { window in
+                    window.delegate = NSApp.delegate as? NSWindowDelegate
+                })
+                .onReceive(NotificationCenter.default.publisher(for: .restoreMainWindowRequested)) { _ in
+                    NSApp.setActivationPolicy(.regular)
+                    NSApp.unhide(nil)
+                    NSApp.activate(ignoringOtherApps: true)
+                    var restored = false
+                    for window in NSApp.windows where !(window is NSPanel) && !String(describing: type(of: window)).contains("StatusBar") {
+                        window.makeKeyAndOrderFront(nil)
+                        window.orderFrontRegardless()
+                        restored = true
+                    }
+                    if !restored {
+                        openWindow(id: "main-window")
+                    }
+                }
                 .onAppear {
+                    MenuBarCompanionManager.shared.xPlanePath = pluginManager.xPlanePath
                     updateManager.launcherDataFolder = pluginManager.launcherDataFolder
                     cslManager.cslFolderURL = pluginManager.cslPath
                     cslManager.xPlaneFolderURL = pluginManager.xPlanePath
@@ -85,6 +105,7 @@ struct XPlaneLauncherApp: App {
                 }
                 .onChange(of: pluginManager.xPlanePath) { _, newValue in
                     cslManager.xPlaneFolderURL = newValue
+                    MenuBarCompanionManager.shared.xPlanePath = newValue
                     if pluginManager.enableNavdataSupport {
                         navdataManager.xPlaneURL = newValue
                     }
@@ -190,8 +211,41 @@ struct XPlaneLauncherApp: App {
     }
 }
 
-class AppDelegate: NSObject, NSApplicationDelegate {
+// MARK: - Window Accessor
+private struct WindowAccessor: NSViewRepresentable {
+    let onWindow: (NSWindow) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            if let window = view.window {
+                onWindow(window)
+            }
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
+class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        if SimSessionManager.shared.isSimRunning {
+            MenuBarCompanionManager.shared.hideMainWindow()
+            return false
+        }
+        return true
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        if SimSessionManager.shared.isSimRunning {
+            return false
+        }
+        return true
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        MenuBarCompanionManager.shared.restoreMainWindow()
         return true
     }
 
