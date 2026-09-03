@@ -34,11 +34,13 @@ struct ContentView: View {
     @Environment(AppUpdateManager.self) var appUpdateManager
     @Environment(NavdataManager.self) var navdataManager
     @Environment(SimSessionManager.self) var simSessionManager
+    @Environment(LicenseManager.self) var licenseManager
     @Binding var showWelcomeScreen: Bool
     @State private var selectedCategory: NavigationCategory? = .aircraft
     @State private var installerAnalysis: AddonPackageAnalysis? = nil
     @State private var isDropTargeted: Bool = false
     @State private var isShowingFileImporter: Bool = false
+    @State private var showProSheet: Bool = false
 
     init(showWelcomeScreen: Binding<Bool> = .constant(false)) {
         self._showWelcomeScreen = showWelcomeScreen
@@ -247,6 +249,44 @@ struct ContentView: View {
                             }
                         }
                     }
+
+                    Divider()
+                        .padding(.vertical, 4)
+
+                    if licenseManager.isPro {
+                        HStack(spacing: 8) {
+                            ProBadgeView(size: 11)
+                            Text("Active")
+                                .font(.caption2)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                        }
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 2)
+                    } else {
+                        Button(action: {
+                            showProSheet = true
+                        }) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "crown.fill")
+                                    .foregroundStyle(
+                                        LinearGradient(
+                                            colors: [.orange, .yellow],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
+                                Text("Upgrade to Pro")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                Spacer()
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 2)
+                    }
                 }
             }
             .listStyle(.sidebar)
@@ -376,6 +416,9 @@ struct ContentView: View {
                     }
                 }
             }
+        }
+        .sheet(isPresented: $showProSheet) {
+            ProActivationSheet()
         }
         .alert(
             "Add-on Management Error",

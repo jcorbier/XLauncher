@@ -25,6 +25,7 @@ import AppKit
 
 struct AboutView: View {
     @Environment(AppUpdateManager.self) var appUpdateManager
+    @Environment(LicenseManager.self) var licenseManager
     @State private var copiedLicense: Bool = false
     @State private var showReleaseNotesSheet: Bool = false
 
@@ -90,11 +91,17 @@ struct AboutView: View {
                         }
 
                         VStack(spacing: 4) {
-                            Text(AppInfo.appName)
-                                .font(.title2)
-                                .fontWeight(.bold)
+                            HStack(spacing: 8) {
+                                Text(AppInfo.appName)
+                                    .font(.title2)
+                                    .fontWeight(.bold)
 
-                            Text(AppInfo.displayVersion)
+                                if licenseManager.isPro {
+                                    ProBadgeView(size: 11)
+                                }
+                            }
+
+                            Text(licenseManager.isPro ? "\(AppInfo.displayVersion) • Pro Edition" : AppInfo.displayVersion)
                                 .font(.subheadline)
                                 .fontWeight(.medium)
                                 .foregroundStyle(.secondary)

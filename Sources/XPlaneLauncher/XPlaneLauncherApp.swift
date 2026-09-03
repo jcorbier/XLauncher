@@ -30,6 +30,7 @@ struct XPlaneLauncherApp: App {
     @State private var updateManager = UpdateManager()
     @State private var cslManager = CSLManager()
     @State private var appUpdateManager = AppUpdateManager()
+    @State private var licenseManager = LicenseManager()
     @State private var authManager: NavigraphAuthManager
     @State private var navdataManager: NavdataManager
     @State private var simSessionManager = SimSessionManager.shared
@@ -50,6 +51,7 @@ struct XPlaneLauncherApp: App {
                 .environment(authManager)
                 .environment(navdataManager)
                 .environment(simSessionManager)
+                .environment(licenseManager)
                 .frame(minWidth: 600, minHeight: 500)
                 .background(WindowAccessor { window in
                     window.delegate = NSApp.delegate as? NSWindowDelegate
@@ -70,6 +72,7 @@ struct XPlaneLauncherApp: App {
                 }
                 .onAppear {
                     MenuBarCompanionManager.shared.xPlanePath = pluginManager.xPlanePath
+                    licenseManager.initialize()
                     updateManager.launcherDataFolder = pluginManager.launcherDataFolder
                     cslManager.cslFolderURL = pluginManager.cslPath
                     cslManager.xPlaneFolderURL = pluginManager.xPlanePath

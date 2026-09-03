@@ -21,6 +21,7 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @Environment(PluginManager.self) var pluginManager
@@ -29,12 +30,16 @@ struct SettingsView: View {
     @Environment(UpdateManager.self) var updateManager
     @Environment(NavdataManager.self) var navdataManager
     @Environment(SimSessionManager.self) var simSessionManager
+    @Environment(LicenseManager.self) var licenseManager
     @State private var selectedEnvVarId: PluginManager.ScriptEnvVar.ID?
     @State private var showWelcomeSheet: Bool = false
     @State private var showReleaseNotesSheet: Bool = false
     @State private var showAdvancedSettings: Bool = false
     @State private var launchArgumentsText: String = ""
     @FocusState private var isArgumentsFieldFocused: Bool
+    @State private var activeProSheet: ProSheetView? = nil
+    @State private var showDeactivateAlert: Bool = false
+    @State private var copiedLicenseKey: Bool = false
 
     private var lastCheckedFormatted: String {
         guard let date = appUpdateManager.lastCheckDate else { return "Never" }
@@ -113,6 +118,131 @@ struct SettingsView: View {
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(8)
+                    }
+
+                    GroupBox {
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack {
+                                HStack(spacing: 8) {
+                                    ProBadgeView(size: 12)
+                                    Text("XLauncher Pro Edition")
+                                        .font(.subheadline)
+                                        .fontWeight(.bold)
+                                }
+
+                                Spacer()
+
+                                if licenseManager.isPro {
+                                    HStack(spacing: 5) {
+                                        Image(systemName: "checkmark.seal.fill")
+                                            .foregroundStyle(.green)
+                                        Text("Active")
+                                            .font(.subheadline)
+                                            .fontWeight(.semibold)
+                                            .foregroundStyle(.green)
+                                    }
+                                } else {
+                                    Text("Standard Edition")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+
+                            if licenseManager.isPro, let license = licenseManager.licenseRecord {
+                                Divider()
+
+                                HStack(alignment: .top) {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        HStack(spacing: 6) {
+                                            Text("License Key:")
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                            Text(license.maskedKey)
+                                                .font(.caption)
+                                                .fontDesign(.monospaced)
+                                                .fontWeight(.semibold)
+                                        }
+
+                                        HStack(spacing: 6) {
+                                            Text("Activated Machine:")
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                            Text(license.machineName)
+                                                .font(.caption)
+                                                .fontWeight(.medium)
+                                        }
+
+                                        HStack(spacing: 6) {
+                                            Text("License Type:")
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                            Text("Node-locked lifetime license (up to 3 Macs)")
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
+
+                                    Spacer()
+                                }
+
+                                HStack(spacing: 8) {
+                                    Button {
+                                        exportLicenseFile(licenseKey: license.licenseKey)
+                                    } label: {
+                                        Label("Export License File...", systemImage: "square.and.arrow.down")
+                                    }
+                                    .controlSize(.small)
+
+                                    Button {
+                                        NSPasteboard.general.clearContents()
+                                        NSPasteboard.general.setString(license.licenseKey, forType: .string)
+                                        copiedLicenseKey = true
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                            copiedLicenseKey = false
+                                        }
+                                    } label: {
+                                        Label(copiedLicenseKey ? "Copied!" : "Copy Key", systemImage: copiedLicenseKey ? "checkmark" : "doc.on.doc")
+                                    }
+                                    .controlSize(.small)
+
+                                    Spacer()
+
+                                    Button(role: .destructive) {
+                                        showDeactivateAlert = true
+                                    } label: {
+                                        Text("Deactivate Machine...")
+                                    }
+                                    .controlSize(.small)
+                                }
+                            } else {
+                                Text("Unlock streaming satellite orthophoto scenery, multi-machine support (up to 3 Macs), and priority updates.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+
+                                HStack(spacing: 8) {
+                                    Button("Upgrade to Pro...") {
+                                        activeProSheet = .purchase
+                                    }
+                                    .controlSize(.small)
+                                    .buttonStyle(.borderedProminent)
+
+                                    Button("Open License File...") {
+                                        activeProSheet = .activateLicense
+                                    }
+                                    .controlSize(.small)
+
+                                    if let info = licenseManager.productInfo {
+                                        Text("Lifetime license • \(info.formattedPrice)")
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(8)
+                    } label: {
+                        Text("Licensing & Edition")
                     }
 
                     StoragePoolsSettingsSection()
@@ -460,6 +590,35 @@ struct SettingsView: View {
         .sheet(isPresented: $showReleaseNotesSheet) {
             let releases = appUpdateManager.newReleases.isEmpty ? (appUpdateManager.latestRelease.map { [$0] } ?? []) : appUpdateManager.newReleases
             AppReleaseNotesSheet(releases: releases)
+        }
+        .sheet(item: $activeProSheet) { sheetView in
+            ProActivationSheet(initialView: sheetView)
+        }
+        .alert("Deactivate XLauncher Pro?", isPresented: $showDeactivateAlert) {
+            Button("Deactivate", role: .destructive) {
+                Task {
+                    try? await licenseManager.deactivateLicense()
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Deactivating this machine will release its seat on Keygen and revert this Mac to the standard edition. You can reactivate anytime with your license key.")
+        }
+    }
+
+    private func exportLicenseFile(licenseKey: String) {
+        let savePanel = NSSavePanel()
+        savePanel.title = "Save XLauncher Pro License File"
+        savePanel.nameFieldStringValue = "xlauncher.lic"
+        savePanel.prompt = "Save License"
+        savePanel.allowedContentTypes = [
+            .plainText,
+            .item,
+            UTType(filenameExtension: "lic") ?? .item
+        ]
+
+        if savePanel.runModal() == .OK, let url = savePanel.url {
+            try? licenseKey.write(to: url, atomically: true, encoding: .utf8)
         }
     }
 }
