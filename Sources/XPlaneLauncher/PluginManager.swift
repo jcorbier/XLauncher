@@ -164,6 +164,20 @@ class PluginManager {
         }
     }
 
+    var launchArguments: String = "" {
+        didSet {
+            guard !isLoading else { return }
+            defaults.set(launchArguments, forKey: .xPlaneLaunchArguments)
+        }
+    }
+
+    var parsedLaunchArguments: [String] {
+        launchArguments
+            .split(separator: " ")
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
     var isConfigured: Bool {
         xPlanePath != nil
     }
@@ -359,6 +373,7 @@ class PluginManager {
         self.enableCSLXP12Lights = defaults.bool(forKey: .enableCSLXP12Lights)
         self.enableNavdataSupport = defaults.bool(forKey: .enableNavdataSupport)
         self.hasCompletedWelcome = defaults.bool(forKey: .hasCompletedWelcome)
+        self.launchArguments = defaults.string(forKey: .xPlaneLaunchArguments) ?? ""
 
         logProfileStartupState()
 
@@ -1616,6 +1631,7 @@ class PluginManager {
 
         launchService.launchXPlane(
             at: xPlanePath,
+            arguments: parsedLaunchArguments,
             onSuccess: {
                 NSApp.terminate(nil)
             },

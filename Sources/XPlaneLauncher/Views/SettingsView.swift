@@ -31,6 +31,9 @@ struct SettingsView: View {
     @State private var selectedEnvVarId: PluginManager.ScriptEnvVar.ID?
     @State private var showWelcomeSheet: Bool = false
     @State private var showReleaseNotesSheet: Bool = false
+    @State private var showAdvancedSettings: Bool = false
+    @State private var launchArgumentsText: String = ""
+    @FocusState private var isArgumentsFieldFocused: Bool
 
     private var lastCheckedFormatted: String {
         guard let date = appUpdateManager.lastCheckDate else { return "Never" }
@@ -353,11 +356,58 @@ struct SettingsView: View {
                         }
                         .padding(8)
                     }
+
+                    DisclosureGroup("Advanced Settings", isExpanded: $showAdvancedSettings) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Custom command-line arguments passed to X-Plane whenever the simulator is launched.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+
+                            HStack(spacing: 8) {
+                                Image(systemName: "terminal")
+                                    .foregroundStyle(.secondary)
+
+                                TextField("Arguments (e.g. --force_windowed --no_sound)", text: $launchArgumentsText)
+                                    .textFieldStyle(.roundedBorder)
+                                    .fontDesign(.monospaced)
+                                    .focused($isArgumentsFieldFocused)
+                                    .onSubmit {
+                                        pluginManager.launchArguments = launchArgumentsText
+                                    }
+                                    .onChange(of: isArgumentsFieldFocused) { _, focused in
+                                        if !focused {
+                                            pluginManager.launchArguments = launchArgumentsText
+                                        }
+                                    }
+
+                                if !launchArgumentsText.isEmpty {
+                                    Button(action: {
+                                        launchArgumentsText = ""
+                                        pluginManager.launchArguments = ""
+                                    }) {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                        .padding(.top, 6)
+                    }
+                    .padding(8)
+                    .background(Color(NSColor.controlBackgroundColor))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
                 .padding(16)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear {
+            launchArgumentsText = pluginManager.launchArguments
+        }
+        .onDisappear {
+            pluginManager.launchArguments = launchArgumentsText
+        }
         .sheet(isPresented: $showWelcomeSheet) {
             WelcomeView()
         }

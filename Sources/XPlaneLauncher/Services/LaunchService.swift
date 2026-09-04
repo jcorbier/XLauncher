@@ -74,6 +74,7 @@ final class LaunchService {
 
     func launchXPlane(
         at xPlanePath: URL,
+        arguments: [String] = [],
         onSuccess: @escaping @MainActor () -> Void,
         onFailure: @escaping @MainActor (Error) -> Void
     ) {
@@ -84,10 +85,17 @@ final class LaunchService {
             return
         }
 
-        ConsoleLogger.shared.log("Launching X-Plane from \(appURL.path)", category: .launch)
+        if arguments.isEmpty {
+            ConsoleLogger.shared.log("Launching X-Plane from \(appURL.path)", category: .launch)
+        } else {
+            ConsoleLogger.shared.log("Launching X-Plane from \(appURL.path) with arguments: \(arguments.joined(separator: " "))", category: .launch)
+        }
 
         let workspace = NSWorkspace.shared
         let config = NSWorkspace.OpenConfiguration()
+        if !arguments.isEmpty {
+            config.arguments = arguments
+        }
         workspace.openApplication(at: appURL, configuration: config) { _, error in
             Task { @MainActor in
                 if let error = error {

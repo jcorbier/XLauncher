@@ -28,6 +28,7 @@ enum UserDefaultsKey: String, CaseIterable, Sendable {
     case launcherDataFolder = "LauncherDataFolder"
     case storagePools = "StoragePools"
     case hasCompletedWelcome = "HasCompletedWelcome"
+    case xPlaneLaunchArguments = "XPlaneLaunchArguments"
 
     // Profiles & Environment
     case pluginProfiles = "PluginProfiles"
