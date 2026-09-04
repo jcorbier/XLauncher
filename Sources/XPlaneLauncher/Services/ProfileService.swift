@@ -148,6 +148,33 @@ final class ProfileService: Sendable {
         }
     }
 
+    // MARK: - Add-on Purge
+
+    func purgeAddons(
+        pluginFolderNames: Set<String> = [],
+        aircraftFolderNames: Set<String> = [],
+        sceneryFolderNames: Set<String> = [],
+        luaScriptFolderNames: Set<String> = [],
+        from profiles: [PluginProfile]
+    ) -> [PluginProfile] {
+        var updated = profiles
+        for i in 0..<updated.count {
+            if !pluginFolderNames.isEmpty {
+                updated[i].pluginFolderNames.removeAll { pluginFolderNames.contains($0) }
+            }
+            if !aircraftFolderNames.isEmpty {
+                updated[i].aircraftFolderNames.removeAll { aircraftFolderNames.contains($0) }
+            }
+            if !sceneryFolderNames.isEmpty {
+                updated[i].sceneryFolderNames.removeAll { sceneryFolderNames.contains($0) }
+            }
+            if !luaScriptFolderNames.isEmpty {
+                updated[i].luaScriptFolderNames.removeAll { luaScriptFolderNames.contains($0) }
+            }
+        }
+        return updated
+    }
+
     private func totalAddonCount(for profile: PluginProfile) -> Int {
         profile.aircraftFolderNames.count +
         profile.pluginFolderNames.count +

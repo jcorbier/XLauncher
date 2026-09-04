@@ -286,5 +286,43 @@ final class ProfileManagementTests: XCTestCase {
         pluginManager.renameProfile(p1, newName: "NewName")
         XCTAssertEqual(pluginManager.profiles.first?.name, "NewName")
     }
+
+    // MARK: - Add-on Purge
+
+    func testPurgeAddons() {
+        let p1 = PluginProfile(
+            name: "Profile 1",
+            pluginFolderNames: ["PluginA", "PluginB"],
+            sceneryFolderNames: ["SceneryA", "SceneryB"],
+            aircraftFolderNames: ["AircraftA", "AircraftB"],
+            luaScriptFolderNames: ["ScriptA.lua", "ScriptB.lua"]
+        )
+        let p2 = PluginProfile(
+            name: "Profile 2",
+            pluginFolderNames: ["PluginB", "PluginC"],
+            sceneryFolderNames: ["SceneryC"],
+            aircraftFolderNames: ["AircraftC"],
+            luaScriptFolderNames: ["ScriptC.lua"]
+        )
+
+        let purged = profileService.purgeAddons(
+            pluginFolderNames: ["PluginB"],
+            aircraftFolderNames: ["AircraftA"],
+            sceneryFolderNames: ["SceneryA"],
+            luaScriptFolderNames: ["ScriptB.lua"],
+            from: [p1, p2]
+        )
+
+        XCTAssertEqual(purged.count, 2)
+        XCTAssertEqual(purged[0].pluginFolderNames, ["PluginA"])
+        XCTAssertEqual(purged[0].aircraftFolderNames, ["AircraftB"])
+        XCTAssertEqual(purged[0].sceneryFolderNames, ["SceneryB"])
+        XCTAssertEqual(purged[0].luaScriptFolderNames, ["ScriptA.lua"])
+
+        XCTAssertEqual(purged[1].pluginFolderNames, ["PluginC"])
+        XCTAssertEqual(purged[1].aircraftFolderNames, ["AircraftC"])
+        XCTAssertEqual(purged[1].sceneryFolderNames, ["SceneryC"])
+        XCTAssertEqual(purged[1].luaScriptFolderNames, ["ScriptC.lua"])
+    }
 }
 

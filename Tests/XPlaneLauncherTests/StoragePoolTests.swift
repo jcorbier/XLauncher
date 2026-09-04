@@ -41,12 +41,21 @@ final class StoragePoolTests: XCTestCase {
         try FileManager.default.createDirectory(at: pool1Dir, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: pool2Dir, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: xPlaneDir, withIntermediateDirectories: true)
+
+        UserDefaults.standard.removeObject(forKey: .pluginProfiles)
+        UserDefaults.standard.removeObject(forKey: .sceneryGroups)
+        UserDefaults.standard.removeObject(forKey: .storagePools)
+        UserDefaults.standard.removeObject(forKey: .selectedProfileId)
     }
 
     override func tearDownWithError() throws {
         if let tempDir = tempDir {
             try? FileManager.default.removeItem(at: tempDir)
         }
+        UserDefaults.standard.removeObject(forKey: .pluginProfiles)
+        UserDefaults.standard.removeObject(forKey: .sceneryGroups)
+        UserDefaults.standard.removeObject(forKey: .storagePools)
+        UserDefaults.standard.removeObject(forKey: .selectedProfileId)
         try super.tearDownWithError()
     }
 
@@ -332,5 +341,280 @@ final class StoragePoolTests: XCTestCase {
         XCTAssertTrue(scanned[0].isOffline)
         XCTAssertFalse(scanned[0].isEnabled)
         XCTAssertEqual(scanned[0].storagePoolId, pool.id)
+    }
+
+    // MARK: - Profile and Scenery Purge on Storage Pool Removal
+
+    @MainActor
+    func testRemoveStoragePoolPurgesAddonsFromAllProfiles() throws {
+        PathService.shared.ensureDirectories(for: pool1Dir)
+        PathService.shared.ensureDirectories(for: pool2Dir)
+
+        try FileManager.default.createDirectory(at: PathService.shared.pluginsTargetFolder(for: xPlaneDir), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: PathService.shared.aircraftTargetFolder(for: xPlaneDir), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: PathService.shared.customSceneryFolder(for: xPlaneDir), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: PathService.shared.flyWithLuaScriptsFolder(for: xPlaneDir), withIntermediateDirectories: true)
+
+        let pool1 = StoragePool(name: "Internal", url: pool1Dir, isPrimary: true)
+        let pool2 = StoragePool(name: "External", url: pool2Dir, isPrimary: false)
+
+        // Populate pool1
+        try FileManager.default.createDirectory(at: pool1Dir.appendingPathComponent("Plugins/Pool1Plugin"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: pool1Dir.appendingPathComponent("Aircraft/Pool1Plane"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: pool1Dir.appendingPathComponent("Scenery/Pool1Scenery"), withIntermediateDirectories: true)
+        try "print('lua1')".write(to: pool1Dir.appendingPathComponent("LuaScripts/Pool1Script.lua"), atomically: true, encoding: .utf8)
+
+        // Populate pool2
+        try FileManager.default.createDirectory(at: pool2Dir.appendingPathComponent("Plugins/Pool2Plugin"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: pool2Dir.appendingPathComponent("Aircraft/Pool2Plane"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: pool2Dir.appendingPathComponent("Scenery/Pool2Scenery"), withIntermediateDirectories: true)
+        try "print('lua2')".write(to: pool2Dir.appendingPathComponent("LuaScripts/Pool2Script.lua"), atomically: true, encoding: .utf8)
+
+        let pm = PluginManager()
+        pm.storagePools = [pool1, pool2]
+        pm.launcherDataFolder = pool1Dir
+        pm.xPlanePath = xPlaneDir
+        pm.rescanAll()
+
+        let profile1 = PluginProfile(
+            name: "Mixed Profile",
+            pluginFolderNames: ["Pool1Plugin", "Pool2Plugin"],
+            sceneryFolderNames: ["Pool1Scenery", "Pool2Scenery"],
+            aircraftFolderNames: ["Pool1Plane", "Pool2Plane"],
+            luaScriptFolderNames: ["Pool1Script.lua", "Pool2Script.lua"]
+        )
+        let profile2 = PluginProfile(
+            name: "Pool2 Only Profile",
+            pluginFolderNames: ["Pool2Plugin"],
+            sceneryFolderNames: ["Pool2Scenery"],
+            aircraftFolderNames: ["Pool2Plane"],
+            luaScriptFolderNames: ["Pool2Script.lua"]
+        )
+        pm.profiles = [profile1, profile2]
+        ProfileService.shared.saveProfiles(pm.profiles)
+
+        let sceneryGroup = SceneryGroup(
+            name: "All Scenery",
+            childFolderNames: ["Pool1Scenery", "Pool2Scenery"]
+        )
+        pm.sceneryGroups = [sceneryGroup]
+
+        // Remove pool2
+        pm.removeStoragePool(id: pool2.id)
+
+        // Verify pool2 is removed
+        XCTAssertEqual(pm.storagePools.count, 1)
+        XCTAssertEqual(pm.storagePools[0].id, pool1.id)
+
+        // Verify profile1 has pool2 addons purged and pool1 addons retained
+        let updatedProfile1 = pm.profiles.first(where: { $0.id == profile1.id })
+        XCTAssertNotNil(updatedProfile1)
+        XCTAssertEqual(updatedProfile1?.pluginFolderNames, ["Pool1Plugin"])
+        XCTAssertEqual(updatedProfile1?.aircraftFolderNames, ["Pool1Plane"])
+        XCTAssertEqual(updatedProfile1?.sceneryFolderNames, ["Pool1Scenery"])
+        XCTAssertEqual(updatedProfile1?.luaScriptFolderNames, ["Pool1Script.lua"])
+
+        // Verify profile2 has all addons purged
+        let updatedProfile2 = pm.profiles.first(where: { $0.id == profile2.id })
+        XCTAssertNotNil(updatedProfile2)
+        XCTAssertEqual(updatedProfile2?.pluginFolderNames, [])
+        XCTAssertEqual(updatedProfile2?.aircraftFolderNames, [])
+        XCTAssertEqual(updatedProfile2?.sceneryFolderNames, [])
+        XCTAssertEqual(updatedProfile2?.luaScriptFolderNames, [])
+
+        // Verify scenery group has Pool2Scenery purged
+        XCTAssertEqual(pm.sceneryGroups.first?.childFolderNames, ["Pool1Scenery"])
+
+        // Verify persistence
+        let persistedProfiles = ProfileService.shared.loadProfiles()
+        XCTAssertEqual(persistedProfiles.count, 2)
+        XCTAssertEqual(persistedProfiles.first(where: { $0.id == profile1.id })?.pluginFolderNames, ["Pool1Plugin"])
+
+        let persistedGroups = ProfileService.shared.loadSceneryGroups()
+        XCTAssertEqual(persistedGroups.first?.childFolderNames, ["Pool1Scenery"])
+    }
+
+    @MainActor
+    func testRemoveStoragePoolRetainsSharedAddons() throws {
+        PathService.shared.ensureDirectories(for: pool1Dir)
+        PathService.shared.ensureDirectories(for: pool2Dir)
+
+        let pool1 = StoragePool(name: "Internal", url: pool1Dir, isPrimary: true)
+        let pool2 = StoragePool(name: "External", url: pool2Dir, isPrimary: false)
+
+        // Both pools contain an addon with the same folder name
+        try FileManager.default.createDirectory(at: pool1Dir.appendingPathComponent("Plugins/SharedPlugin"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: pool2Dir.appendingPathComponent("Plugins/SharedPlugin"), withIntermediateDirectories: true)
+
+        let pm = PluginManager()
+        pm.storagePools = [pool1, pool2]
+        pm.launcherDataFolder = pool1Dir
+        pm.xPlanePath = xPlaneDir
+        pm.rescanAll()
+
+        let profile = PluginProfile(
+            name: "Shared Profile",
+            pluginFolderNames: ["SharedPlugin"]
+        )
+        pm.profiles = [profile]
+        ProfileService.shared.saveProfiles(pm.profiles)
+
+        // Remove pool2
+        pm.removeStoragePool(id: pool2.id)
+
+        // SharedPlugin should still be retained because pool1 still contains it
+        let updatedProfile = pm.profiles.first(where: { $0.id == profile.id })
+        XCTAssertEqual(updatedProfile?.pluginFolderNames, ["SharedPlugin"])
+    }
+
+    @MainActor
+    func testRemoveOfflineStoragePoolPurgesAddonsFromAllProfiles() throws {
+        let pool1 = StoragePool(name: "Internal", url: pool1Dir, isPrimary: true)
+        let offlineURL = tempDir.appendingPathComponent("OfflineVolume_\(UUID().uuidString)")
+        let pool2 = StoragePool(name: "Offline Drive", url: offlineURL, isPrimary: false)
+
+        let pm = PluginManager()
+        pm.storagePools = [pool1, pool2]
+        pm.launcherDataFolder = pool1Dir
+        pm.xPlanePath = xPlaneDir
+
+        // Emulate known items belonging to offline pool2
+        let offlinePlugin = Plugin(
+            name: "OfflinePlugin",
+            isEnabled: false,
+            folderName: "OfflinePlugin",
+            storagePoolId: pool2.id,
+            storagePoolName: pool2.name,
+            sourceURL: offlineURL.appendingPathComponent("Plugins/OfflinePlugin"),
+            isOffline: true
+        )
+        pm.plugins = [offlinePlugin]
+
+        let profile = PluginProfile(
+            name: "Offline Test Profile",
+            pluginFolderNames: ["OfflinePlugin"]
+        )
+        pm.profiles = [profile]
+        ProfileService.shared.saveProfiles(pm.profiles)
+
+        // Remove offline pool
+        pm.removeStoragePool(id: pool2.id)
+
+        // Verify plugin reference is purged from profile
+        let updatedProfile = pm.profiles.first(where: { $0.id == profile.id })
+        XCTAssertEqual(updatedProfile?.pluginFolderNames, [])
+
+        // Verify offline plugin is no longer in plugins list after rescan
+        XCTAssertFalse(pm.plugins.contains(where: { $0.folderName == "OfflinePlugin" }))
+    }
+
+    @MainActor
+    func testBrokenSymlinksWithoutStoragePoolAreCleanedUpAndNotReported() throws {
+        let pluginsTarget = PathService.shared.pluginsTargetFolder(for: xPlaneDir)
+        let aircraftTarget = PathService.shared.aircraftTargetFolder(for: xPlaneDir)
+        let sceneryTarget = PathService.shared.customSceneryFolder(for: xPlaneDir)
+        let luaTarget = PathService.shared.flyWithLuaScriptsFolder(for: xPlaneDir)
+
+        try FileManager.default.createDirectory(at: pluginsTarget, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: aircraftTarget, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: sceneryTarget, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: luaTarget, withIntermediateDirectories: true)
+
+        let nonExistentVolume = tempDir.appendingPathComponent("DeletedVolume_\(UUID().uuidString)")
+
+        // Create broken symlinks pointing into nonExistentVolume
+        let brokenPlugin = pluginsTarget.appendingPathComponent("OrphanedPlugin")
+        let brokenAircraft = aircraftTarget.appendingPathComponent("OrphanedAircraft")
+        let brokenScenery = sceneryTarget.appendingPathComponent("OrphanedScenery")
+        let brokenLua = luaTarget.appendingPathComponent("test.lua")
+
+        try FileManager.default.createSymbolicLink(at: brokenPlugin, withDestinationURL: nonExistentVolume.appendingPathComponent("Plugins/OrphanedPlugin"))
+        try FileManager.default.createSymbolicLink(at: brokenAircraft, withDestinationURL: nonExistentVolume.appendingPathComponent("Aircraft/OrphanedAircraft"))
+        try FileManager.default.createSymbolicLink(at: brokenScenery, withDestinationURL: nonExistentVolume.appendingPathComponent("Scenery/OrphanedScenery"))
+        try FileManager.default.createSymbolicLink(at: brokenLua, withDestinationURL: nonExistentVolume.appendingPathComponent("LuaScripts/test.lua"))
+
+        let pool1 = StoragePool(name: "Internal", url: pool1Dir, isPrimary: true)
+        let pm = PluginManager()
+        pm.storagePools = [pool1]
+        pm.launcherDataFolder = pool1Dir
+        pm.xPlanePath = xPlaneDir
+
+        // Run rescan
+        pm.rescanAll()
+
+        // Assert they are not reported in the UI lists
+        XCTAssertFalse(pm.plugins.contains(where: { $0.folderName == "OrphanedPlugin" }))
+        XCTAssertFalse(pm.aircraft.contains(where: { $0.folderName == "OrphanedAircraft" }))
+        XCTAssertFalse(pm.scenery.contains(where: { $0.folderName == "OrphanedScenery" }))
+        XCTAssertFalse(pm.luaScripts.contains(where: { $0.folderName == "test.lua" }))
+
+        // Assert the broken symlinks were cleaned up from disk
+        var isSymlinkPlugin = false
+        var statBuf = stat()
+        XCTAssertNotEqual(lstat(brokenPlugin.path, &statBuf), 0, "brokenPlugin symlink should be removed")
+        XCTAssertNotEqual(lstat(brokenAircraft.path, &statBuf), 0, "brokenAircraft symlink should be removed")
+        XCTAssertNotEqual(lstat(brokenScenery.path, &statBuf), 0, "brokenScenery symlink should be removed")
+        XCTAssertNotEqual(lstat(brokenLua.path, &statBuf), 0, "brokenLua symlink should be removed")
+    }
+
+    @MainActor
+    func testRemoveStoragePoolUnlinksActiveSymlinksFromXPlane() throws {
+        let pluginsTarget = PathService.shared.pluginsTargetFolder(for: xPlaneDir)
+        let aircraftTarget = PathService.shared.aircraftTargetFolder(for: xPlaneDir)
+        let sceneryTarget = PathService.shared.customSceneryFolder(for: xPlaneDir)
+        let luaTarget = PathService.shared.flyWithLuaScriptsFolder(for: xPlaneDir)
+
+        try FileManager.default.createDirectory(at: pluginsTarget, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: aircraftTarget, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: sceneryTarget, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: luaTarget, withIntermediateDirectories: true)
+
+        let pool1 = StoragePool(name: "Internal", url: pool1Dir, isPrimary: true)
+        let pool2 = StoragePool(name: "External", url: pool2Dir, isPrimary: false)
+
+        // Setup source files in pool2
+        let pool2Plugin = pool2Dir.appendingPathComponent("Plugins/MyPlugin")
+        let pool2Plane = pool2Dir.appendingPathComponent("Aircraft/MyPlane")
+        let pool2Scenery = pool2Dir.appendingPathComponent("Scenery/MyScenery")
+        let pool2Lua = pool2Dir.appendingPathComponent("LuaScripts/test.lua")
+
+        try FileManager.default.createDirectory(at: pool2Plugin, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: pool2Plane, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: pool2Scenery, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: pool2Dir.appendingPathComponent("LuaScripts"), withIntermediateDirectories: true)
+        try "print('hello')".write(to: pool2Lua, atomically: true, encoding: .utf8)
+
+        // Create active symlinks in X-Plane
+        let linkPlugin = pluginsTarget.appendingPathComponent("MyPlugin")
+        let linkPlane = aircraftTarget.appendingPathComponent("MyPlane")
+        let linkScenery = sceneryTarget.appendingPathComponent("MyScenery")
+        let linkLua = luaTarget.appendingPathComponent("test.lua")
+
+        try FileManager.default.createSymbolicLink(at: linkPlugin, withDestinationURL: pool2Plugin)
+        try FileManager.default.createSymbolicLink(at: linkPlane, withDestinationURL: pool2Plane)
+        try FileManager.default.createSymbolicLink(at: linkScenery, withDestinationURL: pool2Scenery)
+        try FileManager.default.createSymbolicLink(at: linkLua, withDestinationURL: pool2Lua)
+
+        let pm = PluginManager()
+        pm.storagePools = [pool1, pool2]
+        pm.launcherDataFolder = pool1Dir
+        pm.xPlanePath = xPlaneDir
+        pm.rescanAll()
+
+        XCTAssertTrue(pm.luaScripts.contains(where: { $0.folderName == "test.lua" }))
+
+        // Remove pool2
+        pm.removeStoragePool(id: pool2.id)
+
+        // Assert all symlinks pointing to pool2 are removed from X-Plane folders
+        var statBuf = stat()
+        XCTAssertNotEqual(lstat(linkPlugin.path, &statBuf), 0, "linkPlugin symlink should be unlinked")
+        XCTAssertNotEqual(lstat(linkPlane.path, &statBuf), 0, "linkPlane symlink should be unlinked")
+        XCTAssertNotEqual(lstat(linkScenery.path, &statBuf), 0, "linkScenery symlink should be unlinked")
+        XCTAssertNotEqual(lstat(linkLua.path, &statBuf), 0, "linkLua symlink should be unlinked")
+
+        // Assert UI list no longer contains them
+        XCTAssertFalse(pm.luaScripts.contains(where: { $0.folderName == "test.lua" }))
+        XCTAssertFalse(pm.plugins.contains(where: { $0.folderName == "MyPlugin" }))
     }
 }

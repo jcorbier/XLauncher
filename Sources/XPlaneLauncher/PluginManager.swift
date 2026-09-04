@@ -439,6 +439,104 @@ class PluginManager {
 
     func removeStoragePool(id: UUID) {
         guard let pool = storagePools.first(where: { $0.id == id }) else { return }
+
+        // 1. Collect all addon folder names belonging to this pool
+        var poolPluginNames = Set(plugins.filter { $0.storagePoolId == id || ($0.sourceURL != nil && $0.sourceURL!.path.hasPrefix(pool.url.path)) }.map(\.folderName))
+        let pluginsFolder = pathService.dataFolder(.plugins, in: pool.url)
+        if let contents = try? FileManager.default.contentsOfDirectory(at: pluginsFolder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
+            poolPluginNames.formUnion(contents.map(\.lastPathComponent))
+        }
+
+        var poolAircraftNames = Set(aircraft.filter { $0.storagePoolId == id || ($0.sourceURL != nil && $0.sourceURL!.path.hasPrefix(pool.url.path)) }.map(\.folderName))
+        let aircraftFolder = pathService.dataFolder(.aircraft, in: pool.url)
+        if let contents = try? FileManager.default.contentsOfDirectory(at: aircraftFolder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
+            poolAircraftNames.formUnion(contents.map(\.lastPathComponent))
+        }
+
+        var poolSceneryNames = Set(scenery.filter { $0.storagePoolId == id || ($0.sourceURL != nil && $0.sourceURL!.path.hasPrefix(pool.url.path)) }.map(\.folderName))
+        let sceneryFolder = pathService.dataFolder(.scenery, in: pool.url)
+        if let contents = try? FileManager.default.contentsOfDirectory(at: sceneryFolder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
+            poolSceneryNames.formUnion(contents.map(\.lastPathComponent))
+        }
+
+        var poolLuaNames = Set(luaScripts.filter { $0.storagePoolId == id || ($0.sourceURL != nil && $0.sourceURL!.path.hasPrefix(pool.url.path)) }.map(\.folderName))
+        let luaFolder = pathService.dataFolder(.luaScripts, in: pool.url)
+        if let contents = try? FileManager.default.contentsOfDirectory(at: luaFolder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
+            poolLuaNames.formUnion(contents.map(\.lastPathComponent))
+        }
+
+        // Exclude addon folder names that still exist in remaining storage pools
+        let remainingPools = storagePools.filter { $0.id != id }
+        var remainingPluginNames = Set(plugins.filter { $0.storagePoolId != nil && $0.storagePoolId != id }.map(\.folderName))
+        var remainingAircraftNames = Set(aircraft.filter { $0.storagePoolId != nil && $0.storagePoolId != id }.map(\.folderName))
+        var remainingSceneryNames = Set(scenery.filter { $0.storagePoolId != nil && $0.storagePoolId != id }.map(\.folderName))
+        var remainingLuaNames = Set(luaScripts.filter { $0.storagePoolId != nil && $0.storagePoolId != id }.map(\.folderName))
+
+        for remPool in remainingPools where remPool.isOnline {
+            let remPlugins = pathService.dataFolder(.plugins, in: remPool.url)
+            if let contents = try? FileManager.default.contentsOfDirectory(at: remPlugins, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
+                remainingPluginNames.formUnion(contents.map(\.lastPathComponent))
+            }
+            let remAircraft = pathService.dataFolder(.aircraft, in: remPool.url)
+            if let contents = try? FileManager.default.contentsOfDirectory(at: remAircraft, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
+                remainingAircraftNames.formUnion(contents.map(\.lastPathComponent))
+            }
+            let remScenery = pathService.dataFolder(.scenery, in: remPool.url)
+            if let contents = try? FileManager.default.contentsOfDirectory(at: remScenery, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
+                remainingSceneryNames.formUnion(contents.map(\.lastPathComponent))
+            }
+            let remLua = pathService.dataFolder(.luaScripts, in: remPool.url)
+            if let contents = try? FileManager.default.contentsOfDirectory(at: remLua, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
+                remainingLuaNames.formUnion(contents.map(\.lastPathComponent))
+            }
+        }
+
+        poolPluginNames.subtract(remainingPluginNames)
+        poolAircraftNames.subtract(remainingAircraftNames)
+        poolSceneryNames.subtract(remainingSceneryNames)
+        poolLuaNames.subtract(remainingLuaNames)
+
+        // 2. Remove references from all profiles
+        let updatedProfiles = profileService.purgeAddons(
+            pluginFolderNames: poolPluginNames,
+            aircraftFolderNames: poolAircraftNames,
+            sceneryFolderNames: poolSceneryNames,
+            luaScriptFolderNames: poolLuaNames,
+            from: profiles
+        )
+        if updatedProfiles != profiles {
+            self.profiles = updatedProfiles
+            profileService.saveProfiles(updatedProfiles)
+            ConsoleLogger.shared.log("Purged add-on references in pool '\(pool.name)' from all profiles", category: .profiles)
+        }
+
+        // 3. Remove scenery from scenery groups
+        if !poolSceneryNames.isEmpty {
+            var updatedGroups = sceneryGroups
+            var modifiedGroups = false
+            for i in 0..<updatedGroups.count {
+                let originalCount = updatedGroups[i].childFolderNames.count
+                updatedGroups[i].childFolderNames.removeAll { poolSceneryNames.contains($0) }
+                if updatedGroups[i].childFolderNames.count != originalCount {
+                    modifiedGroups = true
+                }
+            }
+            if modifiedGroups {
+                self.sceneryGroups = updatedGroups
+                saveSceneryGroups()
+                ConsoleLogger.shared.log("Purged scenery references in pool '\(pool.name)' from scenery groups", category: .scenery)
+            }
+        }
+
+        // Unlink any symlinks pointing into this pool from X-Plane folders
+        unlinkStoragePoolFromXPlane(pool)
+
+        // Prune in-memory items belonging to deleted pool
+        plugins.removeAll { $0.storagePoolId == id }
+        aircraft.removeAll { $0.storagePoolId == id }
+        scenery.removeAll { $0.storagePoolId == id }
+        luaScripts.removeAll { $0.storagePoolId == id }
+
         storagePools.removeAll { $0.id == id }
         if !storagePools.isEmpty && !storagePools.contains(where: { $0.isPrimary }) {
             storagePools[0].isPrimary = true
@@ -448,6 +546,22 @@ class PluginManager {
         rescanAll()
         refreshStoragePoolStats()
         ConsoleLogger.shared.log("Removed storage pool '\(pool.name)'", category: .general)
+    }
+
+    private func unlinkStoragePoolFromXPlane(_ pool: StoragePool) {
+        guard let xPlanePath = xPlanePath else { return }
+
+        let targetFolders = [
+            pathService.pluginsTargetFolder(for: xPlanePath),
+            pathService.aircraftTargetFolder(for: xPlanePath),
+            pathService.customSceneryFolder(for: xPlanePath),
+            flyWithLuaScriptsFolder,
+            flyWithLuaModulesFolder
+        ].compactMap { $0 }
+
+        for folder in targetFolders {
+            symlinkService.unlinkPool(at: pool.url, in: folder)
+        }
     }
 
     func setPrimaryStoragePool(id: UUID) {
@@ -1222,32 +1336,19 @@ class PluginManager {
     // MARK: - Add-on Deletion
 
     private func removeAddonFromAllProfiles(folderName: String, category: AddonCategory) {
-        var modified = false
-        for i in 0..<profiles.count {
-            switch category {
-            case .plugins:
-                if profiles[i].pluginFolderNames.contains(folderName) {
-                    profiles[i].pluginFolderNames.removeAll { $0 == folderName }
-                    modified = true
-                }
-            case .aircraft:
-                if profiles[i].aircraftFolderNames.contains(folderName) {
-                    profiles[i].aircraftFolderNames.removeAll { $0 == folderName }
-                    modified = true
-                }
-            case .scenery:
-                if profiles[i].sceneryFolderNames.contains(folderName) {
-                    profiles[i].sceneryFolderNames.removeAll { $0 == folderName }
-                    modified = true
-                }
-            case .luaScripts:
-                if profiles[i].luaScriptFolderNames.contains(folderName) {
-                    profiles[i].luaScriptFolderNames.removeAll { $0 == folderName }
-                    modified = true
-                }
-            }
+        let updatedProfiles: [PluginProfile]
+        switch category {
+        case .plugins:
+            updatedProfiles = profileService.purgeAddons(pluginFolderNames: [folderName], from: profiles)
+        case .aircraft:
+            updatedProfiles = profileService.purgeAddons(aircraftFolderNames: [folderName], from: profiles)
+        case .scenery:
+            updatedProfiles = profileService.purgeAddons(sceneryFolderNames: [folderName], from: profiles)
+        case .luaScripts:
+            updatedProfiles = profileService.purgeAddons(luaScriptFolderNames: [folderName], from: profiles)
         }
-        if modified {
+        if updatedProfiles != profiles {
+            profiles = updatedProfiles
             profileService.saveProfiles(profiles)
         }
     }

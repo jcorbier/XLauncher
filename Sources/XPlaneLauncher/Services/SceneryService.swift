@@ -148,8 +148,12 @@ final class SceneryService: Sendable {
                         let isManagedLink = isSymlink(at: url)
                         let dest = isManagedLink ? symlinkDestination(at: url) : nil
                         let targetExists = fileManager.fileExists(atPath: url.path)
-                        let matchingPool = poolByFolderName[name] ?? storagePools.first(where: { dest != nil && dest!.hasPrefix($0.url.path) })
+                        let matchingPool = poolByFolderName[name] ?? storagePools.first(where: { SymlinkService.pathBelongsToPool(destination: dest, poolURL: $0.url) })
                         let sourceURL = sourceURLByFolderName[name] ?? dest.map { URL(fileURLWithPath: $0) }
+                        if isManagedLink && !targetExists && matchingPool == nil {
+                            try? fileManager.removeItem(at: url)
+                            continue
+                        }
                         let isOffline = isManagedLink && (!targetExists || matchingPool?.isOnline == false)
                         installedButNotInIni.append(Scenery(
                             name: name,
@@ -184,8 +188,12 @@ final class SceneryService: Sendable {
                 let isManagedLink = !isSpecialIdx && isSymlink(at: path)
                 let dest = isManagedLink ? symlinkDestination(at: path) : nil
                 let targetExists = isSpecialIdx || fileManager.fileExists(atPath: path.path)
-                let matchingPool = poolByFolderName[item.folderName] ?? storagePools.first(where: { dest != nil && dest!.hasPrefix($0.url.path) })
+                let matchingPool = poolByFolderName[item.folderName] ?? storagePools.first(where: { SymlinkService.pathBelongsToPool(destination: dest, poolURL: $0.url) })
                 let sourceURL = sourceURLByFolderName[item.folderName] ?? dest.map { URL(fileURLWithPath: $0) }
+                if isManagedLink && !targetExists && matchingPool == nil {
+                    try? fileManager.removeItem(at: path)
+                    continue
+                }
                 let isOffline = isManagedLink && (!targetExists || matchingPool?.isOnline == false)
 
                 finalScenery.append(Scenery(
@@ -205,8 +213,9 @@ final class SceneryService: Sendable {
 
         // 4. Preserve known items from offline storage pools
         for known in knownScenery where !processedFolderNames.contains(known.folderName) {
-            let isPoolOffline = storagePools.first(where: { $0.id == known.storagePoolId })?.isOnline == false
-            if isPoolOffline || known.isOffline {
+            let pool = storagePools.first(where: { $0.id == known.storagePoolId })
+            let isPoolOffline = pool?.isOnline == false
+            if isPoolOffline || (known.isOffline && pool != nil) {
                 var offlineItem = known
                 offlineItem.isOffline = true
                 offlineItem.isEnabled = false

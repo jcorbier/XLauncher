@@ -237,6 +237,55 @@ final class SymlinkService: Sendable {
         return repaired.sorted()
     }
 
+    /// Checks whether a symlink destination path points into a given storage pool URL,
+    /// accounting for path resolution differences (e.g. /var vs /private/var on macOS).
+    static func pathBelongsToPool(destination: String?, poolURL: URL) -> Bool {
+        guard let destination = destination else { return false }
+        let poolPath = poolURL.path
+        if destination == poolPath || destination.hasPrefix(poolPath.hasSuffix("/") ? poolPath : poolPath + "/") {
+            return true
+        }
+
+        // Fast normalization: macOS /var vs /private/var, /tmp vs /private/tmp, etc.
+        let normDest = normalizePrivatePrefix(destination)
+        let normPool = normalizePrivatePrefix(poolPath)
+        if normDest == normPool || normDest.hasPrefix(normPool.hasSuffix("/") ? normPool : normPool + "/") {
+            return true
+        }
+
+        // Only perform canonical symlink resolution if the target destination actually exists on disk
+        // to avoid blocking on unmounted or offline volumes.
+        if FileManager.default.fileExists(atPath: destination) {
+            let canonicalDest = URL(fileURLWithPath: destination).resolvingSymlinksInPath().path
+            let canonicalPool = poolURL.resolvingSymlinksInPath().path
+            return canonicalDest == canonicalPool || canonicalDest.hasPrefix(canonicalPool.hasSuffix("/") ? canonicalPool : canonicalPool + "/")
+        }
+
+        return false
+    }
+
+    private static func normalizePrivatePrefix(_ path: String) -> String {
+        if path.hasPrefix("/private/") {
+            return String(path.dropFirst("/private".count))
+        }
+        return path
+    }
+
+    /// Removes any symbolic links in targetFolder whose destination resides within poolURL.
+    func unlinkPool(at poolURL: URL, in targetFolder: URL) {
+        guard fileManager.fileExists(atPath: targetFolder.path),
+              let contents = try? fileManager.contentsOfDirectory(at: targetFolder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else {
+            return
+        }
+        for item in contents {
+            if isSymlink(at: item),
+               let dest = symlinkDestination(at: item),
+               SymlinkService.pathBelongsToPool(destination: dest, poolURL: poolURL) {
+                try? fileManager.removeItem(at: item)
+            }
+        }
+    }
+
     // MARK: - Plugins
 
     func scanPlugins(dataFolder: URL, targetFolder: URL) throws -> [Plugin] {
@@ -287,7 +336,7 @@ final class SymlinkService: Sendable {
             }
         }
 
-        // Discover any existing symlinks in targetFolder pointing to offline pools or whose targets are missing
+        // Discover any existing symlinks in targetFolder pointing to offline pools
         if fileManager.fileExists(atPath: targetFolder.path),
            let targetContents = try? fileManager.contentsOfDirectory(at: targetFolder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
             for linkURL in targetContents {
@@ -296,18 +345,22 @@ final class SymlinkService: Sendable {
                     guard !scannedNames.contains(folderName) else { continue }
                     let dest = symlinkDestination(at: linkURL)
                     let targetExists = fileManager.fileExists(atPath: linkURL.path)
-                    let matchingPool = storagePools.first(where: { dest != nil && dest!.hasPrefix($0.url.path) })
-                    if !targetExists || matchingPool?.isOnline == false {
-                        scannedNames.insert(folderName)
-                        list.append(Plugin(
-                            name: folderName,
-                            isEnabled: false,
-                            folderName: folderName,
-                            storagePoolId: matchingPool?.id,
-                            storagePoolName: matchingPool?.name,
-                            sourceURL: dest.map { URL(fileURLWithPath: $0) },
-                            isOffline: true
-                        ))
+                    let matchingPool = storagePools.first(where: { SymlinkService.pathBelongsToPool(destination: dest, poolURL: $0.url) })
+                    if let matchingPool = matchingPool {
+                        if !targetExists || !matchingPool.isOnline {
+                            scannedNames.insert(folderName)
+                            list.append(Plugin(
+                                name: folderName,
+                                isEnabled: false,
+                                folderName: folderName,
+                                storagePoolId: matchingPool.id,
+                                storagePoolName: matchingPool.name,
+                                sourceURL: dest.map { URL(fileURLWithPath: $0) },
+                                isOffline: true
+                            ))
+                        }
+                    } else if !targetExists {
+                        try? fileManager.removeItem(at: linkURL)
                     }
                 }
             }
@@ -315,8 +368,9 @@ final class SymlinkService: Sendable {
 
         // Preserve known items from offline storage pools
         for known in knownPlugins where !scannedNames.contains(known.folderName) {
-            let isPoolOffline = storagePools.first(where: { $0.id == known.storagePoolId })?.isOnline == false
-            if isPoolOffline || known.isOffline {
+            let pool = storagePools.first(where: { $0.id == known.storagePoolId })
+            let isPoolOffline = pool?.isOnline == false
+            if isPoolOffline || (known.isOffline && pool != nil) {
                 var offlineItem = known
                 offlineItem.isOffline = true
                 offlineItem.isEnabled = false
@@ -395,7 +449,7 @@ final class SymlinkService: Sendable {
             }
         }
 
-        // Discover any existing symlinks in targetFolder pointing to offline pools or whose targets are missing
+        // Discover any existing symlinks in targetFolder pointing to offline pools
         if fileManager.fileExists(atPath: targetFolder.path),
            let targetContents = try? fileManager.contentsOfDirectory(at: targetFolder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
             for linkURL in targetContents {
@@ -404,18 +458,22 @@ final class SymlinkService: Sendable {
                     guard !scannedNames.contains(folderName) else { continue }
                     let dest = symlinkDestination(at: linkURL)
                     let targetExists = fileManager.fileExists(atPath: linkURL.path)
-                    let matchingPool = storagePools.first(where: { dest != nil && dest!.hasPrefix($0.url.path) })
-                    if !targetExists || matchingPool?.isOnline == false {
-                        scannedNames.insert(folderName)
-                        list.append(Aircraft(
-                            name: folderName,
-                            isEnabled: false,
-                            folderName: folderName,
-                            storagePoolId: matchingPool?.id,
-                            storagePoolName: matchingPool?.name,
-                            sourceURL: dest.map { URL(fileURLWithPath: $0) },
-                            isOffline: true
-                        ))
+                    let matchingPool = storagePools.first(where: { SymlinkService.pathBelongsToPool(destination: dest, poolURL: $0.url) })
+                    if let matchingPool = matchingPool {
+                        if !targetExists || !matchingPool.isOnline {
+                            scannedNames.insert(folderName)
+                            list.append(Aircraft(
+                                name: folderName,
+                                isEnabled: false,
+                                folderName: folderName,
+                                storagePoolId: matchingPool.id,
+                                storagePoolName: matchingPool.name,
+                                sourceURL: dest.map { URL(fileURLWithPath: $0) },
+                                isOffline: true
+                            ))
+                        }
+                    } else if !targetExists {
+                        try? fileManager.removeItem(at: linkURL)
                     }
                 }
             }
@@ -423,8 +481,9 @@ final class SymlinkService: Sendable {
 
         // Preserve known items from offline storage pools
         for known in knownAircraft where !scannedNames.contains(known.folderName) {
-            let isPoolOffline = storagePools.first(where: { $0.id == known.storagePoolId })?.isOnline == false
-            if isPoolOffline || known.isOffline {
+            let pool = storagePools.first(where: { $0.id == known.storagePoolId })
+            let isPoolOffline = pool?.isOnline == false
+            if isPoolOffline || (known.isOffline && pool != nil) {
                 var offlineItem = known
                 offlineItem.isOffline = true
                 offlineItem.isEnabled = false
@@ -534,7 +593,7 @@ final class SymlinkService: Sendable {
             }
         }
 
-        // Discover any existing symlinks in targetFolder pointing to offline pools or whose targets are missing
+        // Discover any existing symlinks in targetFolder pointing to offline pools
         if let targetFolder = targetFolder, fileManager.fileExists(atPath: targetFolder.path),
            let targetContents = try? fileManager.contentsOfDirectory(at: targetFolder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
             for linkURL in targetContents {
@@ -543,19 +602,23 @@ final class SymlinkService: Sendable {
                     guard !scannedNames.contains(folderName) else { continue }
                     let dest = symlinkDestination(at: linkURL)
                     let targetExists = fileManager.fileExists(atPath: linkURL.path)
-                    let matchingPool = storagePools.first(where: { dest != nil && dest!.hasPrefix($0.url.path) })
-                    if !targetExists || matchingPool?.isOnline == false {
-                        scannedNames.insert(folderName)
-                        list.append(LuaScript(
-                            name: folderName,
-                            isEnabled: false,
-                            folderName: folderName,
-                            isDirectory: false,
-                            storagePoolId: matchingPool?.id,
-                            storagePoolName: matchingPool?.name,
-                            sourceURL: dest.map { URL(fileURLWithPath: $0) },
-                            isOffline: true
-                        ))
+                    let matchingPool = storagePools.first(where: { SymlinkService.pathBelongsToPool(destination: dest, poolURL: $0.url) })
+                    if let matchingPool = matchingPool {
+                        if !targetExists || !matchingPool.isOnline {
+                            scannedNames.insert(folderName)
+                            list.append(LuaScript(
+                                name: folderName,
+                                isEnabled: false,
+                                folderName: folderName,
+                                isDirectory: false,
+                                storagePoolId: matchingPool.id,
+                                storagePoolName: matchingPool.name,
+                                sourceURL: dest.map { URL(fileURLWithPath: $0) },
+                                isOffline: true
+                            ))
+                        }
+                    } else if !targetExists {
+                        try? fileManager.removeItem(at: linkURL)
                     }
                 }
             }
@@ -563,8 +626,9 @@ final class SymlinkService: Sendable {
 
         // Preserve known items from offline storage pools
         for known in knownScripts where !scannedNames.contains(known.folderName) {
-            let isPoolOffline = storagePools.first(where: { $0.id == known.storagePoolId })?.isOnline == false
-            if isPoolOffline || known.isOffline {
+            let pool = storagePools.first(where: { $0.id == known.storagePoolId })
+            let isPoolOffline = pool?.isOnline == false
+            if isPoolOffline || (known.isOffline && pool != nil) {
                 var offlineItem = known
                 offlineItem.isOffline = true
                 offlineItem.isEnabled = false
