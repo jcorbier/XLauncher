@@ -61,9 +61,6 @@ struct PluginListView: View {
         } message: { item in
             Text("Are you sure you want to delete '\(item.name)'?\n\nThis will permanently delete the files from your Central Data Folder ('Plugins/\(item.folderName)'), unlink it from X-Plane, and remove it from all profiles.\n\nThis action cannot be undone.")
         }
-        .onAppear {
-            pluginManager.handleVolumeChange()
-        }
     }
 }
 

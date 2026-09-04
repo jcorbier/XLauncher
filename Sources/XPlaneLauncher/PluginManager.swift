@@ -609,44 +609,56 @@ class PluginManager {
 
     func isPluginOffline(_ plugin: Plugin) -> Bool {
         if plugin.isOffline { return true }
-        if let poolId = plugin.storagePoolId, let pool = storagePools.first(where: { $0.id == poolId }), !pool.isOnline {
+        if let poolId = plugin.storagePoolId {
+            if let pool = storagePools.first(where: { $0.id == poolId }) {
+                return !pool.isOnline
+            }
             return true
         }
-        if let sourceURL = plugin.sourceURL, !FileManager.default.fileExists(atPath: sourceURL.path) {
-            return true
+        if let sourceURL = plugin.sourceURL {
+            return !FileManager.default.fileExists(atPath: sourceURL.path)
         }
         return false
     }
 
     func isSceneryOffline(_ item: Scenery) -> Bool {
         if item.isOffline { return true }
-        if let poolId = item.storagePoolId, let pool = storagePools.first(where: { $0.id == poolId }), !pool.isOnline {
+        if let poolId = item.storagePoolId {
+            if let pool = storagePools.first(where: { $0.id == poolId }) {
+                return !pool.isOnline
+            }
             return true
         }
-        if let sourceURL = item.sourceURL, !FileManager.default.fileExists(atPath: sourceURL.path) {
-            return true
+        if let sourceURL = item.sourceURL {
+            return !FileManager.default.fileExists(atPath: sourceURL.path)
         }
         return false
     }
 
     func isAircraftOffline(_ item: Aircraft) -> Bool {
         if item.isOffline { return true }
-        if let poolId = item.storagePoolId, let pool = storagePools.first(where: { $0.id == poolId }), !pool.isOnline {
+        if let poolId = item.storagePoolId {
+            if let pool = storagePools.first(where: { $0.id == poolId }) {
+                return !pool.isOnline
+            }
             return true
         }
-        if let sourceURL = item.sourceURL, !FileManager.default.fileExists(atPath: sourceURL.path) {
-            return true
+        if let sourceURL = item.sourceURL {
+            return !FileManager.default.fileExists(atPath: sourceURL.path)
         }
         return false
     }
 
     func isLuaScriptOffline(_ item: LuaScript) -> Bool {
         if item.isOffline { return true }
-        if let poolId = item.storagePoolId, let pool = storagePools.first(where: { $0.id == poolId }), !pool.isOnline {
+        if let poolId = item.storagePoolId {
+            if let pool = storagePools.first(where: { $0.id == poolId }) {
+                return !pool.isOnline
+            }
             return true
         }
-        if let sourceURL = item.sourceURL, !FileManager.default.fileExists(atPath: sourceURL.path) {
-            return true
+        if let sourceURL = item.sourceURL {
+            return !FileManager.default.fileExists(atPath: sourceURL.path)
         }
         return false
     }
