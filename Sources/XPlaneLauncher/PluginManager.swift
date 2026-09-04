@@ -46,6 +46,7 @@ class PluginManager {
     private let storagePoolService = StoragePoolService.shared
     private let diagnosticsService = AddonDiagnosticsService.shared
     private let diskUsageService = DiskUsageService.shared
+    private let categorizationService = AddonCategorizationService.shared
 
     var diagnosticsReport: DiagnosticsReport?
     var isRunningDiagnostics: Bool = false
@@ -54,6 +55,8 @@ class PluginManager {
     var isScanningDiskUsage: Bool = false
     var diskUsageScanProgress: Double = 0.0
     var diskUsageScanStatus: String = ""
+
+    var addonMetadata: [String: AddonCustomMetadata] = [:]
 
     private let defaults = UserDefaults.standard
     private var isLoading = true
@@ -337,6 +340,7 @@ class PluginManager {
     init() {
         self.storagePools = storagePoolService.loadStoragePools()
         ensureLauncherDataDirectories()
+        loadAddonMetadata()
 
         // Load profiles & migrate legacy shellScriptPath if present
         var loadedProfiles = profileService.loadProfiles()
@@ -728,6 +732,85 @@ class PluginManager {
         try await diskUsageService.deleteItem(at: item.url)
         rescanAll()
         scanDiskUsage()
+    }
+
+    // MARK: - Add-on Categorization & Custom Tagging
+
+    private func loadAddonMetadata() {
+        if let data = defaults.data(forKey: .addonMetadata),
+           let decoded = try? JSONDecoder().decode([String: AddonCustomMetadata].self, from: data) {
+            self.addonMetadata = decoded
+        }
+    }
+
+    private func saveAddonMetadata() {
+        if let encoded = try? JSONEncoder().encode(addonMetadata) {
+            defaults.set(encoded, forKey: .addonMetadata)
+        }
+    }
+
+    func category(for aircraft: Aircraft) -> AircraftCategory {
+        let key = "aircraft:\(aircraft.folderName)"
+        if let custom = addonMetadata[key]?.customCategory,
+           let cat = AircraftCategory(rawValue: custom) {
+            return cat
+        }
+        return categorizationService.detectAircraftCategory(
+            name: aircraft.name,
+            folderName: aircraft.folderName,
+            folderURL: aircraft.sourceURL
+        )
+    }
+
+    func category(for scenery: Scenery) -> SceneryTypeCategory {
+        let key = "scenery:\(scenery.folderName)"
+        if let custom = addonMetadata[key]?.customCategory,
+           let cat = SceneryTypeCategory(rawValue: custom) {
+            return cat
+        }
+        return categorizationService.detectSceneryCategory(
+            name: scenery.name,
+            folderName: scenery.folderName,
+            folderURL: scenery.sourceURL
+        )
+    }
+
+    func category(for plugin: Plugin) -> PluginTypeCategory {
+        let key = "plugin:\(plugin.folderName)"
+        if let custom = addonMetadata[key]?.customCategory,
+           let cat = PluginTypeCategory(rawValue: custom) {
+            return cat
+        }
+        return categorizationService.detectPluginCategory(
+            name: plugin.name,
+            folderName: plugin.folderName
+        )
+    }
+
+    func tags(for itemKey: String) -> [String] {
+        addonMetadata[itemKey]?.tags ?? []
+    }
+
+    func setTags(_ tags: [String], for itemKey: String) {
+        var meta = addonMetadata[itemKey] ?? AddonCustomMetadata()
+        meta.tags = tags
+        addonMetadata[itemKey] = meta
+        saveAddonMetadata()
+    }
+
+    func setCustomCategory(_ category: String?, for itemKey: String) {
+        var meta = addonMetadata[itemKey] ?? AddonCustomMetadata()
+        meta.customCategory = category
+        addonMetadata[itemKey] = meta
+        saveAddonMetadata()
+    }
+
+    func allKnownTags(for kindPrefix: String) -> [String] {
+        var tagSet = Set<String>()
+        for (key, meta) in addonMetadata where key.hasPrefix(kindPrefix) {
+            tagSet.formUnion(meta.tags)
+        }
+        return Array(tagSet).sorted()
     }
 
     func isPluginOffline(_ plugin: Plugin) -> Bool {

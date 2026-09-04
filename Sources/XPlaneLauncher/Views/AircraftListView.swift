@@ -25,25 +25,117 @@ import SwiftUI
 struct AircraftListView: View {
     @Environment(PluginManager.self) var pluginManager
     @State private var itemToDelete: PluginManager.Aircraft? = nil
+    @State private var taggingAircraft: PluginManager.Aircraft? = nil
+    @State private var searchText: String = ""
+    @State private var selectedCategory: AircraftCategory? = nil
+    @State private var selectedTag: String = "All"
 
-    var body: some View {
-        List {
-            ForEach(pluginManager.aircraft) { item in
-                AircraftRow(aircraft: item, onDelete: {
-                    itemToDelete = item
-                })
-            }
+    private var allKnownTags: [String] {
+        ["All"] + pluginManager.allKnownTags(for: "aircraft:")
+    }
 
-            if pluginManager.aircraft.isEmpty {
-                ContentUnavailableView {
-                    Label("No Aircraft Found", systemImage: "airplane")
-                } description: {
-                    Text("Check your Central Data Folder ('Aircraft' subfolder).")
-                }
+    private var filteredAircraft: [PluginManager.Aircraft] {
+        var list = pluginManager.aircraft
+
+        if let cat = selectedCategory {
+            list = list.filter { pluginManager.category(for: $0) == cat }
+        }
+
+        if selectedTag != "All" {
+            list = list.filter {
+                let tags = pluginManager.tags(for: "aircraft:\($0.folderName)")
+                return tags.contains(selectedTag)
             }
         }
-        .listStyle(.inset)
-        .scrollContentBackground(.hidden)
+
+        if !searchText.trimmingCharacters(in: .whitespaces).isEmpty {
+            let q = searchText.lowercased()
+            list = list.filter { item in
+                let catName = pluginManager.category(for: item).rawValue.lowercased()
+                let tags = pluginManager.tags(for: "aircraft:\(item.folderName)").map { $0.lowercased() }
+                return item.name.lowercased().contains(q) ||
+                       item.folderName.lowercased().contains(q) ||
+                       catName.contains(q) ||
+                       tags.contains(where: { $0.contains(q) })
+            }
+        }
+
+        return list
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Filter & Search Bar
+            HStack(spacing: 12) {
+                HStack {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.secondary)
+                    TextField("Search aircraft, category, tags...", text: $searchText)
+                        .textFieldStyle(.plain)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(Color(NSColor.controlBackgroundColor))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .frame(maxWidth: 260)
+
+                Picker("Category", selection: $selectedCategory) {
+                    Text("All Categories").tag(AircraftCategory?.none)
+                    Divider()
+                    ForEach(AircraftCategory.allCases) { cat in
+                        Text(cat.rawValue).tag(AircraftCategory?.some(cat))
+                    }
+                }
+                .frame(width: 170)
+
+                if allKnownTags.count > 1 {
+                    Picker("Tag", selection: $selectedTag) {
+                        ForEach(allKnownTags, id: \.self) { tag in
+                            Text(tag == "All" ? "All Tags" : tag).tag(tag)
+                        }
+                    }
+                    .frame(width: 140)
+                }
+
+                Spacer()
+
+                if selectedCategory != nil || selectedTag != "All" || !searchText.isEmpty {
+                    Button("Reset") {
+                        selectedCategory = nil
+                        selectedTag = "All"
+                        searchText = ""
+                    }
+                    .buttonStyle(.link)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(Color(NSColor.windowBackgroundColor))
+
+            Divider()
+
+            List {
+                ForEach(filteredAircraft) { item in
+                    AircraftRow(
+                        aircraft: item,
+                        onDelete: { itemToDelete = item },
+                        onEditTags: { taggingAircraft = item }
+                    )
+                }
+
+                if pluginManager.aircraft.isEmpty {
+                    ContentUnavailableView {
+                        Label("No Aircraft Found", systemImage: "airplane")
+                    } description: {
+                        Text("Check your Central Data Folder ('Aircraft' subfolder).")
+                    }
+                } else if filteredAircraft.isEmpty {
+                    ContentUnavailableView("No Matching Aircraft", systemImage: "magnifyingglass", description: Text("Try adjusting your search or category filter."))
+                }
+            }
+            .listStyle(.inset)
+            .scrollContentBackground(.hidden)
+        }
         .alert(
             "Delete Aircraft",
             isPresented: Binding(
@@ -59,6 +151,19 @@ struct AircraftListView: View {
         } message: { item in
             Text("Are you sure you want to delete '\(item.name)'?\n\nThis will permanently delete the files from your Central Data Folder ('Aircraft/\(item.folderName)'), unlink it from X-Plane, and remove it from all profiles.\n\nThis action cannot be undone.")
         }
+        .sheet(item: $taggingAircraft) { item in
+            let cat = pluginManager.category(for: item)
+            let itemKey = "aircraft:\(item.folderName)"
+            EditAddonTagsSheet(
+                title: item.name,
+                itemKey: itemKey,
+                detectedCategory: cat.rawValue,
+                availableCategories: AircraftCategory.allCases.map { $0.rawValue },
+                kindPrefix: "aircraft:",
+                currentCustomCategory: pluginManager.addonMetadata[itemKey]?.customCategory,
+                currentTags: pluginManager.tags(for: itemKey)
+            )
+        }
     }
 }
 
@@ -66,9 +171,18 @@ struct AircraftRow: View {
     @Environment(PluginManager.self) var pluginManager
     let aircraft: PluginManager.Aircraft
     var onDelete: (() -> Void)? = nil
+    var onEditTags: (() -> Void)? = nil
 
     private var isOffline: Bool {
         pluginManager.isAircraftOffline(aircraft)
+    }
+
+    private var category: AircraftCategory {
+        pluginManager.category(for: aircraft)
+    }
+
+    private var tags: [String] {
+        pluginManager.tags(for: "aircraft:\(aircraft.folderName)")
     }
 
     var body: some View {
@@ -80,7 +194,7 @@ struct AircraftRow: View {
                 .background(aircraft.isEnabled && !isOffline ? Color.green.opacity(0.12) : Color.secondary.opacity(0.12))
                 .clipShape(RoundedRectangle(cornerRadius: 6))
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(aircraft.name)
                         .font(.body)
@@ -111,9 +225,35 @@ struct AircraftRow: View {
                     }
                 }
 
-                Text(aircraft.folderName)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    Text(aircraft.folderName)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    // Category badge
+                    HStack(spacing: 3) {
+                        Image(systemName: category.systemImage)
+                            .font(.system(size: 9))
+                        Text(category.rawValue)
+                            .font(.system(size: 9, weight: .medium))
+                    }
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1.5)
+                    .background(category.color.opacity(0.12))
+                    .foregroundStyle(category.color)
+                    .clipShape(Capsule())
+
+                    // Tag chips
+                    ForEach(tags, id: \.self) { tag in
+                        Text(tag)
+                            .font(.system(size: 9, weight: .medium))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1.5)
+                            .background(Color.secondary.opacity(0.12))
+                            .foregroundStyle(.secondary)
+                            .clipShape(Capsule())
+                    }
+                }
             }
 
             Spacer()
@@ -133,6 +273,15 @@ struct AircraftRow: View {
                 .background(Color.orange.opacity(0.12))
                 .clipShape(Capsule())
             }
+
+            // Tag Edit Button
+            Button(action: { onEditTags?() }) {
+                Image(systemName: tags.isEmpty ? "tag" : "tag.fill")
+                    .font(.caption)
+                    .foregroundStyle(tags.isEmpty ? Color.secondary : Color.accentColor)
+            }
+            .buttonStyle(.borderless)
+            .help("Edit Category & Tags")
 
             if isOffline {
                 Text("Offline")
@@ -171,6 +320,14 @@ struct AircraftRow: View {
                 .stroke(Color(NSColor.separatorColor), lineWidth: 0.5)
         )
         .contextMenu {
+            Button {
+                onEditTags?()
+            } label: {
+                Label("Edit Category & Tags...", systemImage: "tag")
+            }
+
+            Divider()
+
             if !isOffline {
                 Button(role: .destructive) {
                     onDelete?()

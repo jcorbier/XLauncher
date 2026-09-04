@@ -35,6 +35,7 @@ enum UserDefaultsKey: String, CaseIterable, Sendable {
     case selectedProfileId = "SelectedProfileId"
     case scriptEnvVars = "ScriptEnvVars"
     case sceneryGroups = "SceneryGroups"
+    case addonMetadata = "AddonCustomMetadata"
 
     // Feature Flags & CSL / Navdata
     case enableCSLSupport = "EnableCSLSupport"

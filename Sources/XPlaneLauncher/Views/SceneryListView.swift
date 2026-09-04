@@ -29,41 +29,130 @@ struct SceneryListView: View {
     @State private var isCreatingGroup = false
     @State private var newGroupName = ""
     @State private var itemToDelete: PluginManager.Scenery? = nil
+    @State private var taggingScenery: PluginManager.Scenery? = nil
+    @State private var searchText: String = ""
+    @State private var selectedCategory: SceneryTypeCategory? = nil
+    @State private var selectedTag: String = "All"
+
+    private var allKnownTags: [String] {
+        ["All"] + pluginManager.allKnownTags(for: "scenery:")
+    }
+
+    private var isFilterActive: Bool {
+        selectedCategory != nil || selectedTag != "All" || !searchText.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    private func matchesFilter(_ item: PluginManager.Scenery) -> Bool {
+        if let cat = selectedCategory, pluginManager.category(for: item) != cat {
+            return false
+        }
+        let tags = pluginManager.tags(for: "scenery:\(item.folderName)")
+        if selectedTag != "All", !tags.contains(selectedTag) {
+            return false
+        }
+        if !searchText.trimmingCharacters(in: .whitespaces).isEmpty {
+            let q = searchText.lowercased()
+            let catName = pluginManager.category(for: item).rawValue.lowercased()
+            let tagMatches = tags.contains(where: { $0.lowercased().contains(q) })
+            return item.name.lowercased().contains(q) ||
+                   item.folderName.lowercased().contains(q) ||
+                   catName.contains(q) ||
+                   tagMatches
+        }
+        return true
+    }
 
     var body: some View {
-        List(selection: $selection) {
-            ForEach(displayItems) { item in
-                switch item {
-                case .group(let group, let members):
-                    SceneryGroupSection(group: group, members: members, selection: selection, onDelete: {
-                        itemToDelete = $0
-                    }, onCreateGroup: {
-                        newGroupName = ""
-                        isCreatingGroup = true
-                    })
-                case .simple(let scenery):
-                    SceneryRow(item: scenery, selection: selection, onDelete: {
-                        itemToDelete = scenery
-                    }, onCreateGroup: {
-                        newGroupName = ""
-                        isCreatingGroup = true
-                    })
-                        .tag(scenery.id)
-                        .draggable(scenery.id.uuidString)
+        VStack(spacing: 0) {
+            // Filter & Search Bar
+            HStack(spacing: 12) {
+                HStack {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.secondary)
+                    TextField("Search scenery, category, tags...", text: $searchText)
+                        .textFieldStyle(.plain)
                 }
-            }
-            .onMove(perform: moveDisplayItems)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(Color(NSColor.controlBackgroundColor))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .frame(maxWidth: 260)
 
-            if pluginManager.scenery.isEmpty {
-                ContentUnavailableView {
-                    Label("No Scenery Found", systemImage: "map")
-                } description: {
-                    Text("Check your Central Data Folder ('Scenery' subfolder).")
+                Picker("Category", selection: $selectedCategory) {
+                    Text("All Categories").tag(SceneryTypeCategory?.none)
+                    Divider()
+                    ForEach(SceneryTypeCategory.allCases) { cat in
+                        Text(cat.rawValue).tag(SceneryTypeCategory?.some(cat))
+                    }
+                }
+                .frame(width: 170)
+
+                if allKnownTags.count > 1 {
+                    Picker("Tag", selection: $selectedTag) {
+                        ForEach(allKnownTags, id: \.self) { tag in
+                            Text(tag == "All" ? "All Tags" : tag).tag(tag)
+                        }
+                    }
+                    .frame(width: 140)
+                }
+
+                Spacer()
+
+                if isFilterActive {
+                    Button("Reset") {
+                        selectedCategory = nil
+                        selectedTag = "All"
+                        searchText = ""
+                    }
+                    .buttonStyle(.link)
                 }
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(Color(NSColor.windowBackgroundColor))
+
+            Divider()
+
+            List(selection: $selection) {
+                ForEach(displayItems) { item in
+                    switch item {
+                    case .group(let group, let members):
+                        SceneryGroupSection(group: group, members: members, selection: selection, onDelete: {
+                            itemToDelete = $0
+                        }, onCreateGroup: {
+                            newGroupName = ""
+                            isCreatingGroup = true
+                        }, onEditTags: {
+                            taggingScenery = $0
+                        })
+                    case .simple(let scenery):
+                        SceneryRow(item: scenery, selection: selection, onDelete: {
+                            itemToDelete = scenery
+                        }, onCreateGroup: {
+                            newGroupName = ""
+                            isCreatingGroup = true
+                        }, onEditTags: {
+                            taggingScenery = scenery
+                        })
+                            .tag(scenery.id)
+                            .draggable(scenery.id.uuidString)
+                    }
+                }
+                .onMove(perform: moveDisplayAction)
+
+                if pluginManager.scenery.isEmpty {
+                    ContentUnavailableView {
+                        Label("No Scenery Found", systemImage: "map")
+                    } description: {
+                        Text("Check your Central Data Folder ('Scenery' subfolder).")
+                    }
+                } else if displayItems.isEmpty {
+                    ContentUnavailableView("No Matching Scenery", systemImage: "magnifyingglass", description: Text("Try adjusting your search or category filter."))
+                }
+            }
+            .listStyle(.inset)
+            .scrollContentBackground(.hidden)
         }
-        .listStyle(.inset)
-        .scrollContentBackground(.hidden)
         .alert("New Group", isPresented: $isCreatingGroup) {
             TextField("Group Name", text: $newGroupName)
             Button("Cancel", role: .cancel) { }
@@ -87,6 +176,19 @@ struct SceneryListView: View {
             Button("Cancel", role: .cancel) { }
         } message: { item in
             Text("Are you sure you want to delete '\(item.name)'?\n\nThis will permanently delete the files from your Central Data Folder ('Scenery/\(item.folderName)'), unlink it from X-Plane, remove it from scenery_packs.ini, and remove it from all profiles.\n\nThis action cannot be undone.")
+        }
+        .sheet(item: $taggingScenery) { item in
+            let cat = pluginManager.category(for: item)
+            let itemKey = "scenery:\(item.folderName)"
+            EditAddonTagsSheet(
+                title: item.name,
+                itemKey: itemKey,
+                detectedCategory: cat.rawValue,
+                availableCategories: SceneryTypeCategory.allCases.map { $0.rawValue },
+                kindPrefix: "scenery:",
+                currentCustomCategory: pluginManager.addonMetadata[itemKey]?.customCategory,
+                currentTags: pluginManager.tags(for: itemKey)
+            )
         }
     }
 
@@ -112,16 +214,19 @@ struct SceneryListView: View {
             // Check if item belongs to a group
             if let group = pluginManager.sceneryGroups.first(where: { $0.childFolderNames.contains(item.folderName) }) {
                 if !processedGroups.contains(group.id) {
-                    // Start of a group
-                    // Gather all members from the pluginManager.scenery list that belong to this group
-                    // Note: We use the order from the main list to respect load order, filtering for this group's members
-                    let members = pluginManager.scenery.filter { group.childFolderNames.contains($0.folderName) }
-                    items.append(.group(group, members))
+                    var members = pluginManager.scenery.filter { group.childFolderNames.contains($0.folderName) }
+                    if isFilterActive {
+                        members = members.filter { matchesFilter($0) }
+                    }
+                    if !members.isEmpty {
+                        items.append(.group(group, members))
+                    }
                     processedGroups.insert(group.id)
                 }
-                // Else, already handled this group
             } else {
-                items.append(.simple(item))
+                if !isFilterActive || matchesFilter(item) {
+                    items.append(.simple(item))
+                }
             }
         }
         return items
@@ -135,6 +240,13 @@ struct SceneryListView: View {
 
         pluginManager.createGroup(name: newGroupName, with: selectedItems)
         selection.removeAll()
+    }
+
+    private var moveDisplayAction: ((IndexSet, Int) -> Void)? {
+        guard !isFilterActive else { return nil }
+        return { from, to in
+            moveDisplayItems(from: from, to: to)
+        }
     }
 
     func moveDisplayItems(from source: IndexSet, to destination: Int) {
@@ -163,6 +275,7 @@ struct SceneryGroupSection: View {
     let selection: Set<UUID>
     var onDelete: ((PluginManager.Scenery) -> Void)? = nil
     var onCreateGroup: (() -> Void)? = nil
+    var onEditTags: ((PluginManager.Scenery) -> Void)? = nil
 
     @State private var isRenaming = false
     @State private var renameText = ""
@@ -179,7 +292,9 @@ struct SceneryGroupSection: View {
             ForEach(members) { item in
                 SceneryRow(item: item, selection: selection, onDelete: {
                     onDelete?(item)
-                }, onCreateGroup: onCreateGroup)
+                }, onCreateGroup: onCreateGroup, onEditTags: {
+                    onEditTags?(item)
+                })
                     .padding(.leading, 8)
                     .tag(item.id)
                     .draggable(item.id.uuidString)
@@ -312,9 +427,18 @@ struct SceneryRow: View {
     let selection: Set<UUID>
     var onDelete: (() -> Void)? = nil
     var onCreateGroup: (() -> Void)? = nil
+    var onEditTags: (() -> Void)? = nil
 
     private var isOffline: Bool {
         pluginManager.isSceneryOffline(item)
+    }
+
+    private var category: SceneryTypeCategory {
+        pluginManager.category(for: item)
+    }
+
+    private var tags: [String] {
+        pluginManager.tags(for: "scenery:\(item.folderName)")
     }
 
     var body: some View {
@@ -326,7 +450,7 @@ struct SceneryRow: View {
                 .background(item.isEnabled && !isOffline ? Color.green.opacity(0.12) : Color.secondary.opacity(0.12))
                 .clipShape(RoundedRectangle(cornerRadius: 6))
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(item.name)
                         .font(.body)
@@ -357,9 +481,35 @@ struct SceneryRow: View {
                     }
                 }
 
-                Text(item.folderName)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    Text(item.folderName)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    // Category badge
+                    HStack(spacing: 3) {
+                        Image(systemName: category.systemImage)
+                            .font(.system(size: 9))
+                        Text(category.rawValue)
+                            .font(.system(size: 9, weight: .medium))
+                    }
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1.5)
+                    .background(category.color.opacity(0.12))
+                    .foregroundStyle(category.color)
+                    .clipShape(Capsule())
+
+                    // Tag chips
+                    ForEach(tags, id: \.self) { tag in
+                        Text(tag)
+                            .font(.system(size: 9, weight: .medium))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1.5)
+                            .background(Color.secondary.opacity(0.12))
+                            .foregroundStyle(.secondary)
+                            .clipShape(Capsule())
+                    }
+                }
             }
 
             Spacer()
@@ -379,6 +529,15 @@ struct SceneryRow: View {
                 .background(Color.orange.opacity(0.12))
                 .clipShape(Capsule())
             }
+
+            // Tag Edit Button
+            Button(action: { onEditTags?() }) {
+                Image(systemName: tags.isEmpty ? "tag" : "tag.fill")
+                    .font(.caption)
+                    .foregroundStyle(tags.isEmpty ? Color.secondary : Color.accentColor)
+            }
+            .buttonStyle(.borderless)
+            .help("Edit Category & Tags")
 
             if isOffline {
                 Text("Offline")
@@ -417,6 +576,14 @@ struct SceneryRow: View {
                 .stroke(Color(NSColor.separatorColor), lineWidth: 0.5)
         )
         .contextMenu {
+            Button {
+                onEditTags?()
+            } label: {
+                Label("Edit Category & Tags...", systemImage: "tag")
+            }
+
+            Divider()
+
             if !selection.isEmpty {
                 Button("Create Group from Selection...", systemImage: "folder.badge.plus") {
                     onCreateGroup?()
