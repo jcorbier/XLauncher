@@ -45,9 +45,15 @@ class PluginManager {
     private let launchService = LaunchService.shared
     private let storagePoolService = StoragePoolService.shared
     private let diagnosticsService = AddonDiagnosticsService.shared
+    private let diskUsageService = DiskUsageService.shared
 
     var diagnosticsReport: DiagnosticsReport?
     var isRunningDiagnostics: Bool = false
+
+    var diskUsageSummary: DiskUsageSummary?
+    var isScanningDiskUsage: Bool = false
+    var diskUsageScanProgress: Double = 0.0
+    var diskUsageScanStatus: String = ""
 
     private let defaults = UserDefaults.standard
     private var isLoading = true
@@ -668,6 +674,60 @@ class PluginManager {
             rescanAll()
             runDiagnostics()
         }
+    }
+
+    // MARK: - Disk Usage Analyzer Actions
+
+    @MainActor
+    func scanDiskUsage() {
+        guard !isScanningDiskUsage else { return }
+        isScanningDiskUsage = true
+        diskUsageScanProgress = 0.0
+        diskUsageScanStatus = "Initializing scan..."
+
+        let xpPath = self.xPlanePath
+        let pools = self.storagePools
+        let profiles = self.profiles
+
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let summary = await DiskUsageService.shared.analyzeDiskUsage(
+                xPlanePath: xpPath,
+                storagePools: pools,
+                profiles: profiles
+            ) { [weak self] progress, status in
+                Task { @MainActor [weak self] in
+                    self?.diskUsageScanProgress = progress
+                    self?.diskUsageScanStatus = status
+                }
+            }
+
+            await MainActor.run {
+                self?.diskUsageSummary = summary
+                self?.isScanningDiskUsage = false
+                self?.diskUsageScanStatus = "Complete"
+            }
+        }
+    }
+
+    @MainActor
+    func clearShaderCache() async throws {
+        guard let xpPath = xPlanePath else { return }
+        _ = try await diskUsageService.clearShaderCache(xPlanePath: xpPath)
+        scanDiskUsage()
+    }
+
+    @MainActor
+    func clearCrashReports() async throws {
+        guard let xpPath = xPlanePath else { return }
+        _ = try await diskUsageService.clearCrashReports(xPlanePath: xpPath)
+        scanDiskUsage()
+    }
+
+    @MainActor
+    func deleteDiskUsageItem(_ item: DiskUsageItem) async throws {
+        try await diskUsageService.deleteItem(at: item.url)
+        rescanAll()
+        scanDiskUsage()
     }
 
     func isPluginOffline(_ plugin: Plugin) -> Bool {

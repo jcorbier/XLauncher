@@ -31,6 +31,7 @@ struct DiagnosticsView: View {
     enum DiagnosticsMode: String, CaseIterable, Identifiable {
         case addonHealth = "Add-on Health"
         case xplaneLogs = "X-Plane Logs"
+        case diskUsage = "Disk Usage"
 
         var id: String { rawValue }
 
@@ -38,6 +39,7 @@ struct DiagnosticsView: View {
             switch self {
             case .addonHealth: return "cross.case"
             case .xplaneLogs: return "doc.text.magnifyingglass"
+            case .diskUsage: return "internaldrive"
             }
         }
     }
@@ -93,20 +95,7 @@ struct DiagnosticsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Diagnostics Sub-View Mode Switcher
-            HStack {
-                Picker("Diagnostics Mode", selection: $selectedMode) {
-                    ForEach(DiagnosticsMode.allCases) { mode in
-                        Label(mode.rawValue, systemImage: mode.systemImage)
-                            .tag(mode)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .frame(maxWidth: 340)
-            }
-            .padding(.vertical, 8)
-            .frame(maxWidth: .infinity)
-            .background(Color(NSColor.windowBackgroundColor))
+            modeTabBar
 
             Divider()
 
@@ -115,8 +104,68 @@ struct DiagnosticsView: View {
                 addonHealthView
             case .xplaneLogs:
                 XPlaneLogsView()
+            case .diskUsage:
+                DiskUsageView()
             }
         }
+    }
+
+    private var modeTabBar: some View {
+        HStack(spacing: 4) {
+            ForEach(DiagnosticsMode.allCases) { mode in
+                let isSelected = selectedMode == mode
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        selectedMode = mode
+                    }
+                } label: {
+                    HStack(spacing: 7) {
+                        Image(systemName: mode.systemImage)
+                            .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
+
+                        Text(mode.rawValue)
+                            .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
+
+                        if mode == .addonHealth, let report = report, !report.isClean {
+                            let isCrit = report.criticalCount > 0
+                            Text("\(report.issues.count)")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1)
+                                .background(isCrit ? Color.red : Color.orange)
+                                .clipShape(Capsule())
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 6)
+                    .background(
+                        ZStack {
+                            if isSelected {
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(Color(NSColor.controlAccentColor))
+                                    .shadow(color: Color.black.opacity(0.12), radius: 2, y: 1)
+                            }
+                        }
+                    )
+                    .foregroundStyle(isSelected ? Color.white : Color.primary)
+                    .contentShape(RoundedRectangle(cornerRadius: 6))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(3)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color(NSColor.controlBackgroundColor))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.secondary.opacity(0.2), lineWidth: 0.5)
+                )
+        )
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity)
+        .background(Color(NSColor.windowBackgroundColor))
     }
 
     @ViewBuilder
