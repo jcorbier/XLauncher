@@ -123,36 +123,43 @@ struct WelcomeView: View {
                     FeatureRow(
                         icon: "folder.badge.gearshape",
                         color: .blue,
-                        title: "Central Data Folder",
-                        description: "Keep your add-ons organized in one place outside X-Plane. Subfolders for Plugins, Scenery, Aircraft, and LuaScripts are managed automatically."
+                        title: "Profiles & Storage Pools",
+                        description: "Organize add-ons across multiple disks (Storage Pools) and switch profiles seamlessly. The launcher links only active add-ons into X-Plane on demand."
                     )
 
                     FeatureRow(
-                        icon: "arrow.triangle.swap",
-                        color: .green,
-                        title: "Profiles & Symlinks",
-                        description: "Create profiles for different flying scenarios (e.g. VATSIM, Offline). The launcher dynamically links only active items into your simulator."
+                        icon: "tag",
+                        color: .indigo,
+                        title: "Categorization & Custom Tagging",
+                        description: "Automatically categorize aircraft, scenery, and plugins with smart heuristics. Add custom tags, override categories, and filter your library instantly."
+                    )
+
+                    FeatureRow(
+                        icon: "stethoscope",
+                        color: .red,
+                        title: "Add-on Diagnostics & Log Analyzer",
+                        description: "Detect missing scenery libraries, verify Apple Silicon (arm64) binary compatibility, diagnose crashes from Log.txt, and trace FlyWithLua/SASL errors."
+                    )
+
+                    FeatureRow(
+                        icon: "internaldrive",
+                        color: .mint,
+                        title: "Disk Usage Analyzer & Cache Cleanup",
+                        description: "Inspect storage usage across all add-ons and storage pools, identify largest space hogs and orphan add-ons, and clear shader/crash caches with one click."
                     )
 
                     FeatureRow(
                         icon: "square.and.arrow.down",
                         color: .purple,
                         title: "Add-on Installation & Updates",
-                        description: "Drag & drop add-ons to install, manage updates with SkunkCrafts & X-Updater, and cleanly delete unwanted packages."
+                        description: "Drag & drop add-ons to install, manage updates with SkunkCrafts & X-Updater, and cleanly delete unwanted packages with automated symlink cleanup."
                     )
 
                     FeatureRow(
                         icon: "airplane",
                         color: .orange,
-                        title: "X-CSL Multiplayer Models",
-                        description: "Install and manage CSL model matching packages for online networks with optional modern X-Plane 12 parameterized lighting."
-                    )
-
-                    FeatureRow(
-                        icon: "point.topleft.down.to.point.bottomright.curvepath",
-                        color: .teal,
-                        title: "Navigation Data (Navigraph)",
-                        description: "Download and update official AIRAC cycles directly from Navigraph for X-Plane 12 and supported add-on aircraft."
+                        title: "CSL Models & Navigation Data",
+                        description: "Manage X-CSL multiplayer models with realistic X-Plane 12 lighting, and download official AIRAC cycles directly from Navigraph."
                     )
                 }
                 .padding(.horizontal, 20)

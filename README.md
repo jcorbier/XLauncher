@@ -9,14 +9,17 @@ X-Plane Launcher lets you organize your add-ons in a central folder, create dist
 - **Profiles & Profile Manager**: Save and switch configurations across aircraft, plugins, scenery packs, and FlyWithLua scripts. Manage, duplicate, compare, and import/export profiles from a dedicated Profile Manager window.
 - **Multiple Storage Folders (Storage Pools)**: Store add-ons across multiple drives or folders (e.g. fast local SSD for aircraft/plugins, large external disk for scenery). If an external drive is unmounted, add-ons remain safely tracked.
 - **Clean symlink management**: Keep your X-Plane directory tidy. Add-ons stay in your storage folders and are symlinked into X-Plane on demand.
+- **Add-on Categorization & Custom Tagging**: Automatically classify aircraft (Airliners, GA, Military, Helicopters), scenery (Airports, Mesh/Ortho, Landmarks, Libraries), and plugins with smart heuristics. Assign custom tags, override categories, and quickly filter or search your add-on library.
+- **Add-on Diagnostics & Health Checks**: Verify scenery library dependencies (OpenSceneryX, MisterX, SAM, HandyObjects, etc.), inspect plugin binary Mach-O architectures for Apple Silicon (`arm64`) vs Intel compatibility, find broken symlinks, and apply one-click fixes.
+- **Disk Usage Analyzer & Cache Cleanup**: Analyze disk space distribution across categories and storage pools, detect orphan packages, identify top space hogs, and clear shader and crash caches with a single click.
+- **X-Plane Log Analyzer**: Built-in viewer and diagnostic engine for `Log.txt`. Inspect crashes, find missing scenery objects and textures, track down FlyWithLua/SASL errors, profile startup loading times, and browse archived sessions.
 - **Scenery pack ordering & grouping**: Reorder `scenery_packs.ini` with drag-and-drop, enable or disable packs without deleting files, and organize scenery into groups.
 - **Smart add-on installer & deletion**: Drag and drop `.zip` archives, folders, or `.lua` scripts to install add-ons to any configured storage pool, or delete them directly from the UI with automated profile cleanup and unlinking.
-- **X-Plane Log Analyzer**: Built-in viewer and diagnostic engine for `Log.txt`. Inspect crashes, find missing scenery objects and textures, track down FlyWithLua/SASL errors, profile startup loading times, and browse archived sessions.
 - **Add-on updates**: Check and install updates for add-ons supported by SkunkCrafts Updater or X-Updater directly from the UI.
 - **In-app self-updates**: Check for new versions, review release notes, and install updates in-place with automatic restart.
 - **Navigation data updates**: Download and update AIRAC cycles directly from Navigraph for X-Plane 12 and supported aircrafts.
 - **CSL packages & lights**: Manage CSL model matching packages, apply lighting intensity presets (high/medium/low), or restore original lights.
-- **Pre-launch scripts**: Run custom shell scripts with profile-specific environment variables before starting X-Plane (e.g. setting up Hoppie ACARS).
+- **Pre-launch scripts & launch arguments**: Run custom shell scripts with profile-specific environment variables before starting X-Plane, and configure global command-line launch arguments in Settings.
 
 ## Requirements
 

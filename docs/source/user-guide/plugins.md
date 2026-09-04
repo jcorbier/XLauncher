@@ -30,5 +30,7 @@ Keep default X-Plane plugins (such as `PluginAdmin`) in `<X-Plane 12>/Resources/
 
 - **Enable a plugin**: Creates a symbolic link in `<X-Plane 12>/Resources/plugins/<PluginName>`.
 - **Disable a plugin**: Removes the symbolic link from `Resources/plugins/`.
+- **Filtering and Search**: Use the search and filter bar at the top to filter by name, category (Utilities, Traffic, Weather, Sound), or custom tags.
+- **Categorization & Custom Tags**: Click the tag icon on any plugin row (or right-click and choose **Edit Category & Tags...**) to assign custom tags or override its detected category.
 - **Settings & Data**: Because symlinks point directly to the central folder, plugins that write configuration files inside their own directories retain their settings.
 - **Delete a plugin**: Right-click the plugin row and select **Delete Add-on...** to permanently delete the plugin from your Central Data Folder and purge it from all profiles after confirmation.

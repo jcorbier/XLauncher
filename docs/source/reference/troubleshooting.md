@@ -36,12 +36,18 @@
 
 ### Restoring Original CSL Lighting
 - Toggle **Apply modern X-Plane 12 lighting** off in **Settings > X-CSL Models**.
-- X-Plane Launcher retains `.bak` files of the original `.obj` models. You can also click **Reinstall** on any package in the **CSL** tab to redownload stock model files.
+### Missing Scenery Libraries or Plugins Not Loading on Apple Silicon
+- Open **Diagnostics** from the sidebar (or press <kbd>⇧⌘D</kbd>).
+- In the **Add-on Integrity** tab, the launcher automatically scans for:
+  - Missing community scenery libraries (OpenSceneryX, MisterX, SAM, etc.) and provides direct download links or one-click disable actions.
+  - Plugin binaries that lack native Apple Silicon (`arm64`) slices on M-series Macs.
+  - Broken symlinks pointing to nonexistent files.
 
 ---
 
-## Diagnostic Logs
+## Diagnostic Tools & Logs
 
-- **X-Plane Log Analyzer**: Open the built-in simulator log analyzer by choosing **File > X-Plane Logs...** or pressing <kbd>⇧⌘L</kbd> (or selecting **X-Plane Logs** in the sidebar). It categorizes crashes, missing scenery assets, SASL/Lua script errors, and loading bottlenecks from `Log.txt`.
+- **Add-on & System Diagnostics**: Open **Diagnostics** from the sidebar (<kbd>⇧⌘D</kbd>) to inspect add-on integrity, analyze disk usage and clean caches, or inspect session crash logs.
+- **X-Plane Log Analyzer**: Directly access log diagnostics via **File > X-Plane Logs...** (<kbd>⇧⌘L</kbd>). It categorizes crashes, missing scenery assets, SASL/Lua script errors, and loading bottlenecks from `Log.txt`.
 - **Application Logs Window**: Open the launcher application log viewer by choosing **Window > Logs...** or pressing <kbd>⌥⌘L</kbd>. This window provides real-time logs for launcher background tasks (profiles, scenery, plugins, updates, symlinks, and navigation data).
 - **Updates & CSL Operations**: Click the **Console** button in the Updates or CSL tabs to view real-time operation logs and progress messages.

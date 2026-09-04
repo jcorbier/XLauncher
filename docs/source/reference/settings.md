@@ -71,3 +71,12 @@ Disabling automatic checks on launch does not prevent manual checks. You can sti
 - **Global Environment Variables**: Key-value pairs passed to pre-launch scripts across all profiles.
 - **Add / Remove**: Use the `+` and `-` buttons below the table to add or remove variable entries.
 - **Profile Overrides**: Variables defined in a profile's **Profile Scripts** tab override global variables with the same key name.
+
+---
+
+## Advanced Settings
+
+- **Global Command-Line Arguments**: Optional command-line arguments passed directly to the X-Plane 12 executable when launching the simulator across all profiles.
+  - Useful for debugging or custom automation (e.g. `--fps_test=1`, `--no_sound`, `--verbose`).
+  - Collapse or expand this section using the disclosure arrow.
+

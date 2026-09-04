@@ -39,6 +39,18 @@ Reorder `scenery_packs.ini` with drag-and-drop, group related scenery entries, a
 Install packages with drag-and-drop to any storage pool, and cleanly delete unwanted add-ons with automated profile and symlink cleanup.
 :::
 
+:::{grid-item-card} Add-on Categorization & Tagging
+Automatically categorize aircraft, scenery, and plugins with smart heuristics. Add custom tags, override categories, and filter your library instantly.
+:::
+
+:::{grid-item-card} Add-on Diagnostics & Health Checks
+Verify community scenery library dependencies, inspect plugin binary Mach-O architectures for Apple Silicon compatibility, and repair broken symlinks.
+:::
+
+:::{grid-item-card} Disk Usage & Cache Cleanup
+Analyze storage distribution across categories and storage pools, detect orphan packages, identify largest space hogs, and clear shader/crash caches.
+:::
+
 :::{grid-item-card} X-Plane Log Analyzer
 Inspect `Log.txt` to diagnose crashes, detect missing scenery assets, troubleshoot FlyWithLua/SASL errors, and profile startup times.
 :::
@@ -55,8 +67,8 @@ Download and update AIRAC cycles directly from Navigraph for X-Plane and support
 Install and update IVAO/X-CSL model matching packages, and optionally apply native X-Plane 12 lighting presets.
 :::
 
-:::{grid-item-card} Pre-Launch Scripts
-Run shell scripts before X-Plane starts, passing profile-specific and global environment variables (e.g. for Hoppie ACARS).
+:::{grid-item-card} Pre-Launch Scripts & Launch Arguments
+Run shell scripts before X-Plane starts with profile environment variables, or pass custom command-line launch arguments configured in Settings.
 :::
 
 ::::
@@ -103,6 +115,7 @@ getting-started/quickstart
 
 user-guide/profiles
 user-guide/storage-pools
+user-guide/categorization
 user-guide/aircraft
 user-guide/plugins
 user-guide/scenery
@@ -114,8 +127,9 @@ user-guide/pre-launch-scripts
 :maxdepth: 2
 :caption: Advanced Features
 
-features/addon-installer
+features/diagnostics
 features/log-analyzer
+features/addon-installer
 features/updates
 features/navdata
 features/csl-models
