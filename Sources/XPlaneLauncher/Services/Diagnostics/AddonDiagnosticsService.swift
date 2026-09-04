@@ -51,20 +51,10 @@ final class AddonDiagnosticsService: Sendable {
     static var curatedLibraries: [KnownLibrary] { knownLibraries }
 
     static func loadKnownLibraries() -> [KnownLibrary] {
-        var candidates: [URL?] = [
-            Bundle.main.url(forResource: "known_libraries", withExtension: "json"),
-            Bundle.main.resourceURL?.appendingPathComponent("known_libraries.json")
-        ]
-        #if SWIFT_PACKAGE
-        candidates.append(Bundle.module.url(forResource: "known_libraries", withExtension: "json"))
-        #endif
-
-        for case let candidateURL? in candidates {
-            if FileManager.default.fileExists(atPath: candidateURL.path),
-               let data = try? Data(contentsOf: candidateURL),
-               let decoded = try? JSONDecoder().decode([KnownLibrary].self, from: data) {
-                return decoded
-            }
+        if let url = Bundle.main.url(forResource: "known_libraries", withExtension: "json"),
+           let data = try? Data(contentsOf: url),
+           let decoded = try? JSONDecoder().decode([KnownLibrary].self, from: data) {
+            return decoded
         }
 
         return fallbackLibraries
