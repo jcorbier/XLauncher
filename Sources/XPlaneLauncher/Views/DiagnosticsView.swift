@@ -195,7 +195,7 @@ struct DiagnosticsView: View {
                             Text("Analyzing...")
                         } else {
                             Image(systemName: "arrow.clockwise")
-                            Text("Run Diagnostics")
+                            Text("Analyze")
                         }
                     }
                     .padding(.horizontal, 4)
@@ -317,12 +317,12 @@ struct DiagnosticsView: View {
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: 460)
 
-                    Button("Run Initial Diagnostics") {
+                    Button("Analyze") {
                         pluginManager.runDiagnostics()
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
-                    .disabled(pluginManager.xPlanePath == nil)
+                    .disabled(pluginManager.isRunningDiagnostics || pluginManager.xPlanePath == nil)
 
                     Spacer()
                 }
@@ -330,11 +330,6 @@ struct DiagnosticsView: View {
             }
         }
         .background(Color(NSColor.windowBackgroundColor))
-        .onAppear {
-            if report == nil && !pluginManager.isRunningDiagnostics && pluginManager.xPlanePath != nil {
-                pluginManager.runDiagnostics()
-            }
-        }
     }
 
     // MARK: - Helper Views & Counts
