@@ -392,6 +392,7 @@ final class AppUpdateManager: NSObject {
         let allReleases = try decoder.decode([AppRelease].self, from: data)
         let filtered = allReleases.filter { release in
             if release.isDraft { return false }
+            if release.semVer == nil { return false }
             if !includePrerelease && release.isPrerelease { return false }
             return true
         }

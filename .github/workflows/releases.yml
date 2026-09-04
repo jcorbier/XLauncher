@@ -4,8 +4,6 @@ on:
   push:
     tags:
       - "v*"
-    branches:
-      - main
 
 jobs:
   release:
@@ -23,33 +21,21 @@ jobs:
       - name: Set Release Variables
         id: vars
         run: |
-          if [[ $GITHUB_REF == refs/tags/* ]]; then
-            TAG_NAME="${GITHUB_REF_NAME}"
-            VERSION="${GITHUB_REF_NAME#v}"
-            echo "IS_DRAFT=false" >> $GITHUB_ENV
-            echo "VERSION=${VERSION}" >> $GITHUB_ENV
-            echo "TAG_NAME=${TAG_NAME}" >> $GITHUB_ENV
-            
-            # Check if the tag represents a pre-release (e.g. v1.2.0-beta.1, v1.2.0-rc1, etc.)
-            if [[ "$TAG_NAME" == *-* ]] || [[ "$TAG_NAME" =~ (beta|alpha|rc|preview) ]]; then
-              echo "IS_PRERELEASE=true" >> $GITHUB_ENV
-              echo "prerelease=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "IS_PRERELEASE=false" >> $GITHUB_ENV
-              echo "prerelease=false" >> "$GITHUB_OUTPUT"
-            fi
-            echo "release_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
-            echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
-          else
-            echo "IS_DRAFT=true" >> $GITHUB_ENV
+          TAG_NAME="${GITHUB_REF_NAME}"
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+          echo "TAG_NAME=${TAG_NAME}" >> $GITHUB_ENV
+          
+          # Check if the tag represents a pre-release (e.g. v1.2.0-beta.1, v1.2.0-rc1, etc.)
+          if [[ "$TAG_NAME" == *-* ]] || [[ "$TAG_NAME" =~ (beta|alpha|rc|preview) ]]; then
             echo "IS_PRERELEASE=true" >> $GITHUB_ENV
-            echo "VERSION=0.0.0-draft" >> $GITHUB_ENV
-            echo "TAG_NAME=rolling-draft" >> $GITHUB_ENV
-            
             echo "prerelease=true" >> "$GITHUB_OUTPUT"
-            echo "release_name=Rolling Draft" >> "$GITHUB_OUTPUT"
-            echo "tag_name=rolling-draft" >> "$GITHUB_OUTPUT"
+          else
+            echo "IS_PRERELEASE=false" >> $GITHUB_ENV
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
           fi
+          echo "release_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
+          echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Select Xcode
         run: sudo xcode-select -switch /Applications/Xcode_26.2.app/Contents/Developer
@@ -62,20 +48,18 @@ jobs:
           BUILD_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE }}
           P12_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
         run: |
-          if [ "$IS_DRAFT" = "false" ]; then
-            KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
-            echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> $GITHUB_ENV
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> $GITHUB_ENV
 
-            security create-keychain -p "$P12_PASSWORD" "$KEYCHAIN_PATH"
-            security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-            security unlock-keychain -p "$P12_PASSWORD" "$KEYCHAIN_PATH"
+          security create-keychain -p "$P12_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$P12_PASSWORD" "$KEYCHAIN_PATH"
 
-            echo "$BUILD_CERTIFICATE_BASE64" | base64 --decode > $RUNNER_TEMP/certificate.p12
-            security import $RUNNER_TEMP/certificate.p12 -k "$KEYCHAIN_PATH" -P "$P12_PASSWORD" -T /usr/bin/codesign
-            security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$P12_PASSWORD" "$KEYCHAIN_PATH"
+          echo "$BUILD_CERTIFICATE_BASE64" | base64 --decode > $RUNNER_TEMP/certificate.p12
+          security import $RUNNER_TEMP/certificate.p12 -k "$KEYCHAIN_PATH" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$P12_PASSWORD" "$KEYCHAIN_PATH"
 
-            security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
-          fi
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
 
       - name: Install Tools
         run: |
@@ -114,19 +98,15 @@ jobs:
           plutil -replace CFBundleShortVersionString -string "$VERSION" XLauncher.app/Contents/Info.plist
           plutil -replace CFBundleVersion -string "${{ github.run_number }}" XLauncher.app/Contents/Info.plist
           
-          if [ "$IS_DRAFT" = "false" ]; then
-            echo "Signing Sparkle framework and app bundle with Developer ID and Hardened Runtime..."
-            codesign --force --deep --options runtime --timestamp \
-              --sign "Developer ID Application" \
-              XLauncher.app/Contents/Frameworks/Sparkle.framework
+          echo "Signing Sparkle framework and app bundle with Developer ID and Hardened Runtime..."
+          codesign --force --deep --options runtime --timestamp \
+            --sign "Developer ID Application" \
+            XLauncher.app/Contents/Frameworks/Sparkle.framework
 
-            codesign --force --deep --options runtime --timestamp \
-              --sign "Developer ID Application" \
-              --entitlements entitlements.plist \
-              XLauncher.app
-          else
-            codesign --force --deep -s - XLauncher.app
-          fi
+          codesign --force --deep --options runtime --timestamp \
+            --sign "Developer ID Application" \
+            --entitlements entitlements.plist \
+            XLauncher.app
 
       - name: Create DMG
         run: |
@@ -148,30 +128,28 @@ jobs:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
         run: |
-          if [ "$IS_DRAFT" = "false" ]; then
-            echo "Signing DMG..."
-            codesign --force --timestamp \
-              --sign "Developer ID Application" \
-              XLauncher.dmg
+          echo "Signing DMG..."
+          codesign --force --timestamp \
+            --sign "Developer ID Application" \
+            XLauncher.dmg
 
-            echo "Setting up Apple API Key..."
-            mkdir -p ~/.private_keys
-            echo "$APPLE_API_KEY" | base64 --decode > ~/.private_keys/AuthKey_${APPLE_API_KEY_ID}.p8
+          echo "Setting up Apple API Key..."
+          mkdir -p ~/.private_keys
+          echo "$APPLE_API_KEY" | base64 --decode > ~/.private_keys/AuthKey_${APPLE_API_KEY_ID}.p8
 
-            echo "Submitting DMG to Apple Notary Service..."
-            xcrun notarytool submit XLauncher.dmg \
-              --key "$HOME/.private_keys/AuthKey_${APPLE_API_KEY_ID}.p8" \
-              --key-id "$APPLE_API_KEY_ID" \
-              --issuer "$APPLE_API_ISSUER" \
-              --wait
+          echo "Submitting DMG to Apple Notary Service..."
+          xcrun notarytool submit XLauncher.dmg \
+            --key "$HOME/.private_keys/AuthKey_${APPLE_API_KEY_ID}.p8" \
+            --key-id "$APPLE_API_KEY_ID" \
+            --issuer "$APPLE_API_ISSUER" \
+            --wait
 
-            echo "Stapling notarization ticket to DMG and App..."
-            xcrun stapler staple XLauncher.dmg
-            xcrun stapler staple XLauncher.app || true
+          echo "Stapling notarization ticket to DMG and App..."
+          xcrun stapler staple XLauncher.dmg
+          xcrun stapler staple XLauncher.app || true
 
-            echo "Validating notarization ticket..."
-            xcrun stapler validate XLauncher.dmg
-          fi
+          echo "Validating notarization ticket..."
+          xcrun stapler validate XLauncher.dmg
 
       - name: Create Sparkle Update Archive
         env:
@@ -213,12 +191,6 @@ jobs:
         run: |
           chmod +x generate_changelog.sh
           ./generate_changelog.sh RELEASE_CHANGELOG.md
-
-      - name: Delete Previous Draft Release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release delete rolling-draft --cleanup-tag -y || true
 
       - name: Release
         uses: softprops/action-gh-release@v3

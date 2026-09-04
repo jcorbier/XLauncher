@@ -3,18 +3,7 @@ set -e
 
 OUTPUT_FILE="${1:-RELEASE_CHANGELOG.md}"
 
-if [ "$IS_DRAFT" = "true" ]; then
-    # Draft release: compare with latest tag
-    PREVIOUS_TAG=$(git tag --sort=-version:refname | head -n 1 || true)
-    CURRENT_TAG="HEAD"
-
-    echo "# Draft Release" > "$OUTPUT_FILE"
-    echo "" >> "$OUTPUT_FILE"
-    echo "This is a rolling draft release generated from the latest commit on main." >> "$OUTPUT_FILE"
-    echo "" >> "$OUTPUT_FILE"
-    echo "## Changes since $PREVIOUS_TAG" >> "$OUTPUT_FILE"
-    echo "" >> "$OUTPUT_FILE"
-elif [ "$IS_PRERELEASE" = "true" ]; then
+if [ "$IS_PRERELEASE" = "true" ]; then
     # Pre-release: get immediately previous tag
     PREVIOUS_TAG=$(git tag --sort=-version:refname | grep -v "^${TAG_NAME}$" | head -n 1 || true)
     CURRENT_TAG=${TAG_NAME:-"HEAD"}
