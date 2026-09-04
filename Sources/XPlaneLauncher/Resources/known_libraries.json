@@ -1,0 +1,116 @@
+[
+  {
+    "identifier": "opensceneryx",
+    "name": "OpenSceneryX",
+    "prefixKeys": ["opensceneryx", "open_scenery_x"],
+    "downloadURL": "https://www.opensceneryx.com/"
+  },
+  {
+    "identifier": "misterx_library",
+    "name": "MisterX Library",
+    "prefixKeys": ["misterx_library", "misterx", "mister_x"],
+    "downloadURL": "https://forums.x-plane.org/index.php?/files/file/28167-misterx-library-and-static-aircraft-extension/"
+  },
+  {
+    "identifier": "sam_library",
+    "name": "Scenery Animation Manager (SAM)",
+    "prefixKeys": ["sam_library", "sam_seasons", "sam_developer_pack"],
+    "downloadURL": "https://stairport-sceneries.com/"
+  },
+  {
+    "identifier": "ra_library",
+    "name": "RA Library",
+    "prefixKeys": ["ra_library", "ra_lib"],
+    "downloadURL": "https://forums.x-plane.org/index.php?/files/file/45410-ra-library/"
+  },
+  {
+    "identifier": "cdb_library",
+    "name": "CDB-Library",
+    "prefixKeys": ["cdb_library", "cdb"],
+    "downloadURL": "https://forums.x-plane.org/index.php?/files/file/27907-cdb-library/"
+  },
+  {
+    "identifier": "ff_library",
+    "name": "FF Library Extended",
+    "prefixKeys": ["ff_library", "fflibrary", "ff_lod"],
+    "downloadURL": "https://forums.x-plane.org/index.php?/files/file/12708-ff-library-extended/"
+  },
+  {
+    "identifier": "handyobjects",
+    "name": "HandyObjects Library",
+    "prefixKeys": ["handyobjects", "handy_objects"],
+    "downloadURL": "https://forums.x-plane.org/index.php?/files/file/18653-handyobjects-library/"
+  },
+  {
+    "identifier": "flyagi_vegetation",
+    "name": "FlyAgi Vegetation Library",
+    "prefixKeys": ["flyagi_vegetation", "flyagi_trees"],
+    "downloadURL": "https://forums.x-plane.org/index.php?/files/file/45370-flyagi-vegetation-global-trees/"
+  },
+  {
+    "identifier": "3d_people_library",
+    "name": "3D People Library",
+    "prefixKeys": ["3d_people_library", "3dpeople", "people_lib"],
+    "downloadURL": "https://forums.x-plane.org/index.php?/files/file/26611-3d-people-library/"
+  },
+  {
+    "identifier": "puf_libs",
+    "name": "PuF Libs",
+    "prefixKeys": ["puf_libs", "puflib"],
+    "downloadURL": "https://forums.x-plane.org/index.php?/files/file/71360-puf-libs/"
+  },
+  {
+    "identifier": "faib_aircraft",
+    "name": "FAIB Aircraft Library",
+    "prefixKeys": ["the_faib_aircraft_library", "faib_aircraft", "faib"],
+    "downloadURL": "https://forums.x-plane.org/index.php?/files/file/52250-the-faib-aircraft-library/"
+  },
+  {
+    "identifier": "bs2001_library",
+    "name": "BS2001 Object Library",
+    "prefixKeys": ["bs2001_object_library", "bs2001_objects", "bs2001", "bs2001 object library"],
+    "downloadURL": "https://forums.x-plane.org/index.php?/files/file/28045-bs2001-object-library/"
+  },
+  {
+    "identifier": "pm_library",
+    "name": "PM Library",
+    "prefixKeys": ["pm_library", "pm_objects"],
+    "downloadURL": "https://forums.x-plane.org/index.php?/files/file/44795-pm-library/"
+  },
+  {
+    "identifier": "gt_library",
+    "name": "GT Library",
+    "prefixKeys": ["gt_library", "gt_building"],
+    "downloadURL": "https://forums.x-plane.org/index.php?/files/file/71239-gt-library/"
+  },
+  {
+    "identifier": "re_library",
+    "name": "RE Library",
+    "prefixKeys": ["re_library", "re_airports"],
+    "downloadURL": "https://forums.x-plane.org/index.php?/files/file/24722-re-library/"
+  },
+  {
+    "identifier": "ruscenery",
+    "name": "RuScenery",
+    "prefixKeys": ["ruscenery"],
+    "downloadURL": "https://ruscenery.x-air.ru/"
+  },
+  {
+    "identifier": "flags_of_the_world",
+    "name": "Flags of the World",
+    "prefixKeys": ["flags_of_the_world", "flags_world"],
+    "downloadURL": "https://forums.x-plane.org/index.php?/files/file/17090-flags-of-the-world/"
+  },
+  {
+    "identifier": "world_models",
+    "name": "World Models Library",
+    "prefixKeys": ["world_models", "worldmodels"],
+    "downloadURL": "https://forums.x-plane.org/index.php?/files/file/32135-world-models-library/"
+  },
+  {
+    "identifier": "simheaven_xworld",
+    "name": "SimHeaven X-World",
+    "prefixKeys": ["simheaven", "x-world", "w2xp"],
+    "downloadURL": "https://simheaven.com/"
+  }
+]

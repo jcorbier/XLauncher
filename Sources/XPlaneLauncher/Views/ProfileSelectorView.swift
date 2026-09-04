@@ -188,6 +188,23 @@ struct ProfileSelectorView: View {
                 .help("Some add-ons configured in this profile were not found in central storage.")
             }
 
+            if let report = pluginManager.diagnosticsReport, !report.isClean {
+                let isCrit = report.criticalCount > 0
+                HStack(spacing: 4) {
+                    Image(systemName: isCrit ? "cross.case.fill" : "cross.case")
+                        .font(.caption2)
+                    Text("\(report.issues.count) Diagnostics Issue\(report.issues.count > 1 ? "s" : "")")
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(isCrit ? Color.red.opacity(0.15) : Color.orange.opacity(0.15))
+                .foregroundStyle(isCrit ? .red : .orange)
+                .clipShape(Capsule())
+                .help("Diagnostics detected conflicts or issues with installed scenery/add-ons.")
+            }
+
             Spacer()
 
             // Quick Actions

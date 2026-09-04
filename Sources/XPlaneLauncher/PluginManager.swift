@@ -44,6 +44,10 @@ class PluginManager {
     private let profileService = ProfileService.shared
     private let launchService = LaunchService.shared
     private let storagePoolService = StoragePoolService.shared
+    private let diagnosticsService = AddonDiagnosticsService.shared
+
+    var diagnosticsReport: DiagnosticsReport?
+    var isRunningDiagnostics: Bool = false
 
     private let defaults = UserDefaults.standard
     private var isLoading = true
@@ -605,6 +609,50 @@ class PluginManager {
         refreshStoragePoolStats()
         repairStaleLinks()
         rescanAll()
+    }
+
+    @MainActor
+    func runDiagnostics() {
+        guard !isRunningDiagnostics else { return }
+        isRunningDiagnostics = true
+
+        Task {
+            let report = await diagnosticsService.runDiagnostics(
+                xPlanePath: self.xPlanePath,
+                storagePools: self.storagePools,
+                scenery: self.scenery,
+                plugins: self.plugins,
+                aircraft: self.aircraft,
+                luaScripts: self.luaScripts
+            )
+
+            await MainActor.run {
+                self.diagnosticsReport = report
+                self.isRunningDiagnostics = false
+            }
+        }
+    }
+
+    @MainActor
+    func executeDiagnosticAction(_ action: DiagnosticQuickAction) {
+        switch action {
+        case .disableScenery(let folderName):
+            if let item = scenery.first(where: { $0.folderName == folderName }), item.isEnabled {
+                toggleScenery(item)
+                runDiagnostics()
+            }
+        case .disablePlugin(let folderName):
+            if let item = plugins.first(where: { $0.folderName == folderName }), item.isEnabled {
+                togglePlugin(item)
+                runDiagnostics()
+            }
+        case .openURL(let url):
+            NSWorkspace.shared.open(url)
+        case .deleteItem(let url):
+            try? FileManager.default.removeItem(at: url)
+            rescanAll()
+            runDiagnostics()
+        }
     }
 
     func isPluginOffline(_ plugin: Plugin) -> Bool {

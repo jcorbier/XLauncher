@@ -42,7 +42,10 @@ let package = Package(
             dependencies: [
                 .product(name: "Sparkle", package: "Sparkle")
             ],
-            path: "Sources/XPlaneLauncher" // Explicitly pointing here just in case, though standard.
+            path: "Sources/XPlaneLauncher",
+            resources: [
+                .process("Resources")
+            ]
         ),
         .testTarget(
             name: "XPlaneLauncherTests",

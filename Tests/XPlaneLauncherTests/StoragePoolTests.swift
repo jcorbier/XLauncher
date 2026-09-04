@@ -549,7 +549,6 @@ final class StoragePoolTests: XCTestCase {
         XCTAssertFalse(pm.luaScripts.contains(where: { $0.folderName == "test.lua" }))
 
         // Assert the broken symlinks were cleaned up from disk
-        var isSymlinkPlugin = false
         var statBuf = stat()
         XCTAssertNotEqual(lstat(brokenPlugin.path, &statBuf), 0, "brokenPlugin symlink should be removed")
         XCTAssertNotEqual(lstat(brokenAircraft.path, &statBuf), 0, "brokenAircraft symlink should be removed")

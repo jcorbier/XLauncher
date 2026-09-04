@@ -91,6 +91,9 @@ echo "Copying resources..."
 if [ -f "XLauncher.icns" ]; then
     cp "XLauncher.icns" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
 fi
+if [ -d "Sources/XPlaneLauncher/Resources" ]; then
+    cp -R Sources/XPlaneLauncher/Resources/* "$APP_BUNDLE/Contents/Resources/"
+fi
 
 echo "Signing app..."
 codesign --force --deep -s - "$APP_BUNDLE"

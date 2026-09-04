@@ -53,6 +53,7 @@ struct ContentView: View {
         case csl = "CSL Models"
         case navdata = "Navigation Data"
         case xPlaneLogs = "X-Plane Logs"
+        case diagnostics = "Diagnostics"
         case settings = "Settings"
         case about = "About"
 
@@ -69,6 +70,7 @@ struct ContentView: View {
             case .csl: return "airplane.circle"
             case .navdata: return "point.topleft.down.to.point.bottomright.curvepath"
             case .xPlaneLogs: return "doc.text.magnifyingglass"
+            case .diagnostics: return "cross.case"
             case .settings: return "gearshape"
             case .about: return "info.circle"
             }
@@ -90,7 +92,7 @@ struct ContentView: View {
         }
 
         static var systemCategories: [NavigationCategory] {
-            [.xPlaneLogs, .settings]
+            [.diagnostics, .settings]
         }
 
         var isAddonCategory: Bool {
@@ -187,6 +189,24 @@ struct ContentView: View {
                             HStack(spacing: 8) {
                                 Label(category.rawValue, systemImage: category.systemImage)
                                     .font(.body)
+
+                                if category == .diagnostics {
+                                    Spacer()
+                                    if pluginManager.isRunningDiagnostics {
+                                        ProgressView()
+                                            .controlSize(.small)
+                                    } else if let report = pluginManager.diagnosticsReport, !report.isClean {
+                                        let isCrit = report.criticalCount > 0
+                                        Text("\(report.issues.count)")
+                                            .font(.caption2)
+                                            .fontWeight(.bold)
+                                            .foregroundStyle(.white)
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(isCrit ? Color.red : Color.orange)
+                                            .clipShape(Capsule())
+                                    }
+                                }
                             }
                         }
                     }
@@ -260,6 +280,8 @@ struct ContentView: View {
                         NavdataListView()
                     case .xPlaneLogs:
                         XPlaneLogsView()
+                    case .diagnostics:
+                        DiagnosticsView()
                     case .settings:
                         SettingsView()
                     case .about:
