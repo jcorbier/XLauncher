@@ -55,10 +55,7 @@ jobs:
         run: sudo xcode-select -switch /Applications/Xcode_26.2.app/Contents/Developer
 
       - name: Run Tests
-        run: |
-          if [ "$IS_DRAFT" = "false" ]; then
-            swift test
-          fi
+        run: swift test
 
       - name: Install Apple Certificate
         env:

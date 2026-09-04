@@ -45,12 +45,19 @@ let package = Package(
             path: "Sources/XPlaneLauncher",
             resources: [
                 .process("Resources")
+            ],
+            swiftSettings: [
+                .enableUpcomingFeature("StrictConcurrency")
             ]
         ),
         .testTarget(
             name: "XPlaneLauncherTests",
             dependencies: ["XPlaneLauncher"],
-            path: "Tests/XPlaneLauncherTests"
+            path: "Tests/XPlaneLauncherTests",
+            swiftSettings: [
+                .enableUpcomingFeature("StrictConcurrency")
+            ]
         ),
-    ]
+    ],
+    swiftLanguageModes: [.v6]
 )

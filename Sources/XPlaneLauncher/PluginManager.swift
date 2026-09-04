@@ -651,10 +651,8 @@ class PluginManager {
                 luaScripts: self.luaScripts
             )
 
-            await MainActor.run {
-                self.diagnosticsReport = report
-                self.isRunningDiagnostics = false
-            }
+            self.diagnosticsReport = report
+            self.isRunningDiagnostics = false
         }
     }
 
@@ -693,23 +691,19 @@ class PluginManager {
         let pools = self.storagePools
         let profiles = self.profiles
 
-        Task.detached(priority: .userInitiated) { [weak self] in
+        Task(priority: .userInitiated) { [weak self] in
             let summary = await DiskUsageService.shared.analyzeDiskUsage(
                 xPlanePath: xpPath,
                 storagePools: pools,
                 profiles: profiles
             ) { [weak self] progress, status in
-                Task { @MainActor [weak self] in
-                    self?.diskUsageScanProgress = progress
-                    self?.diskUsageScanStatus = status
-                }
+                self?.diskUsageScanProgress = progress
+                self?.diskUsageScanStatus = status
             }
 
-            await MainActor.run {
-                self?.diskUsageSummary = summary
-                self?.isScanningDiskUsage = false
-                self?.diskUsageScanStatus = "Complete"
-            }
+            self?.diskUsageSummary = summary
+            self?.isScanningDiskUsage = false
+            self?.diskUsageScanStatus = "Complete"
         }
     }
 

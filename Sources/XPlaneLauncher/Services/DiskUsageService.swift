@@ -35,7 +35,7 @@ final class DiskUsageService: Sendable {
         xPlanePath: URL?,
         storagePools: [StoragePool],
         profiles: [PluginProfile],
-        progress: (@Sendable (Double, String) -> Void)? = nil
+        progress: (@Sendable @MainActor (Double, String) -> Void)? = nil
     ) async -> DiskUsageSummary {
         var items: [DiskUsageItem] = []
 
@@ -73,7 +73,7 @@ final class DiskUsageService: Sendable {
 
         // 1. Scan Primary X-Plane Installation
         if let xp = xPlanePath, fileManager.fileExists(atPath: xp.path) {
-            progress?(currentStep / totalSteps, "Scanning primary simulator installation...")
+            await progress?(currentStep / totalSteps, "Scanning primary simulator installation...")
             let primaryItems = scanPrimaryInstallation(
                 xPlanePath: xp,
                 profileReferencedFolders: profileReferencedFolders
@@ -89,7 +89,7 @@ final class DiskUsageService: Sendable {
                 continue
             }
 
-            progress?(currentStep / totalSteps, "Scanning storage pool: \(pool.name)...")
+            await progress?(currentStep / totalSteps, "Scanning storage pool: \(pool.name)...")
             let poolItems = scanStoragePool(
                 pool: pool,
                 profileReferencedFolders: profileReferencedFolders,
@@ -100,7 +100,7 @@ final class DiskUsageService: Sendable {
         }
 
         // 3. Summarize & Aggregate
-        progress?(0.95, "Compiling storage metrics...")
+        await progress?(0.95, "Compiling storage metrics...")
 
         var totalBytes: UInt64 = 0
         var totalFiles: Int = 0
@@ -131,7 +131,7 @@ final class DiskUsageService: Sendable {
         let sortedItems = items.sorted { $0.sizeBytes > $1.sizeBytes }
         let topSpaceHogs = Array(sortedItems.prefix(25))
 
-        progress?(1.0, "Scan complete")
+        await progress?(1.0, "Scan complete")
 
         return DiskUsageSummary(
             totalBytes: totalBytes,
