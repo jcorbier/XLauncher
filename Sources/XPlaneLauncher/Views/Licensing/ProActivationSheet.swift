@@ -505,6 +505,7 @@ struct ProActivationSheet: View {
         Task {
             do {
                 try await licenseManager.activateLicenseKey(key)
+                await AppPluginRegistry.shared.reloadLicenses()
                 await MainActor.run {
                     self.isActivating = false
                     self.showSuccessBanner = true

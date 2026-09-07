@@ -21,6 +21,7 @@
 //
 
 import SwiftUI
+import XLauncherPluginKit
 
 struct LaunchButton: View {
     @Environment(PluginManager.self) var pluginManager
@@ -82,37 +83,7 @@ struct LaunchButton: View {
                 }
                 .help("Stop the running X-Plane simulator process")
                 .popover(isPresented: $showStopConfirmation, arrowEdge: .bottom) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundStyle(.red)
-                            Text("Stop X-Plane 12?")
-                                .font(.headline)
-                        }
-
-                        Text("Are you sure you want to stop X-Plane?")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-
-                        HStack {
-                            Button("Cancel") {
-                                showStopConfirmation = false
-                            }
-                            .keyboardShortcut(.cancelAction)
-
-                            Spacer()
-
-                            Button("Stop Simulator", role: .destructive) {
-                                showStopConfirmation = false
-                                simSessionManager.forceQuitSimulator()
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .tint(.red)
-                        }
-                    }
-                    .padding(14)
-                    .frame(width: 280)
+                    stopConfirmationPopover
                 }
             }
             .padding(4)
@@ -146,6 +117,40 @@ struct LaunchButton: View {
             .disabled(pluginManager.xPlanePath == nil)
             .opacity(pluginManager.xPlanePath == nil ? 0.6 : 1.0)
         }
+    }
+
+    private var stopConfirmationPopover: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                Text("Stop X-Plane 12?")
+                    .font(.headline)
+            }
+
+            Text("Are you sure you want to stop X-Plane?")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack {
+                Button("Cancel") {
+                    showStopConfirmation = false
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Spacer()
+
+                Button("Stop Simulator", role: .destructive) {
+                    showStopConfirmation = false
+                    simSessionManager.forceQuitSimulator()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+            }
+        }
+        .padding(14)
+        .frame(width: 280)
     }
 }
 

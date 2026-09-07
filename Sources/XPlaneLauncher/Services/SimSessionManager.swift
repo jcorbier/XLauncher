@@ -52,9 +52,11 @@ final class SimSessionManager {
     // MARK: - Internal Timers & Observers
     private var durationTimer: Timer?
     private var terminationObserver: NSObjectProtocol?
+    private var launchObserver: NSObjectProtocol?
+    private var simDetectionTimer: Timer?
     private var onSessionTerminated: (() -> Void)?
 
-    init() {
+    init(autoDetect: Bool = true) {
         if let raw = UserDefaults.standard.string(forKey: .launchBehavior),
            let behavior = LaunchBehavior(rawValue: raw) {
             self.launchBehavior = behavior
@@ -68,6 +70,62 @@ final class SimSessionManager {
         } else {
             self.simExitBehavior = .reopenWindow
         }
+
+        if autoDetect {
+            setupLaunchMonitoring()
+        }
+    }
+
+    // MARK: - Launch Monitoring & Auto Detection
+
+    private func setupLaunchMonitoring() {
+        if let observer = launchObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+            launchObserver = nil
+        }
+
+        launchObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didLaunchApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            MainActor.assumeIsolated {
+                guard let self = self, !self.isSimRunning else { return }
+                if self.isXPlaneProcess(app) {
+                    self.startSession(process: app, profileName: self.activeProfileName)
+                }
+            }
+        }
+
+        checkForRunningSimulator()
+
+        simDetectionTimer?.invalidate()
+        simDetectionTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self = self, !self.isSimRunning else { return }
+                self.checkForRunningSimulator()
+            }
+        }
+    }
+
+    /// Checks active system processes to adopt an already running X-Plane simulator.
+    func checkForRunningSimulator() {
+        guard !isSimRunning else { return }
+        if let app = NSWorkspace.shared.runningApplications.first(where: { isXPlaneProcess($0) && !$0.isTerminated }) {
+            startSession(process: app, profileName: activeProfileName)
+        }
+    }
+
+    /// Helper to identify whether an application is an X-Plane simulator instance.
+    func isXPlaneProcess(_ app: NSRunningApplication?) -> Bool {
+        guard let app = app else { return false }
+        if app.bundleIdentifier == "com.laminar-research.X-Plane" { return true }
+        if app.localizedName == "X-Plane" { return true }
+        if let execName = app.executableURL?.lastPathComponent, execName.hasPrefix("X-Plane") {
+            return true
+        }
+        return false
     }
 
     // MARK: - Session Lifecycle
@@ -78,12 +136,23 @@ final class SimSessionManager {
         profileName: String?,
         onTerminate: (() -> Void)? = nil
     ) {
-        self.activeProcess = process
-        self.activeProfileName = profileName
+        if let process = process {
+            self.activeProcess = process
+        }
+        if let profileName = profileName {
+            self.activeProfileName = profileName
+        }
+        if let onTerminate = onTerminate {
+            self.onSessionTerminated = onTerminate
+        }
+
+        if isSimRunning {
+            return
+        }
+
         self.sessionStartTime = Date()
         self.flightDuration = 0
         self.isSimRunning = true
-        self.onSessionTerminated = onTerminate
 
         ConsoleLogger.shared.log("Started simulator tracking session (Profile: \(profileName ?? "None"), PID: \(process?.processIdentifier ?? -1))", category: .launch)
 

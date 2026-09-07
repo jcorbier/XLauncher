@@ -76,10 +76,30 @@ elif [ -f "$BUILD_DIR/$SOURCE_NAME" ]; then
     cp "$BUILD_DIR/$SOURCE_NAME" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 fi
 
-echo "Copying Sparkle framework..."
+echo "Copying frameworks & dynamic libraries..."
 SPARKLE_FRAMEWORK=$(find .build -name "Sparkle.framework" -type d | grep -E "release|Sparkle\.xcframework" | head -n 1)
 if [ -n "$SPARKLE_FRAMEWORK" ] && [ -d "$SPARKLE_FRAMEWORK" ]; then
     cp -R "$SPARKLE_FRAMEWORK" "$APP_BUNDLE/Contents/Frameworks/"
+fi
+
+# Copy XLauncherPluginKit dynamic library if built
+PLUGIN_KIT_DYLIB=$(find .build -name "libXLauncherPluginKit.dylib" -type f | grep -E "release|debug" | head -n 1)
+if [ -n "$PLUGIN_KIT_DYLIB" ] && [ -f "$PLUGIN_KIT_DYLIB" ]; then
+    cp "$PLUGIN_KIT_DYLIB" "$APP_BUNDLE/Contents/Frameworks/"
+    install_name_tool -id "@rpath/libXLauncherPluginKit.dylib" "$APP_BUNDLE/Contents/Frameworks/libXLauncherPluginKit.dylib" 2>/dev/null || true
+fi
+
+# Copy Pro plugin bundle if built in sibling directory
+mkdir -p "$APP_BUNDLE/Contents/PlugIns"
+if [ -d "../XLauncherPro/build/XLauncherPro.bundle" ]; then
+    echo "Embedding XLauncherPro.bundle into Contents/PlugIns/..."
+    cp -R "../XLauncherPro/build/XLauncherPro.bundle" "$APP_BUNDLE/Contents/PlugIns/"
+    # Remove redundant copy of XLauncherPluginKit inside bundle if present so host copy is used
+    rm -rf "$APP_BUNDLE/Contents/PlugIns/XLauncherPro.bundle/Contents/Frameworks"
+    if [ -f "$APP_BUNDLE/Contents/PlugIns/XLauncherPro.bundle/Contents/MacOS/XLauncherPro" ]; then
+        install_name_tool -add_rpath "@loader_path/../../../../Frameworks" "$APP_BUNDLE/Contents/PlugIns/XLauncherPro.bundle/Contents/MacOS/XLauncherPro" 2>/dev/null || true
+        install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP_BUNDLE/Contents/PlugIns/XLauncherPro.bundle/Contents/MacOS/XLauncherPro" 2>/dev/null || true
+    fi
 fi
 
 echo "Configuring rpath..."

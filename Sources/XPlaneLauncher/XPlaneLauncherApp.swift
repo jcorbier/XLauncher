@@ -30,7 +30,8 @@ struct XPlaneLauncherApp: App {
     @State private var updateManager = UpdateManager()
     @State private var cslManager = CSLManager()
     @State private var appUpdateManager = AppUpdateManager()
-    @State private var licenseManager = LicenseManager()
+    @State private var licenseManager = LicenseManager.shared
+    @State private var appPluginRegistry = AppPluginRegistry.shared
     @State private var authManager: NavigraphAuthManager
     @State private var navdataManager: NavdataManager
     @State private var simSessionManager = SimSessionManager.shared
@@ -52,6 +53,7 @@ struct XPlaneLauncherApp: App {
                 .environment(navdataManager)
                 .environment(simSessionManager)
                 .environment(licenseManager)
+                .environment(appPluginRegistry)
                 .frame(minWidth: 600, minHeight: 500)
                 .background(WindowAccessor { window in
                     window.delegate = NSApp.delegate as? NSWindowDelegate
@@ -96,6 +98,11 @@ struct XPlaneLauncherApp: App {
                     if appUpdateManager.automaticallyCheckOnLaunch {
                         appUpdateManager.checkForUpdates(manual: false)
                     }
+                    Task {
+                        let activeAircraft = pluginManager.aircraft.filter { $0.isEnabled }.map { $0.folderName }
+                        await appPluginRegistry.discoverAndLoadPlugins(xPlaneURL: pluginManager.xPlanePath, activatedAircraftNames: activeAircraft)
+                        await appPluginRegistry.reloadLicenses()
+                    }
                 }
                 .onChange(of: pluginManager.storagePools) { _, newPools in
                     updateManager.storagePools = newPools
@@ -111,6 +118,11 @@ struct XPlaneLauncherApp: App {
                     MenuBarCompanionManager.shared.xPlanePath = newValue
                     if pluginManager.enableNavdataSupport {
                         navdataManager.xPlaneURL = newValue
+                    }
+                    Task {
+                        let activeAircraft = pluginManager.aircraft.filter { $0.isEnabled }.map { $0.folderName }
+                        await appPluginRegistry.discoverAndLoadPlugins(xPlaneURL: newValue, activatedAircraftNames: activeAircraft)
+                        await appPluginRegistry.reloadLicenses()
                     }
                 }
                 .onChange(of: pluginManager.cslPath) { _, newValue in
@@ -145,6 +157,22 @@ struct XPlaneLauncherApp: App {
                                 await navdataManager.checkOnlinePackages()
                             }
                         }
+                    }
+                }
+                .onChange(of: pluginManager.aircraft) { _, _ in
+                    Task {
+                        let activeAircraft = pluginManager.aircraft.filter { $0.isEnabled }.map { $0.folderName }
+                        await appPluginRegistry.discoverAndLoadPlugins(xPlaneURL: pluginManager.xPlanePath, activatedAircraftNames: activeAircraft)
+                    }
+                }
+                .onChange(of: licenseManager.isPro) { _, _ in
+                    Task {
+                        await appPluginRegistry.reloadLicenses()
+                    }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: .proLicenseStateChanged)) { _ in
+                    Task {
+                        await appPluginRegistry.reloadLicenses()
                     }
                 }
         }

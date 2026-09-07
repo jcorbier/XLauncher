@@ -269,6 +269,7 @@ struct StripeCheckoutSheet: View {
     private func checkStatusOnce() async {
         do {
             if let _ = try await licenseManager.pollCheckoutStatus(sessionId: sessionId) {
+                await AppPluginRegistry.shared.reloadLicenses()
                 await MainActor.run {
                     withAnimation {
                         self.isFinalizingActivation = false

@@ -9,6 +9,10 @@
 import Foundation
 import Observation
 
+extension Notification.Name {
+    public static let proLicenseStateChanged = Notification.Name("proLicenseStateChanged")
+}
+
 @Observable
 public final class LicenseManager: @unchecked Sendable {
     public var isPro: Bool = false
@@ -26,6 +30,8 @@ public final class LicenseManager: @unchecked Sendable {
 
     public let proxyBaseURL: URL
     public let productId: String
+
+    public static let shared = LicenseManager()
 
     public init(
         proxyBaseURL: URL = URL(string: "https://cyberpatate-license.cyberpatate.workers.dev")!,
@@ -55,7 +61,9 @@ public final class LicenseManager: @unchecked Sendable {
                 }
             }
 
-            if isCryptographicallyValid && cached.machineFingerprint == currentFingerprint && cached.status == "active" {
+            let fingerprintMatches = cached.machineFingerprint.isEmpty || cached.machineFingerprint == currentFingerprint
+            let statusMatches = cached.status == "active" || cached.status.isEmpty
+            if isCryptographicallyValid && fingerprintMatches && statusMatches {
                 self.isPro = true
                 self.licenseRecord = cached
             } else {
@@ -194,6 +202,7 @@ public final class LicenseManager: @unchecked Sendable {
                 self.licenseRecord = record
                 self.activeCheckoutURL = nil
                 self.activeCheckoutSessionId = nil
+                NotificationCenter.default.post(name: .proLicenseStateChanged, object: nil)
             }
             return record
         }
@@ -287,6 +296,7 @@ public final class LicenseManager: @unchecked Sendable {
             self.isPro = true
             self.licenseRecord = record
             self.activationError = nil
+            NotificationCenter.default.post(name: .proLicenseStateChanged, object: nil)
         } catch {
             // If offline, but we verified a genuine Ed25519 cryptographic signature, activate locally!
             if cryptoResult?.isValid == true {
@@ -305,6 +315,7 @@ public final class LicenseManager: @unchecked Sendable {
                 self.isPro = true
                 self.licenseRecord = record
                 self.activationError = nil
+                NotificationCenter.default.post(name: .proLicenseStateChanged, object: nil)
                 return
             }
 
@@ -344,6 +355,7 @@ public final class LicenseManager: @unchecked Sendable {
         LicenseStorage.deleteLicense()
         self.isPro = false
         self.licenseRecord = nil
+        NotificationCenter.default.post(name: .proLicenseStateChanged, object: nil)
     }
 
     // MARK: - Online Validation
@@ -382,14 +394,20 @@ public final class LicenseManager: @unchecked Sendable {
                     await MainActor.run {
                         self.isPro = false
                         self.licenseRecord = nil
+                        NotificationCenter.default.post(name: .proLicenseStateChanged, object: nil)
                     }
                 }
             } else if http.statusCode == 400 || http.statusCode == 404 {
-                // License key does not exist or was deleted completely on Keygen
-                LicenseStorage.deleteLicense()
-                await MainActor.run {
-                    self.isPro = false
-                    self.licenseRecord = nil
+                // If this is a cryptographically signed offline license (.lic certificate or key/...),
+                // a 400/404 from the proxy server must NOT delete the offline license.
+                let isCrypto = KeygenCrypto.isCryptographicLicense(current.licenseKey)
+                if !isCrypto {
+                    LicenseStorage.deleteLicense()
+                    await MainActor.run {
+                        self.isPro = false
+                        self.licenseRecord = nil
+                        NotificationCenter.default.post(name: .proLicenseStateChanged, object: nil)
+                    }
                 }
             }
         } catch {

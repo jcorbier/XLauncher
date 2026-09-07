@@ -22,6 +22,7 @@
 
 import SwiftUI
 import UniformTypeIdentifiers
+import XLauncherPluginKit
 
 extension Notification.Name {
     static let installAddonRequested = Notification.Name("installAddonRequested")
@@ -35,12 +36,25 @@ struct ContentView: View {
     @Environment(NavdataManager.self) var navdataManager
     @Environment(SimSessionManager.self) var simSessionManager
     @Environment(LicenseManager.self) var licenseManager
+    @Environment(AppPluginRegistry.self) var appPluginRegistry
     @Binding var showWelcomeScreen: Bool
-    @State private var selectedCategory: NavigationCategory? = .aircraft
+    @State private var selectedDestination: NavigationSelection? = .category(.aircraft)
     @State private var installerAnalysis: AddonPackageAnalysis? = nil
     @State private var isDropTargeted: Bool = false
     @State private var isShowingFileImporter: Bool = false
     @State private var showProSheet: Bool = false
+
+    enum NavigationSelection: Hashable, Identifiable {
+        case category(NavigationCategory)
+        case pluginItem(id: String)
+
+        var id: String {
+            switch self {
+            case .category(let cat): return "cat_\(cat.rawValue)"
+            case .pluginItem(let id): return "plugin_\(id)"
+            }
+        }
+    }
 
     init(showWelcomeScreen: Binding<Bool> = .constant(false)) {
         self._showWelcomeScreen = showWelcomeScreen
@@ -111,15 +125,70 @@ struct ContentView: View {
         navdataManager.addons.filter { $0.isUpdateAvailable }.count
     }
 
+    var pluginCustomSections: [String] {
+        var sections: [String] = []
+        for item in appPluginRegistry.sidebarItems {
+            if case .custom(let title) = item.section, !sections.contains(title) {
+                sections.append(title)
+            }
+        }
+        return sections.sorted()
+    }
+
     var body: some View {
         NavigationSplitView {
-            List(selection: $selectedCategory) {
+            List(selection: $selectedDestination) {
+                let flightItems = appPluginRegistry.sidebarItems.filter { $0.section == .flight }
+                if !flightItems.isEmpty {
+                    Section("Flight") {
+                        ForEach(flightItems) { item in
+                            NavigationLink(value: NavigationSelection.pluginItem(id: item.id)) {
+                                HStack(spacing: 8) {
+                                    Label(item.title, systemImage: item.systemImage)
+                                        .font(.body)
+                                    if let badge = item.badgeText?() {
+                                        Spacer()
+                                        Text(badge)
+                                            .font(.caption2)
+                                            .fontWeight(.bold)
+                                            .foregroundStyle(.white)
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(Color.blue)
+                                            .clipShape(Capsule())
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 Section("Add-ons") {
                     ForEach(NavigationCategory.mainCategories) { category in
-                        NavigationLink(value: category) {
+                        NavigationLink(value: NavigationSelection.category(category)) {
                             HStack(spacing: 8) {
                                 Label(category.rawValue, systemImage: category.systemImage)
                                     .font(.body)
+                            }
+                        }
+                    }
+
+                    ForEach(appPluginRegistry.sidebarItems.filter { $0.section == .main }) { item in
+                        NavigationLink(value: NavigationSelection.pluginItem(id: item.id)) {
+                            HStack(spacing: 8) {
+                                Label(item.title, systemImage: item.systemImage)
+                                    .font(.body)
+                                if let badge = item.badgeText?() {
+                                    Spacer()
+                                    Text(badge)
+                                        .font(.caption2)
+                                        .fontWeight(.bold)
+                                        .foregroundStyle(.white)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(Color.blue)
+                                        .clipShape(Capsule())
+                                }
                             }
                         }
                     }
@@ -127,7 +196,7 @@ struct ContentView: View {
 
                 Section("Updates") {
                     ForEach(NavigationCategory.updateCategories(cslEnabled: pluginManager.enableCSLSupport, navdataEnabled: pluginManager.enableNavdataSupport)) { category in
-                        NavigationLink(value: category) {
+                        NavigationLink(value: NavigationSelection.category(category)) {
                             HStack(spacing: 8) {
                                 Label(category.rawValue, systemImage: category.systemImage)
                                     .font(.body)
@@ -184,11 +253,83 @@ struct ContentView: View {
                             }
                         }
                     }
+
+                    ForEach(appPluginRegistry.sidebarItems.filter { $0.section == .updates }) { item in
+                        NavigationLink(value: NavigationSelection.pluginItem(id: item.id)) {
+                            HStack(spacing: 8) {
+                                Label(item.title, systemImage: item.systemImage)
+                                    .font(.body)
+                                if let badge = item.badgeText?() {
+                                    Spacer()
+                                    Text(badge)
+                                        .font(.caption2)
+                                        .fontWeight(.bold)
+                                        .foregroundStyle(.white)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(Color.orange)
+                                        .clipShape(Capsule())
+                                }
+                            }
+                        }
+                    }
+                }
+
+                let toolItems = appPluginRegistry.sidebarItems.filter { $0.section == .tools }
+                if !toolItems.isEmpty {
+                    Section("Tools") {
+                        ForEach(toolItems) { item in
+                            NavigationLink(value: NavigationSelection.pluginItem(id: item.id)) {
+                                HStack(spacing: 8) {
+                                    Label(item.title, systemImage: item.systemImage)
+                                        .font(.body)
+                                    if let badge = item.badgeText?() {
+                                        Spacer()
+                                        Text(badge)
+                                            .font(.caption2)
+                                            .fontWeight(.bold)
+                                            .foregroundStyle(.white)
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(Color.blue)
+                                            .clipShape(Capsule())
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                ForEach(pluginCustomSections, id: \.self) { sectionTitle in
+                    Section(sectionTitle) {
+                        ForEach(appPluginRegistry.sidebarItems.filter {
+                            if case .custom(let title) = $0.section, title == sectionTitle { return true }
+                            return false
+                        }) { item in
+                            NavigationLink(value: NavigationSelection.pluginItem(id: item.id)) {
+                                HStack(spacing: 8) {
+                                    Label(item.title, systemImage: item.systemImage)
+                                        .font(.body)
+                                    if let badge = item.badgeText?() {
+                                        Spacer()
+                                        Text(badge)
+                                            .font(.caption2)
+                                            .fontWeight(.bold)
+                                            .foregroundStyle(.white)
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(Color.blue)
+                                            .clipShape(Capsule())
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
 
                 Section("System") {
                     ForEach(NavigationCategory.systemCategories) { category in
-                        NavigationLink(value: category) {
+                        NavigationLink(value: NavigationSelection.category(category)) {
                             HStack(spacing: 8) {
                                 Label(category.rawValue, systemImage: category.systemImage)
                                     .font(.body)
@@ -214,6 +355,26 @@ struct ContentView: View {
                         }
                     }
 
+                    ForEach(appPluginRegistry.sidebarItems.filter { $0.section == .system }) { item in
+                        NavigationLink(value: NavigationSelection.pluginItem(id: item.id)) {
+                            HStack(spacing: 8) {
+                                Label(item.title, systemImage: item.systemImage)
+                                    .font(.body)
+                                if let badge = item.badgeText?() {
+                                    Spacer()
+                                    Text(badge)
+                                        .font(.caption2)
+                                        .fontWeight(.bold)
+                                        .foregroundStyle(.white)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(Color.blue)
+                                        .clipShape(Capsule())
+                                }
+                            }
+                        }
+                    }
+
                     Button(action: {
                         NSWorkspace.shared.open(AppInfo.documentationURL)
                     }) {
@@ -228,7 +389,7 @@ struct ContentView: View {
                     }
                     .buttonStyle(.plain)
 
-                    NavigationLink(value: NavigationCategory.about) {
+                    NavigationLink(value: NavigationSelection.category(.about)) {
                         HStack(spacing: 8) {
                             Label(NavigationCategory.about.rawValue, systemImage: NavigationCategory.about.systemImage)
                                 .font(.body)
@@ -294,39 +455,48 @@ struct ContentView: View {
         } detail: {
             VStack(spacing: 0) {
                 // Header Profile Bar (Only shown for Add-ons categories)
-                if let category = selectedCategory, category.isAddonCategory {
+                if case .category(let category) = selectedDestination, category.isAddonCategory {
                     ProfileSelectorView()
 
                     Divider()
                 }
 
-                // Active Category View
+                // Active Selection View
                 Group {
-                    switch selectedCategory {
-                    case .aircraft:
-                        AircraftListView()
-                    case .plugins:
-                        PluginListView()
-                    case .scenery:
-                        SceneryListView()
-                    case .luaScripts:
-                        LuaScriptsListView()
-                    case .scripts:
-                        ScriptsListView()
-                    case .addonUpdates:
-                        UpdatesView()
-                    case .csl:
-                        CSLListView()
-                    case .navdata:
-                        NavdataListView()
-                    case .xPlaneLogs:
-                        XPlaneLogsView()
-                    case .diagnostics:
-                        DiagnosticsView()
-                    case .settings:
-                        SettingsView()
-                    case .about:
-                        AboutView()
+                    switch selectedDestination {
+                    case .category(let category):
+                        switch category {
+                        case .aircraft:
+                            AircraftListView()
+                        case .plugins:
+                            PluginListView()
+                        case .scenery:
+                            SceneryListView()
+                        case .luaScripts:
+                            LuaScriptsListView()
+                        case .scripts:
+                            ScriptsListView()
+                        case .addonUpdates:
+                            UpdatesView()
+                        case .csl:
+                            CSLListView()
+                        case .navdata:
+                            NavdataListView()
+                        case .xPlaneLogs:
+                            XPlaneLogsView()
+                        case .diagnostics:
+                            DiagnosticsView()
+                        case .settings:
+                            SettingsView()
+                        case .about:
+                            AboutView()
+                        }
+                    case .pluginItem(let itemId):
+                        if let item = appPluginRegistry.sidebarItems.first(where: { $0.id == itemId }) {
+                            item.viewBuilder()
+                        } else {
+                            ContentUnavailableView("Plugin View Not Found", systemImage: "puzzlepiece.extension")
+                        }
                     case .none:
                         ContentUnavailableView("Select a Category", systemImage: "sidebar.left")
                     }

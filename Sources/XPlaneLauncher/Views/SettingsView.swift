@@ -31,6 +31,7 @@ struct SettingsView: View {
     @Environment(NavdataManager.self) var navdataManager
     @Environment(SimSessionManager.self) var simSessionManager
     @Environment(LicenseManager.self) var licenseManager
+    @Environment(AppPluginRegistry.self) var appPluginRegistry: AppPluginRegistry?
     @State private var selectedEnvVarId: PluginManager.ScriptEnvVar.ID?
     @State private var showWelcomeSheet: Bool = false
     @State private var showReleaseNotesSheet: Bool = false
@@ -573,6 +574,15 @@ struct SettingsView: View {
                     .padding(8)
                     .background(Color(NSColor.controlBackgroundColor))
                     .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                    if let appPluginRegistry, !appPluginRegistry.settingsPanes.isEmpty {
+                        ForEach(appPluginRegistry.settingsPanes) { pane in
+                            GroupBox(pane.title) {
+                                pane.viewBuilder()
+                                    .padding(8)
+                            }
+                        }
+                    }
                 }
                 .padding(16)
             }

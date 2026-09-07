@@ -1746,7 +1746,7 @@ class PluginManager {
 
     // MARK: - Launching
 
-    func launchXPlane() {
+    func launchXPlane(additionalArguments: [String] = []) {
         guard let xPlanePath = xPlanePath else { return }
 
         let profileName = profiles.first(where: { $0.id == selectedProfileId })?.name ?? "Default"
@@ -1769,9 +1769,12 @@ class PluginManager {
 
         MenuBarCompanionManager.shared.xPlanePath = xPlanePath
 
+        var allArgs = parsedLaunchArguments
+        allArgs.append(contentsOf: additionalArguments)
+
         launchService.launchXPlane(
             at: xPlanePath,
-            arguments: parsedLaunchArguments,
+            arguments: allArgs,
             onSuccess: { runningApp in
                 let sessionManager = SimSessionManager.shared
                 let companionManager = MenuBarCompanionManager.shared

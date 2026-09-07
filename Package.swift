@@ -34,12 +34,14 @@ let package = Package(
         .executable(name: "XPlaneLauncher", targets: ["XPlaneLauncher"])
     ],
     dependencies: [
+        .package(path: "XLauncherPluginKit"),
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0")
     ],
     targets: [
         .executableTarget(
             name: "XPlaneLauncher",
             dependencies: [
+                .product(name: "XLauncherPluginKit", package: "XLauncherPluginKit"),
                 .product(name: "Sparkle", package: "Sparkle")
             ],
             path: "Sources/XPlaneLauncher",
@@ -52,7 +54,10 @@ let package = Package(
         ),
         .testTarget(
             name: "XPlaneLauncherTests",
-            dependencies: ["XPlaneLauncher"],
+            dependencies: [
+                "XPlaneLauncher",
+                .product(name: "XLauncherPluginKit", package: "XLauncherPluginKit")
+            ],
             path: "Tests/XPlaneLauncherTests",
             swiftSettings: [
                 .enableUpcomingFeature("StrictConcurrency")

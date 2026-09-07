@@ -97,4 +97,19 @@ final class SimSessionManagerTests: XCTestCase {
         XCTAssertEqual(restoredManager.launchBehavior, .keepWindowOpen)
         XCTAssertEqual(restoredManager.simExitBehavior, .quitLauncher)
     }
+
+    func testStartSessionIdempotentWhenAlreadyRunning() {
+        let manager = SimSessionManager(autoDetect: false)
+        XCTAssertFalse(manager.isSimRunning)
+
+        manager.startSession(process: nil, profileName: "Profile A")
+        XCTAssertTrue(manager.isSimRunning)
+        let initialStart = manager.sessionStartTime
+
+        // Second start call shouldn't reset session start time or flight duration
+        manager.startSession(process: nil, profileName: "Profile B")
+        XCTAssertTrue(manager.isSimRunning)
+        XCTAssertEqual(manager.activeProfileName, "Profile B")
+        XCTAssertEqual(manager.sessionStartTime, initialStart)
+    }
 }
