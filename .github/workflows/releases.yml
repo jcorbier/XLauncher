@@ -60,7 +60,7 @@ jobs:
           fi
 
       - name: Checkout XLauncher
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: XLauncher
           fetch-depth: 0
@@ -76,7 +76,7 @@ jobs:
           fi
 
       - name: Checkout XLauncherPro
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: jcorbier/XLauncherPro
           token: ${{ secrets.PRO_REPO_TOKEN }}
@@ -280,7 +280,7 @@ jobs:
           ./XLauncher/generate_changelog.sh "$GITHUB_WORKSPACE/RELEASE_CHANGELOG.md" --pro-changelog "$GITHUB_WORKSPACE/PRO_CHANGELOG.md"
 
       - name: Release XLauncher
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             XLauncher/XLauncher.dmg
