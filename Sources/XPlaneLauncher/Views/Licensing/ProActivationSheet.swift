@@ -167,7 +167,7 @@ struct ProActivationSheet: View {
                         .font(.title2)
                         .fontWeight(.bold)
 
-                    Text("Supercharge your flight simulation experience with next-generation scenery streaming and advanced tools.")
+                    Text("Unlock live flight tracking, SimBrief flight dispatch, and real-time simulator telemetry.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -181,29 +181,29 @@ struct ProActivationSheet: View {
                 FeatureRow(
                     icon: "map.fill",
                     color: .blue,
-                    title: "Streaming Orthophoto Engine",
-                    description: "Stream high-resolution satellite imagery on demand without multi-terabyte downloads."
+                    title: "Live Moving Map & Telemetry",
+                    description: "Track your flight in real time on vector or satellite maps with live instruments, flight trail, and flight phases."
+                )
+
+                FeatureRow(
+                    icon: "airplane.departure",
+                    color: .indigo,
+                    title: "Flight Dispatch & SimBrief",
+                    description: "Import SimBrief flight plans with fuel, payload, weather, and time presets, and launch directly into X-Plane."
+                )
+
+                FeatureRow(
+                    icon: "cloud.sun.fill",
+                    color: .cyan,
+                    title: "Airport Weather & Diagrams",
+                    description: "Check live METAR and TAF weather, browse airport layouts, and select departure runways or parking spots."
                 )
 
                 FeatureRow(
                     icon: "laptopcomputer.and.ipad",
-                    color: .purple,
-                    title: "3 Machine Activations",
-                    description: "Use your single lifetime license on up to 3 of your Macs simultaneously."
-                )
-
-                FeatureRow(
-                    icon: "waveform.path.ecg",
-                    color: .green,
-                    title: "Enhanced Diagnostics & Profiling",
-                    description: "Pinpoint scenery load bottlenecks, crash traces, and SASL/Lua errors."
-                )
-
-                FeatureRow(
-                    icon: "sparkles",
                     color: .orange,
-                    title: "Priority Updates & Early Features",
-                    description: "Direct support and immediate access to new platform enhancements."
+                    title: "3 Mac Activations",
+                    description: "Use your single lifetime license on up to 3 of your Macs simultaneously."
                 )
             }
             .padding(16)

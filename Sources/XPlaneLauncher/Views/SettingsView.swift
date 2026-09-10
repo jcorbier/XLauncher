@@ -216,7 +216,7 @@ struct SettingsView: View {
                                     .controlSize(.small)
                                 }
                             } else {
-                                Text("Unlock streaming satellite orthophoto scenery, multi-machine support (up to 3 Macs), and priority updates.")
+                                Text("Unlock live moving map tracking, SimBrief flight dispatch, real-time telemetry, and 3 Mac activations.")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
 
