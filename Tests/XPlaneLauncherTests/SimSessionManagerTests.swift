@@ -65,7 +65,7 @@ final class SimSessionManagerTests: XCTestCase {
     }
 
     func testSessionLifecycleTransitions() {
-        let manager = SimSessionManager()
+        let manager = SimSessionManager(autoDetect: false)
         XCTAssertFalse(manager.isSimRunning)
         XCTAssertNil(manager.activeProfileName)
         XCTAssertNil(manager.sessionStartTime)
@@ -86,14 +86,14 @@ final class SimSessionManagerTests: XCTestCase {
     }
 
     func testBehaviorUserDefaultsPersistence() {
-        let manager = SimSessionManager()
+        let manager = SimSessionManager(autoDetect: false)
         manager.launchBehavior = .keepWindowOpen
         manager.simExitBehavior = .quitLauncher
 
         XCTAssertEqual(UserDefaults.standard.string(forKey: .launchBehavior), LaunchBehavior.keepWindowOpen.rawValue)
         XCTAssertEqual(UserDefaults.standard.string(forKey: .simExitBehavior), SimExitBehavior.quitLauncher.rawValue)
 
-        let restoredManager = SimSessionManager()
+        let restoredManager = SimSessionManager(autoDetect: false)
         XCTAssertEqual(restoredManager.launchBehavior, .keepWindowOpen)
         XCTAssertEqual(restoredManager.simExitBehavior, .quitLauncher)
     }

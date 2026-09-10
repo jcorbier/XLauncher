@@ -1,7 +1,26 @@
 #!/bin/bash
 set -e
 
-OUTPUT_FILE="${1:-RELEASE_CHANGELOG.md}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+OUTPUT_FILE="RELEASE_CHANGELOG.md"
+PRO_CHANGELOG=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --pro-changelog)
+            PRO_CHANGELOG="$2"
+            shift 2
+            ;;
+        *)
+            if [[ "$1" != -* && "$OUTPUT_FILE" == "RELEASE_CHANGELOG.md" ]]; then
+                OUTPUT_FILE="$1"
+            fi
+            shift
+            ;;
+    esac
+done
 
 if [ "$IS_PRERELEASE" = "true" ]; then
     # Pre-release: get immediately previous tag
@@ -87,4 +106,15 @@ fi
 
 if [ "$HAS_SECTIONS" = "false" ]; then
     echo "$RAW_LOGS" | sed "s/^/- /" >> "$OUTPUT_FILE"
+fi
+
+if [ -n "$PRO_CHANGELOG" ] && [ -f "$PRO_CHANGELOG" ]; then
+    PRO_CONTENT=$(sed '/^[[:space:]]*$/d' "$PRO_CHANGELOG" 2>/dev/null || true)
+    if [ -n "$PRO_CONTENT" ]; then
+        echo "" >> "$OUTPUT_FILE"
+        echo "## 🚀 Pro Features & Updates" >> "$OUTPUT_FILE"
+        echo "" >> "$OUTPUT_FILE"
+        cat "$PRO_CHANGELOG" >> "$OUTPUT_FILE"
+        echo "" >> "$OUTPUT_FILE"
+    fi
 fi

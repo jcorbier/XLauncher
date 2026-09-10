@@ -166,7 +166,20 @@ final class AppPluginRegistryTests: XCTestCase {
     func testCandidateURLsResolution() {
         let registry = AppPluginRegistry()
         let urls = registry.resolveCandidateURLs()
-        XCTAssertFalse(urls.isEmpty)
+        // Verify resolveCandidateURLs executes safely
+        XCTAssertNotNil(urls)
+
+        // Verify that custom/env candidate paths are properly discovered when present on disk
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("XLauncherTestPlugin_\(UUID().uuidString)")
+        let mockBundle = tempDir.appendingPathComponent("MockCandidate.bundle")
+        try? FileManager.default.createDirectory(at: mockBundle, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        setenv("XLAUNCHER_PLUGIN_PATH", mockBundle.path, 1)
+        defer { unsetenv("XLAUNCHER_PLUGIN_PATH") }
+
+        let resolvedWithEnv = registry.resolveCandidateURLs()
+        XCTAssertTrue(resolvedWithEnv.contains(mockBundle.standardizedFileURL))
     }
 
     func testDiscoverAndLoadBundlePlugins() async throws {

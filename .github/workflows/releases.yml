@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Tag to release (e.g. v2.0.0, or leave empty to build main)'
+        required: false
+        default: ''
 
 jobs:
   release:
@@ -13,19 +19,37 @@ jobs:
       contents: write
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
       - name: Set Release Variables
         id: vars
         run: |
-          TAG_NAME="${GITHUB_REF_NAME}"
-          VERSION="${GITHUB_REF_NAME#v}"
+          if [ -n "${{ github.event.inputs.tag_name }}" ]; then
+            TAG_NAME="${{ github.event.inputs.tag_name }}"
+          elif [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            TAG_NAME="${GITHUB_REF_NAME}"
+          else
+            TAG_NAME=""
+          fi
+
+          if [ -n "$TAG_NAME" ]; then
+            VERSION="${TAG_NAME#v}"
+            PRO_REF="${TAG_NAME}"
+            echo "IS_TAG_BUILD=true" >> $GITHUB_ENV
+            echo "is_tag_build=true" >> "$GITHUB_OUTPUT"
+          else
+            VERSION="0.0.0-dev.${{ github.run_number }}"
+            TAG_NAME="dev-build-${{ github.run_number }}"
+            PRO_REF="main"
+            echo "IS_TAG_BUILD=false" >> $GITHUB_ENV
+            echo "is_tag_build=false" >> "$GITHUB_OUTPUT"
+          fi
+
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
           echo "TAG_NAME=${TAG_NAME}" >> $GITHUB_ENV
-          
+          echo "PRO_REF=${PRO_REF}" >> $GITHUB_ENV
+          echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
+          echo "pro_ref=${PRO_REF}" >> "$GITHUB_OUTPUT"
+          echo "release_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
+
           # Check if the tag represents a pre-release (e.g. v1.2.0-beta.1, v1.2.0-rc1, etc.)
           if [[ "$TAG_NAME" == *-* ]] || [[ "$TAG_NAME" =~ (beta|alpha|rc|preview) ]]; then
             echo "IS_PRERELEASE=true" >> $GITHUB_ENV
@@ -34,13 +58,47 @@ jobs:
             echo "IS_PRERELEASE=false" >> $GITHUB_ENV
             echo "prerelease=false" >> "$GITHUB_OUTPUT"
           fi
-          echo "release_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
-          echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout XLauncher
+        uses: actions/checkout@v4
+        with:
+          path: XLauncher
+          fetch-depth: 0
+
+      - name: Verify XLauncherPro Tag Exists
+        if: steps.vars.outputs.is_tag_build == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.PRO_REPO_TOKEN }}
+        run: |
+          if ! gh api "repos/jcorbier/XLauncherPro/git/ref/tags/${TAG_NAME}" >/dev/null 2>&1; then
+            echo "::error::Tag '${TAG_NAME}' does not exist on jcorbier/XLauncherPro! Both repositories must have matching release tags. Please push tag '${TAG_NAME}' to XLauncherPro first."
+            exit 1
+          fi
+
+      - name: Checkout XLauncherPro
+        uses: actions/checkout@v4
+        with:
+          repository: jcorbier/XLauncherPro
+          token: ${{ secrets.PRO_REPO_TOKEN }}
+          path: XLauncherPro
+          ref: ${{ steps.vars.outputs.pro_ref }}
+          fetch-depth: 0
 
       - name: Select Xcode
         run: sudo xcode-select -switch /Applications/Xcode_26.2.app/Contents/Developer
 
-      - name: Run Tests
+      - name: Run XLauncherPro Tests
+        working-directory: XLauncherPro
+        run: swift test
+
+      - name: Build XLauncherPro Universal Bundle
+        working-directory: XLauncherPro
+        run: |
+          chmod +x build_plugin.sh
+          ./build_plugin.sh --universal --zip --version "$VERSION"
+
+      - name: Run XLauncher Tests
+        working-directory: XLauncher
         run: swift test
 
       - name: Install Apple Certificate
@@ -66,11 +124,13 @@ jobs:
           brew install create-dmg
 
       - name: Generate Icon
+        working-directory: XLauncher
         run: |
           chmod +x generate_icon.sh
           ./generate_icon.sh
 
-      - name: Build Universal Binary
+      - name: Build Universal Binaries
+        working-directory: XLauncher
         run: |
           # Build for x86_64
           swift build -c release --arch x86_64
@@ -85,30 +145,52 @@ jobs:
             .build/x86_64-apple-macosx/release/XPlaneLauncher \
             .build/arm64-apple-macosx/release/XPlaneLauncher
             
+          lipo -create -output .build/universal/libXLauncherPluginKit.dylib \
+            .build/x86_64-apple-macosx/release/libXLauncherPluginKit.dylib \
+            .build/arm64-apple-macosx/release/libXLauncherPluginKit.dylib
+            
           # Verify architecture
           lipo -info .build/universal/XPlaneLauncher
+          lipo -info .build/universal/libXLauncherPluginKit.dylib
 
       - name: Create App Bundle
+        working-directory: XLauncher
         run: |
           chmod +x package.sh
-          # Run package script to create structure with universal binary
-          ./package.sh --skip-build --binary .build/universal/XPlaneLauncher
+          # Run package script to create structure with universal binary and embedded pro bundle
+          ./package.sh --skip-build --binary .build/universal/XPlaneLauncher --pro-bundle ../XLauncherPro/build/XLauncherPro.bundle
           
           # Update Version in Info.plist
           plutil -replace CFBundleShortVersionString -string "$VERSION" XLauncher.app/Contents/Info.plist
           plutil -replace CFBundleVersion -string "${{ github.run_number }}" XLauncher.app/Contents/Info.plist
           
-          echo "Signing Sparkle framework and app bundle with Developer ID and Hardened Runtime..."
+          echo "Signing nested dynamic libraries..."
+          if [ -f "XLauncher.app/Contents/Frameworks/libXLauncherPluginKit.dylib" ]; then
+            codesign --force --options runtime --timestamp \
+              --sign "Developer ID Application" \
+              XLauncher.app/Contents/Frameworks/libXLauncherPluginKit.dylib
+          fi
+
+          echo "Signing Sparkle framework..."
           codesign --force --deep --options runtime --timestamp \
             --sign "Developer ID Application" \
             XLauncher.app/Contents/Frameworks/Sparkle.framework
 
+          echo "Signing Pro plugin bundle..."
+          if [ -d "XLauncher.app/Contents/PlugIns/XLauncherPro.bundle" ]; then
+            codesign --force --deep --options runtime --timestamp \
+              --sign "Developer ID Application" \
+              XLauncher.app/Contents/PlugIns/XLauncherPro.bundle
+          fi
+
+          echo "Signing main application bundle..."
           codesign --force --deep --options runtime --timestamp \
             --sign "Developer ID Application" \
             --entitlements entitlements.plist \
             XLauncher.app
 
       - name: Create DMG
+        working-directory: XLauncher
         run: |
           create-dmg \
             --volname "XLauncher Installer" \
@@ -123,6 +205,7 @@ jobs:
             "XLauncher.app"
 
       - name: Sign & Notarize DMG
+        working-directory: XLauncher
         env:
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
@@ -152,6 +235,7 @@ jobs:
           xcrun stapler validate XLauncher.dmg
 
       - name: Create Sparkle Update Archive
+        working-directory: XLauncher
         env:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
@@ -187,19 +271,37 @@ jobs:
           fi
           rm -rf ~/.private_keys
 
-      - name: Generate Changelog
+      - name: Generate Changelogs
         run: |
-          chmod +x generate_changelog.sh
-          ./generate_changelog.sh RELEASE_CHANGELOG.md
+          chmod +x XLauncherPro/generate_changelog.sh
+          ./XLauncherPro/generate_changelog.sh "$GITHUB_WORKSPACE/PRO_CHANGELOG.md"
 
-      - name: Release
-        uses: softprops/action-gh-release@v3
+          chmod +x XLauncher/generate_changelog.sh
+          ./XLauncher/generate_changelog.sh "$GITHUB_WORKSPACE/RELEASE_CHANGELOG.md" --pro-changelog "$GITHUB_WORKSPACE/PRO_CHANGELOG.md"
+
+      - name: Release XLauncher
+        uses: softprops/action-gh-release@v2
         with:
           files: |
-            XLauncher.dmg
-            XLauncher-macOS.zip
-            appcast.xml
+            XLauncher/XLauncher.dmg
+            XLauncher/XLauncher-macOS.zip
+            XLauncher/appcast.xml
           body_path: RELEASE_CHANGELOG.md
           prerelease: ${{ steps.vars.outputs.prerelease }}
           name: ${{ steps.vars.outputs.release_name }}
           tag_name: ${{ steps.vars.outputs.tag_name }}
+
+      - name: Release XLauncherPro Artifacts
+        if: steps.vars.outputs.is_tag_build == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.PRO_REPO_TOKEN }}
+        run: |
+          PRERELEASE_FLAG=""
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
+          gh release create "$TAG_NAME" "XLauncherPro/build/XLauncherPro.bundle.zip" \
+            --repo jcorbier/XLauncherPro \
+            --title "$TAG_NAME" \
+            --notes-file "$GITHUB_WORKSPACE/PRO_CHANGELOG.md" \
+            $PRERELEASE_FLAG || true

@@ -7,6 +7,7 @@ BUILD_DIR=".build/release"
 APP_BUNDLE="${APP_NAME}.app"
 SKIP_BUILD=false
 CUSTOM_BINARY=""
+PRO_BUNDLE=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -16,6 +17,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --binary)
             CUSTOM_BINARY="$2"
+            shift 2
+            ;;
+        --pro-bundle)
+            PRO_BUNDLE="$2"
             shift 2
             ;;
         *)
@@ -82,18 +87,36 @@ if [ -n "$SPARKLE_FRAMEWORK" ] && [ -d "$SPARKLE_FRAMEWORK" ]; then
     cp -R "$SPARKLE_FRAMEWORK" "$APP_BUNDLE/Contents/Frameworks/"
 fi
 
-# Copy XLauncherPluginKit dynamic library if built
-PLUGIN_KIT_DYLIB=$(find .build -name "libXLauncherPluginKit.dylib" -type f | grep -E "release|debug" | head -n 1)
+# Copy XLauncherPluginKit dynamic library if built (prefer universal if available)
+if [ -f ".build/universal/libXLauncherPluginKit.dylib" ]; then
+    PLUGIN_KIT_DYLIB=".build/universal/libXLauncherPluginKit.dylib"
+else
+    PLUGIN_KIT_DYLIB=$(find .build -name "libXLauncherPluginKit.dylib" -type f | grep -E "release|debug" | head -n 1)
+fi
+
 if [ -n "$PLUGIN_KIT_DYLIB" ] && [ -f "$PLUGIN_KIT_DYLIB" ]; then
     cp "$PLUGIN_KIT_DYLIB" "$APP_BUNDLE/Contents/Frameworks/"
     install_name_tool -id "@rpath/libXLauncherPluginKit.dylib" "$APP_BUNDLE/Contents/Frameworks/libXLauncherPluginKit.dylib" 2>/dev/null || true
 fi
 
-# Copy Pro plugin bundle if built in sibling directory
+# Locate Pro plugin bundle
+TARGET_PRO_BUNDLE=""
+if [ -n "$PRO_BUNDLE" ] && [ -d "$PRO_BUNDLE" ]; then
+    TARGET_PRO_BUNDLE="$PRO_BUNDLE"
+elif [ -d "../XLauncherPro/build/XLauncherPro.bundle" ]; then
+    TARGET_PRO_BUNDLE="../XLauncherPro/build/XLauncherPro.bundle"
+elif [ -d "../XLauncherPro/.build/release/XLauncherPro.bundle" ]; then
+    TARGET_PRO_BUNDLE="../XLauncherPro/.build/release/XLauncherPro.bundle"
+elif [ -d "build/XLauncherPro.bundle" ]; then
+    TARGET_PRO_BUNDLE="build/XLauncherPro.bundle"
+elif [ -d "XLauncherPro.bundle" ]; then
+    TARGET_PRO_BUNDLE="XLauncherPro.bundle"
+fi
+
 mkdir -p "$APP_BUNDLE/Contents/PlugIns"
-if [ -d "../XLauncherPro/build/XLauncherPro.bundle" ]; then
-    echo "Embedding XLauncherPro.bundle into Contents/PlugIns/..."
-    cp -R "../XLauncherPro/build/XLauncherPro.bundle" "$APP_BUNDLE/Contents/PlugIns/"
+if [ -n "$TARGET_PRO_BUNDLE" ]; then
+    echo "Embedding XLauncherPro.bundle from $TARGET_PRO_BUNDLE into Contents/PlugIns/..."
+    cp -R "$TARGET_PRO_BUNDLE" "$APP_BUNDLE/Contents/PlugIns/"
     # Remove redundant copy of XLauncherPluginKit inside bundle if present so host copy is used
     rm -rf "$APP_BUNDLE/Contents/PlugIns/XLauncherPro.bundle/Contents/Frameworks"
     if [ -f "$APP_BUNDLE/Contents/PlugIns/XLauncherPro.bundle/Contents/MacOS/XLauncherPro" ]; then
