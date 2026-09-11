@@ -78,3 +78,9 @@ Preferences are saved in macOS `UserDefaults`:
 | `EnableCSLSupport` | Boolean | Whether CSL support is enabled |
 | `EnableCSLXP12Lights` | Boolean | Whether XP12 parameterized lighting is enabled |
 | `HasCompletedWelcome` | Boolean | Whether the initial welcome assistant was completed |
+| `XPlaneLaunchArguments` | String | Global command-line arguments passed to X-Plane |
+| `LaunchBehavior` | String | Simulator launch window behavior (`minimizeToMenuBar`, `keepWindowOpen`, `quitLauncher`) |
+| `SimExitBehavior` | String | Simulator exit window behavior (`reopenWindow`, `quitLauncher`) |
+| `xplane.network.host` | String | X-Plane Web API host IP (defaults to `127.0.0.1`) |
+| `xplane.network.port` | Integer | X-Plane Web API port (defaults to `8086`) |
+| `simbrief.username` | String | Configured SimBrief username or pilot ID |

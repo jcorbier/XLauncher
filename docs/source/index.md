@@ -71,6 +71,22 @@ Install and update IVAO/X-CSL model matching packages, and optionally apply nati
 Run shell scripts before X-Plane starts with profile environment variables, or pass custom command-line launch arguments configured in Settings.
 :::
 
+:::{grid-item-card} Menu Bar Companion & Process Monitor
+Monitor X-Plane process status and elapsed flight time from the macOS menu bar, and configure automatic post-launch window behavior.
+:::
+
+:::{grid-item-card} Flight Dispatch & SimBrief (Pro)
+Import SimBrief OFPs, visualize routes, inspect interactive apt.dat airport diagrams, decode live METAR/TAF weather, and initialize flights directly.
+:::
+
+:::{grid-item-card} Live Moving Map & Telemetry HUD (Pro)
+Track flights in real time with 10Hz WebSocket telemetry on vector, satellite, or hybrid maps with live flight instruments, flight trail, and flight phases.
+:::
+
+:::{grid-item-card} Airport Weather & Diagrams (Pro)
+Check live decoded METAR and TAF weather with runway crosswind components, and browse interactive airport layouts and parking stands.
+:::
+
 ::::
 
 ## How It Works
@@ -127,6 +143,7 @@ user-guide/pre-launch-scripts
 :maxdepth: 2
 :caption: Advanced Features
 
+features/companion-mode
 features/diagnostics
 features/log-analyzer
 features/addon-installer
@@ -137,9 +154,19 @@ features/csl-models
 
 ```{toctree}
 :maxdepth: 2
+:caption: XLauncher Pro
+
+pro/index
+pro/flight-dispatch
+pro/live-map-telemetry
+```
+
+```{toctree}
+:maxdepth: 2
 :caption: Reference
 
 reference/directory-structure
 reference/settings
 reference/troubleshooting
 ```
+

@@ -2,18 +2,28 @@
 
 This page details the options available in the **Settings** view.
 
-```{image} /_static/images/settings-view.png
-:alt: Screenshot of the Settings view with General, X-CSL Models, and Script Environment sections
-:align: center
-```
+---
+
+## X-Plane Installation
+
+- **X-Plane Location**: The folder containing your X-Plane 12 installation (where `X-Plane.app` is located). Click **Browse...** to select your folder. A status indicator confirms whether an X-Plane 12 installation was detected.
 
 ---
 
-## General
+## Licensing & Edition
 
-- **X-Plane Location**: The folder containing your X-Plane 12 installation (where `X-Plane.app` is located). Click the folder button to change the path.
-- **Central Data Folder**: The primary folder where source add-ons are stored. Defaults to `~/Library/Application Support/XPlaneLauncher/`.
-- **Welcome Guide**: Click **Show Welcome Screen...** to reopen the initial setup assistant.
+Manage your application edition and Pro license activation:
+
+- **Edition Status**: Displays whether XLauncher is running as the **Standard Edition** or **XLauncher Pro Edition**.
+- **Upgrade to Pro...**: Opens the in-app purchase dialog to acquire a lifetime license (€5.00) via Stripe.
+- **Open License File...**: Activates a purchased license using an exported `.lic` license file or by pasting your license key.
+- **Active License Details**: When activated, displays:
+  - **License Key**: Masked representation of your active license key.
+  - **Activated Machine**: Hardware machine name bound to the license.
+  - **License Type**: Node-locked lifetime license (valid on up to 3 Macs).
+- **Export License File...**: Exports an `xlauncher.lic` file to transfer your activation to another of your personal Macs.
+- **Copy Key**: Copies the full active license key string to the clipboard.
+- **Deactivate Machine...**: Releases the activation seat for this machine on the licensing server, reverting this computer to the standard edition so the seat can be used elsewhere.
 
 ---
 
@@ -26,6 +36,27 @@ Configure multiple storage locations across internal and external/Thunderbolt dr
 - **Default Categories**: Assign specific add-on categories (Aircraft, Plugins, Scenery, Lua Scripts) to a pool.
 - **Drive Metrics**: Displays current mount status, volume name, and available disk capacity.
 - **Edit / Delete**: Rename a pool, update its category assignments, or remove the pool reference (files on disk remain intact).
+
+---
+
+## General & Assistance
+
+- **Welcome Guide**: Click **Show Welcome Screen...** to reopen the initial setup assistant and path configuration dialog.
+
+---
+
+## Simulator Launch & Companion Mode
+
+Control application window behavior when launching X-Plane:
+
+### When X-Plane launches
+- **Minimize to Menu Bar (Companion Mode)** *(Default)*: Hides the main window and activates the companion item in the macOS menu bar.
+- **Keep XLauncher Window Open**: Leaves the main window open alongside the simulator.
+- **Quit XLauncher Immediately**: Quits the launcher application as soon as the simulator starts.
+
+### When X-Plane exits (Companion Mode)
+- **Reopen XLauncher Window** *(Default)*: Restores the main launcher window when X-Plane closes.
+- **Quit XLauncher**: Quits the launcher application when X-Plane closes.
 
 ---
 
@@ -79,4 +110,21 @@ Disabling automatic checks on launch does not prevent manual checks. You can sti
 - **Global Command-Line Arguments**: Optional command-line arguments passed directly to the X-Plane 12 executable when launching the simulator across all profiles.
   - Useful for debugging or custom automation (e.g. `--fps_test=1`, `--no_sound`, `--verbose`).
   - Collapse or expand this section using the disclosure arrow.
+
+---
+
+## X-Plane Network Settings (Pro)
+
+Configures local REST and WebSocket network communication with X-Plane 12:
+
+- **Host**: IP address or hostname running X-Plane 12 (defaults to `127.0.0.1` for local installations).
+- **Port**: Port of the X-Plane 12 Web API (defaults to `8086`).
+- **Test Connection**: Tests REST API reachability and reports simulator version and Web API status.
+
+---
+
+## SimBrief Configuration (Pro)
+
+- **Username / Pilot ID**: Your SimBrief username or numeric Pilot ID. Used by the **Flight Dispatch** interface to fetch your latest generated Operational Flight Plan (OFP).
+
 

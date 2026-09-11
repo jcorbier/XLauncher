@@ -36,12 +36,31 @@
 
 ### Restoring Original CSL Lighting
 - Toggle **Apply modern X-Plane 12 lighting** off in **Settings > X-CSL Models**.
+
 ### Missing Scenery Libraries or Plugins Not Loading on Apple Silicon
 - Open **Diagnostics** from the sidebar (or press <kbd>⇧⌘D</kbd>).
 - In the **Add-on Integrity** tab, the launcher automatically scans for:
   - Missing community scenery libraries (OpenSceneryX, MisterX, SAM, etc.) and provides direct download links or one-click disable actions.
   - Plugin binaries that lack native Apple Silicon (`arm64`) slices on M-series Macs.
   - Broken symlinks pointing to nonexistent files.
+
+### XLauncher Pro License Activation Issues
+- **Machine limit reached (3/3)**: Each lifetime license permits activation on up to 3 personal Macs. To move an activation, open **Settings > Licensing & Edition** on an activated Mac and click **Deactivate Machine...**.
+- **Invalid License File or Key**: Verify that `xlauncher.lic` has not been edited or truncated. Ensure your Mac's system clock is set to automatic network time.
+
+### Map & Telemetry Shows "Disconnected" or "Offline"
+- Confirm X-Plane 12 is running and has fully loaded into a flight.
+- Check that X-Plane's built-in Web Server is active on port `8086`.
+- In XLauncher, go to **Settings > X-Plane Network Settings**, verify the host is `127.0.0.1` and port is `8086`, then click **Test Connection**.
+
+### SimBrief Import Fails
+- Ensure your SimBrief **Username** or numeric **Pilot ID** is configured in **Settings > SimBrief Configuration**.
+- Verify that you have generated an Operational Flight Plan (OFP) on [simbrief.com](https://www.simbrief.com). SimBrief only serves the most recent generated plan.
+
+### Menu Bar Companion Icon Not Visible
+- In **Settings > Simulator Launch & Companion Mode**, verify that **When X-Plane launches** is set to **Minimize to Menu Bar (Companion Mode)**.
+- On MacBooks with a display camera notch, macOS may hide status icons if the menu bar is crowded. Close other menu bar utilities or expand the menu area.
+
 
 ---
 
