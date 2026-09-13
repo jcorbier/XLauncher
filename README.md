@@ -24,9 +24,10 @@ X-Plane Launcher lets you organize your add-ons in a central folder, create dist
 
 ### XLauncher Pro Edition
 
-XLauncher Pro adds real-time simulator telemetry, interactive mapping, and automated dispatch:
+XLauncher Pro adds real-time simulator telemetry, interactive mapping, live online network coverage, and automated dispatch:
 
 - **Live Moving Map & Telemetry**: Real-time vector, satellite, and hybrid map tracking powered by MapLibre, with live aircraft positioning, altitude-colored flight trail, airport surface overlays, and 10Hz streaming instruments (airspeed, Mach, MSL/AGL altitude, vertical speed, attitude, G-load, throttle, flaps, spoilers, gear, and flight phases).
+- **VATSIM & IVAO Live Coverage**: Real-time online network traffic, ATC positions (DEL, GND, TWR, APP/DEP, CTR, FSS) with frequencies and ATIS, and active FIR/TRACON controlled airspace boundaries directly on the moving map.
 - **Flight Dispatch & SimBrief**: Fetch SimBrief Operational Flight Plans (OFPs) with one click, match airframes against your installed aircraft, calculate block fuel and payload, select departure runways or parking stands on vector airport diagrams, and initialize flights directly in X-Plane with date, time, and weather presets.
 - **Airport Weather & Diagrams**: Check live decoded METAR and TAF weather with calculated runway crosswind and headwind components, and inspect detailed airport surface geometry from `apt.dat`.
 - **Multi-Mac Lifetime License**: One-time purchase (€5.00) valid for up to 3 personal Macs with offline cryptographic verification.

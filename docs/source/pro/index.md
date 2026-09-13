@@ -1,6 +1,6 @@
 # XLauncher Pro
 
-XLauncher Pro is an optional upgrade for X-Plane Launcher that adds real-time simulator telemetry, a live moving map, and automated flight dispatch with SimBrief integration.
+XLauncher Pro is an optional upgrade for X-Plane Launcher that adds real-time simulator telemetry, a live moving map with VATSIM and IVAO coverage, and automated flight dispatch with SimBrief integration.
 
 ---
 
@@ -18,6 +18,7 @@ XLauncher Pro is an optional upgrade for X-Plane Launcher that adds real-time si
 | **SimBrief Flight Dispatch** | — | **✓** |
 | **Interactive Airport Diagrams & Weather** | — | **✓** |
 | **10Hz Live Moving Map (MapLibre)** | — | **✓** |
+| **VATSIM & IVAO Live Coverage** | — | **✓** |
 | **Real-Time Telemetry HUD** | — | **✓** |
 | **Flight Phase Tracking** | — | **✓** |
 | **Multi-Mac Activations (up to 3 Macs)** | — | **✓** |

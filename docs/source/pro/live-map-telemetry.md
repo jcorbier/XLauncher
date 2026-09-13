@@ -16,6 +16,37 @@ Accessible under the **Map** tab in the sidebar:
 
 ---
 
+## VATSIM & IVAO Live Network Coverage
+
+The moving map can overlay real-time online traffic and air traffic control from VATSIM (Data v3 API) and IVAO (Whazzup API).
+
+### Network Controls
+
+The floating map sidebar includes network controls:
+- **Network Selection**: Switch between **Off**, **VATSIM**, or **IVAO**.
+- **ATC Coverage**: Toggle online ATC station markers and controlled airspace boundaries.
+- **Traffic**: Toggle online aircraft markers.
+
+### Online Traffic
+
+- Displays online aircraft with callsign, real-time position, altitude, groundspeed, and heading.
+- Selecting an aircraft displays flight plan details, including departure, destination, route, cruise altitude, aircraft type, and squawk code.
+
+### Air Traffic Control & Airspace
+
+- **ATC Stations**: Displays active controller positions with callsigns and frequencies:
+  - Clearance Delivery (`DEL`)
+  - Ground Control (`GND`)
+  - Tower (`TWR`)
+  - Approach / Departure (`APP` / `DEP`)
+  - Enroute Center (`CTR`) and Flight Service (`FSS`)
+  - Automatic Terminal Information Service (`ATIS`)
+- **Airport ATC Tab**: Selecting an airport on the map opens the details side panel, where the **ATC** tab lists all active controllers and ATIS text for that airfield.
+- **Controlled Airspace Sectors**: Active FIR (Flight Information Region) and TRACON boundaries are rendered as polygon overlays when corresponding radar controllers are online.
+- **Boundary Data Sync**: FIR and TRACON boundary geometries synchronize from upstream community data projects with local caching and HTTP ETag validation.
+
+---
+
 ## Real-Time Telemetry HUD
 
 Telemetry is streamed from X-Plane 12 at 10Hz over a local WebSocket connection:

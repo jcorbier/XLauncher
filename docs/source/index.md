@@ -83,6 +83,10 @@ Import SimBrief OFPs, visualize routes, inspect interactive apt.dat airport diag
 Track flights in real time with 10Hz WebSocket telemetry on vector, satellite, or hybrid maps with live flight instruments, flight trail, and flight phases.
 :::
 
+:::{grid-item-card} VATSIM & IVAO Live Coverage (Pro)
+View online traffic, ATC stations (DEL, GND, TWR, APP, CTR, FSS), ATIS frequencies, and active FIR/TRACON airspace boundaries directly on the moving map.
+:::
+
 :::{grid-item-card} Airport Weather & Diagrams (Pro)
 Check live decoded METAR and TAF weather with runway crosswind components, and browse interactive airport layouts and parking stands.
 :::
