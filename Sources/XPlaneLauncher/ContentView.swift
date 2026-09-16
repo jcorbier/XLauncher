@@ -566,6 +566,11 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .installAddonRequested)) { _ in
             isShowingFileImporter = true
         }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("NavigateToPluginSidebarItem"))) { notif in
+            if let itemId = notif.object as? String {
+                selectedDestination = .pluginItem(id: itemId)
+            }
+        }
         .sheet(isPresented: $showWelcomeScreen) {
             WelcomeView {
                 updateManager.scanUpdatableAddons()
