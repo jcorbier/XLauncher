@@ -236,4 +236,71 @@ final class AppPluginRegistryTests: XCTestCase {
             XCTAssertNotNil(proSettings, "Pro plugin must contribute settings pane when license is valid")
         }
     }
+
+    @MainActor
+    func testHostPluginProfileProviderIntegration() async throws {
+        let registry = AppPluginRegistry()
+        let pluginManager = PluginManager()
+
+        let profile1 = PluginProfile(
+            name: "Airliners",
+            pluginFolderNames: ["FlyWithLua"],
+            sceneryFolderNames: [],
+            aircraftFolderNames: ["ToLissA321"],
+            luaScriptFolderNames: []
+        )
+        let profile2 = PluginProfile(
+            name: "General Aviation",
+            pluginFolderNames: [],
+            sceneryFolderNames: [],
+            aircraftFolderNames: ["C172"],
+            luaScriptFolderNames: []
+        )
+        pluginManager.profiles = [profile1, profile2]
+        pluginManager.selectedProfileId = profile1.id
+
+        let provider = HostPluginProfileProvider(pluginManager: pluginManager, pluginRegistry: registry)
+        registry.profileProvider = provider
+
+        // Register mock plugin
+        let mockPlugin = MockWeatherPlugin()
+        try await registry.registerPlugin(mockPlugin)
+
+        // 1. Check available profiles
+        let summaries = await provider.availableProfiles()
+        XCTAssertEqual(summaries.count, 2)
+        XCTAssertEqual(summaries[0].name, "Airliners")
+        XCTAssertEqual(summaries[0].aircraftCount, 1)
+        XCTAssertEqual(summaries[1].name, "General Aviation")
+
+        // 2. Check active profile ID
+        let activeId = await provider.activeProfileId()
+        XCTAssertEqual(activeId, profile1.id)
+
+        // 3. Register notification observer
+        var receivedNotificationId: UUID? = nil
+        let expectation = self.expectation(description: "ProfileDidChange Notification")
+        let observer = NotificationCenter.default.addObserver(
+            forName: .pluginActiveProfileDidChange,
+            object: nil,
+            queue: .main
+        ) { notification in
+            receivedNotificationId = notification.object as? UUID
+            expectation.fulfill()
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
+        // 4. Select profile 2
+        try await provider.selectProfile(id: profile2.id)
+
+        await fulfillment(of: [expectation], timeout: 2.0)
+        XCTAssertEqual(receivedNotificationId, profile2.id)
+        XCTAssertEqual(pluginManager.selectedProfileId, profile2.id)
+        let newActiveId = await provider.activeProfileId()
+        XCTAssertEqual(newActiveId, profile2.id)
+
+        // 5. Verify mockPlugin received updated context with profileProvider
+        XCTAssertNotNil(mockPlugin.receivedContext?.profileProvider)
+    }
 }
+

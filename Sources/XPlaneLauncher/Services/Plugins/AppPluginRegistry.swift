@@ -34,6 +34,7 @@ public final class AppPluginRegistry {
     public private(set) var sidebarItems: [PluginSidebarItem] = []
     public private(set) var settingsPanes: [PluginSettingsPane] = []
     public private(set) var launchActionOverride: LaunchActionOverride? = nil
+    public var profileProvider: PluginProfileProvider? = nil
 
     public init() {
         NotificationCenter.default.addObserver(
@@ -113,9 +114,18 @@ public final class AppPluginRegistry {
             }
         }
 
-        self.sidebarItems = uniqueItems.sorted { $0.priority < $1.priority }
-        self.settingsPanes = uniquePanes.sorted { $0.priority < $1.priority }
-        self.launchActionOverride = override
+        let sortedItems = uniqueItems.sorted { $0.priority < $1.priority }
+        let sortedPanes = uniquePanes.sorted { $0.priority < $1.priority }
+
+        if self.sidebarItems != sortedItems {
+            self.sidebarItems = sortedItems
+        }
+        if self.settingsPanes != sortedPanes {
+            self.settingsPanes = sortedPanes
+        }
+        if self.launchActionOverride?.title != override?.title {
+            self.launchActionOverride = override
+        }
     }
 
     /// Re-evaluates licensing across all loaded plugins and refreshes UI contributions.
@@ -129,9 +139,15 @@ public final class AppPluginRegistry {
     // MARK: - Dynamic Discovery & Loading
 
     /// Discovers and loads plugin bundles from standard locations or custom URLs.
-    public func discoverAndLoadPlugins(customURLs: [URL]? = nil, xPlaneURL: URL? = nil, activatedAircraftNames: [String]? = nil) async {
+    public func discoverAndLoadPlugins(
+        customURLs: [URL]? = nil,
+        xPlaneURL: URL? = nil,
+        activatedAircraftNames: [String]? = nil,
+        activeProfile: String? = nil
+    ) async {
         let candidateURLs = customURLs ?? resolveCandidateURLs()
         var loadedBundleIDs: Set<String> = []
+        var newPluginsAdded = false
 
         for bundleURL in candidateURLs {
             let standardizedURL = bundleURL.standardizedFileURL
@@ -162,7 +178,12 @@ public final class AppPluginRegistry {
             }
 
             let descriptor = principal.descriptor
-            let ctx = makeDefaultContext(for: descriptor, xPlaneURL: xPlaneURL, activatedAircraftNames: activatedAircraftNames)
+            let ctx = makeDefaultContext(
+                for: descriptor,
+                xPlaneURL: xPlaneURL,
+                activatedAircraftNames: activatedAircraftNames,
+                activeProfile: activeProfile
+            )
 
             if let existingIndex = self.loadedPlugins.firstIndex(where: { type(of: $0).descriptor.id == descriptor.id }) {
                 // Plugin already loaded: update context and don't create duplicate instance!
@@ -179,13 +200,34 @@ public final class AppPluginRegistry {
                 try await plugin.start()
                 self.loadedPlugins.append(plugin)
                 loadedBundleIDs.insert(bundleID)
+                newPluginsAdded = true
                 ConsoleLogger.shared.log("Successfully loaded dynamic plugin \(type(of: plugin).descriptor.name) v\(type(of: plugin).descriptor.version)", category: .system)
             } catch {
                 ConsoleLogger.shared.log("Plugin initialization failed for \(type(of: plugin).descriptor.name): \(error.localizedDescription)", category: .system, level: .error)
             }
         }
 
-        refreshContributions()
+        if newPluginsAdded {
+            refreshContributions()
+        }
+    }
+
+    /// Updates runtime context for all already-loaded plugins without modifying or re-evaluating UI contributions.
+    public func updatePluginContexts(
+        xPlaneURL: URL? = nil,
+        activatedAircraftNames: [String]? = nil,
+        activeProfile: String? = nil
+    ) async {
+        for plugin in loadedPlugins {
+            let descriptor = type(of: plugin).descriptor
+            let ctx = makeDefaultContext(
+                for: descriptor,
+                xPlaneURL: xPlaneURL,
+                activatedAircraftNames: activatedAircraftNames,
+                activeProfile: activeProfile
+            )
+            try? await plugin.initialize(context: ctx)
+        }
     }
 
     // MARK: - Capability Interrogation
@@ -202,7 +244,12 @@ public final class AppPluginRegistry {
 
     // MARK: - Helpers
 
-    public func makeDefaultContext(for descriptor: PluginDescriptor, xPlaneURL: URL? = nil, activatedAircraftNames: [String]? = nil) -> PluginContext {
+    public func makeDefaultContext(
+        for descriptor: PluginDescriptor,
+        xPlaneURL: URL? = nil,
+        activatedAircraftNames: [String]? = nil,
+        activeProfile: String? = nil
+    ) -> PluginContext {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSTemporaryDirectory())
         let pluginDataDir = appSupport.appendingPathComponent("XLauncher/PlugInsData/\(descriptor.id)")
@@ -212,11 +259,12 @@ public final class AppPluginRegistry {
             hostVersion: AppInfo.version,
             xPlaneURL: xPlaneURL,
             xPlaneVersion: nil,
-            activeProfile: nil,
+            activeProfile: activeProfile,
             storageDirectory: pluginDataDir,
             logger: HostPluginLogger(pluginId: descriptor.id),
             licenseVerifier: HostPluginLicenseVerifier(),
-            activatedAircraftNames: activatedAircraftNames
+            activatedAircraftNames: activatedAircraftNames,
+            profileProvider: self.profileProvider
         )
     }
 

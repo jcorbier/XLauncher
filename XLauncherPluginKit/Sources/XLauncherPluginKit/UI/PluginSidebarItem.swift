@@ -69,3 +69,14 @@ public struct PluginSidebarItem: Identifiable, Sendable {
         self.viewBuilder = viewBuilder
     }
 }
+
+extension PluginSidebarItem: Equatable {
+    public static func == (lhs: PluginSidebarItem, rhs: PluginSidebarItem) -> Bool {
+        lhs.id == rhs.id &&
+        lhs.title == rhs.title &&
+        lhs.systemImage == rhs.systemImage &&
+        lhs.section == rhs.section &&
+        lhs.priority == rhs.priority
+    }
+}
+

@@ -42,6 +42,7 @@ public struct PluginContext: Sendable {
     public let logger: PluginLogger
     public let licenseVerifier: PluginLicenseVerifier
     public let activatedAircraftNames: [String]?
+    public let profileProvider: PluginProfileProvider?
 
     public init(
         hostVersion: String,
@@ -51,7 +52,8 @@ public struct PluginContext: Sendable {
         storageDirectory: URL,
         logger: PluginLogger,
         licenseVerifier: PluginLicenseVerifier,
-        activatedAircraftNames: [String]? = nil
+        activatedAircraftNames: [String]? = nil,
+        profileProvider: PluginProfileProvider? = nil
     ) {
         self.hostVersion = hostVersion
         self.xPlaneURL = xPlaneURL
@@ -61,5 +63,6 @@ public struct PluginContext: Sendable {
         self.logger = logger
         self.licenseVerifier = licenseVerifier
         self.activatedAircraftNames = activatedAircraftNames
+        self.profileProvider = profileProvider
     }
 }

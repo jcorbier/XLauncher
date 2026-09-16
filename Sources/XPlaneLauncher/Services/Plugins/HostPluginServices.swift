@@ -70,3 +70,62 @@ public final class HostPluginLicenseVerifier: PluginLicenseVerifier, Sendable {
         DeviceFingerprint.getHashedFingerprint()
     }
 }
+
+final class HostPluginProfileProvider: PluginProfileProvider, @unchecked Sendable {
+    private weak var pluginManager: PluginManager?
+    private weak var pluginRegistry: AppPluginRegistry?
+
+    init(pluginManager: PluginManager, pluginRegistry: AppPluginRegistry) {
+        self.pluginManager = pluginManager
+        self.pluginRegistry = pluginRegistry
+    }
+
+    public func availableProfiles() async -> [PluginProfileSummary] {
+        await MainActor.run {
+            guard let pm = pluginManager else { return [] }
+            return pm.profiles.map { profile in
+                PluginProfileSummary(
+                    id: profile.id,
+                    name: profile.name,
+                    aircraftCount: profile.aircraftFolderNames.count,
+                    totalAddonsCount: profile.aircraftFolderNames.count +
+                        profile.pluginFolderNames.count +
+                        profile.sceneryFolderNames.count +
+                        profile.luaScriptFolderNames.count
+                )
+            }
+        }
+    }
+
+    public func activeProfileId() async -> UUID? {
+        await MainActor.run {
+            pluginManager?.selectedProfileId
+        }
+    }
+
+    public func selectProfile(id: UUID?) async throws {
+        await MainActor.run {
+            guard let pm = pluginManager else { return }
+            pm.selectedProfileId = id
+        }
+
+        let (url, activeNames, profName) = await MainActor.run {
+            guard let pm = pluginManager else { return (nil as URL?, nil as [String]?, nil as String?) }
+            let names = pm.aircraft.filter { $0.isEnabled }.map { $0.folderName }
+            return (pm.xPlanePath, names, pm.selectedProfile?.name)
+        }
+
+        if let reg = await MainActor.run(body: { pluginRegistry }) {
+            await reg.updatePluginContexts(
+                xPlaneURL: url,
+                activatedAircraftNames: activeNames,
+                activeProfile: profName
+            )
+        }
+
+        await MainActor.run {
+            NotificationCenter.default.post(name: .pluginActiveProfileDidChange, object: id)
+        }
+    }
+}
+

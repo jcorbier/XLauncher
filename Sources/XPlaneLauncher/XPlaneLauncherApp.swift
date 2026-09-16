@@ -98,9 +98,14 @@ struct XPlaneLauncherApp: App {
                     if appUpdateManager.automaticallyCheckOnLaunch {
                         appUpdateManager.checkForUpdates(manual: false)
                     }
+                    appPluginRegistry.profileProvider = HostPluginProfileProvider(pluginManager: pluginManager, pluginRegistry: appPluginRegistry)
                     Task {
                         let activeAircraft = pluginManager.aircraft.filter { $0.isEnabled }.map { $0.folderName }
-                        await appPluginRegistry.discoverAndLoadPlugins(xPlaneURL: pluginManager.xPlanePath, activatedAircraftNames: activeAircraft)
+                        await appPluginRegistry.discoverAndLoadPlugins(
+                            xPlaneURL: pluginManager.xPlanePath,
+                            activatedAircraftNames: activeAircraft,
+                            activeProfile: pluginManager.selectedProfile?.name
+                        )
                         await appPluginRegistry.reloadLicenses()
                     }
                 }
@@ -121,7 +126,11 @@ struct XPlaneLauncherApp: App {
                     }
                     Task {
                         let activeAircraft = pluginManager.aircraft.filter { $0.isEnabled }.map { $0.folderName }
-                        await appPluginRegistry.discoverAndLoadPlugins(xPlaneURL: newValue, activatedAircraftNames: activeAircraft)
+                        await appPluginRegistry.discoverAndLoadPlugins(
+                            xPlaneURL: newValue,
+                            activatedAircraftNames: activeAircraft,
+                            activeProfile: pluginManager.selectedProfile?.name
+                        )
                         await appPluginRegistry.reloadLicenses()
                     }
                 }
@@ -162,7 +171,22 @@ struct XPlaneLauncherApp: App {
                 .onChange(of: pluginManager.aircraft) { _, _ in
                     Task {
                         let activeAircraft = pluginManager.aircraft.filter { $0.isEnabled }.map { $0.folderName }
-                        await appPluginRegistry.discoverAndLoadPlugins(xPlaneURL: pluginManager.xPlanePath, activatedAircraftNames: activeAircraft)
+                        await appPluginRegistry.updatePluginContexts(
+                            xPlaneURL: pluginManager.xPlanePath,
+                            activatedAircraftNames: activeAircraft,
+                            activeProfile: pluginManager.selectedProfile?.name
+                        )
+                    }
+                }
+                .onChange(of: pluginManager.selectedProfileId) { _, newId in
+                    Task {
+                        let activeAircraft = pluginManager.aircraft.filter { $0.isEnabled }.map { $0.folderName }
+                        await appPluginRegistry.updatePluginContexts(
+                            xPlaneURL: pluginManager.xPlanePath,
+                            activatedAircraftNames: activeAircraft,
+                            activeProfile: pluginManager.selectedProfile?.name
+                        )
+                        NotificationCenter.default.post(name: .pluginActiveProfileDidChange, object: newId)
                     }
                 }
                 .onChange(of: licenseManager.isPro) { _, _ in

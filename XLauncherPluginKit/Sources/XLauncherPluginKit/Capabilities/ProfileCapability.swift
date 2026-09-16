@@ -20,36 +20,41 @@
 //  SOFTWARE.
 //
 
-import SwiftUI
+import Foundation
 
-public struct PluginSettingsPane: Identifiable, Sendable {
-    public let id: String
-    public let title: String
-    public let systemImage: String
-    public let priority: Int
-    public let viewBuilder: @MainActor @Sendable () -> AnyView
+/// Summary representation of an add-on profile in XLauncher.
+public struct PluginProfileSummary: Identifiable, Codable, Hashable, Sendable {
+    public let id: UUID
+    public let name: String
+    public let aircraftCount: Int
+    public let totalAddonsCount: Int
 
     public init(
-        id: String,
-        title: String,
-        systemImage: String,
-        priority: Int = 100,
-        viewBuilder: @escaping @MainActor @Sendable () -> AnyView
+        id: UUID,
+        name: String,
+        aircraftCount: Int = 0,
+        totalAddonsCount: Int = 0
     ) {
         self.id = id
-        self.title = title
-        self.systemImage = systemImage
-        self.priority = priority
-        self.viewBuilder = viewBuilder
+        self.name = name
+        self.aircraftCount = aircraftCount
+        self.totalAddonsCount = totalAddonsCount
     }
 }
 
-extension PluginSettingsPane: Equatable {
-    public static func == (lhs: PluginSettingsPane, rhs: PluginSettingsPane) -> Bool {
-        lhs.id == rhs.id &&
-        lhs.title == rhs.title &&
-        lhs.systemImage == rhs.systemImage &&
-        lhs.priority == rhs.priority
-    }
+/// Host-provided interface for inspecting and switching profiles.
+public protocol PluginProfileProvider: Sendable {
+    /// Returns the list of profiles available in the host.
+    func availableProfiles() async -> [PluginProfileSummary]
+
+    /// Returns the active profile ID, or nil for None / Custom.
+    func activeProfileId() async -> UUID?
+
+    /// Selects and activates a profile in the host.
+    func selectProfile(id: UUID?) async throws
 }
 
+public extension Notification.Name {
+    /// Notification posted when the active profile changes in the host.
+    static let pluginActiveProfileDidChange = Notification.Name("com.jcorbier.XLauncher.activeProfileDidChange")
+}
