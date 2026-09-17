@@ -92,3 +92,13 @@ Completed <── Taxi In <── Rollout <── Touchdown <── Approach <�
 10. **Taxi In**: Taxiing toward parking or gate after clearing runway.
 11. **Completed**: Parking brake set at destination stand with engines stopped.
 
+---
+
+## Post-Flight Summary Side Panel
+
+Upon touchdown and decelerating through rollout, an in-map floating side panel opens automatically:
+- **Touchdown Performance**: Immediate display of vertical speed (fpm), normal G-force, pitch angle, bank angle, and quality rating.
+- **Flight Timeline**: Block Out, Wheels Off, Wheels Down, Block In timestamps, and calculated flight/block duration.
+- **Flight Metrics**: Distance flown (NM), maximum altitude (ft), and top groundspeed (kts).
+- **Logbook Navigation**: Click **View in Logbook** to inspect or export the completed entry in the pilot logbook. See [Automated Flight Logbook & Landing Analytics](flight-logbook.md).
+

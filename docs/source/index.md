@@ -91,6 +91,14 @@ View online traffic, ATC stations (DEL, GND, TWR, APP, CTR, FSS), ATIS frequenci
 Check live decoded METAR and TAF weather with runway crosswind components, and browse interactive airport layouts and parking stands.
 :::
 
+:::{grid-item-card} Automated Flight Logbook (Pro)
+Automatically record flights from startup to shutdown with block and flight times, GPS route breadcrumbs, in-app map replay, and CSV/JSON export.
+:::
+
+:::{grid-item-card} Landing Rate & Touchdown Analytics (Pro)
+Sample touchdown vertical speed, normal G-force, pitch, bank, and groundspeed at wheel contact with automated landing quality ratings.
+:::
+
 ::::
 
 ## How It Works
@@ -163,6 +171,7 @@ features/csl-models
 pro/index
 pro/flight-dispatch
 pro/live-map-telemetry
+pro/flight-logbook
 ```
 
 ```{toctree}
