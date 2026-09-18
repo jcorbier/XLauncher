@@ -82,7 +82,7 @@ struct ProActivationSheet: View {
             )
         }
         .onChange(of: licenseManager.isPro) { _, isPro in
-            if isPro && activeCheckoutData == nil {
+            if isPro && activeCheckoutData == nil && licenseManager.licenseRecord?.isTrial != true {
                 dismiss()
             }
         }
@@ -229,31 +229,165 @@ struct ProActivationSheet: View {
                 .clipShape(RoundedRectangle(cornerRadius: 6))
             }
 
-            // Purchase Button
+            // Purchase / Trial Section
             VStack(spacing: 12) {
-                Button(action: {
-                    startInAppPurchase()
-                }) {
-                    HStack {
-                        if isStartingCheckout {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else {
-                            Image(systemName: "creditcard.fill")
+                // If user is currently on active trial
+                if let record = licenseManager.licenseRecord, record.isTrial, !record.isExpired {
+                    HStack(spacing: 10) {
+                        Image(systemName: "clock.badge.checkmark.fill")
+                            .font(.title3)
+                            .foregroundStyle(.orange)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("7-Day Free Trial Active")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                            let days = record.daysRemaining ?? 0
+                            Text("\(days) \(days == 1 ? "day" : "days") remaining. Upgrade anytime to keep all Pro features forever.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
-                        Text("Purchase License (\(priceText) Lifetime)")
-                            .fontWeight(.semibold)
+                        Spacer()
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 4)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .disabled(isStartingCheckout || isActivating || licenseManager.isPro)
+                    .padding(12)
+                    .background(Color.orange.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.orange.opacity(0.3), lineWidth: 0.8)
+                    )
 
-                Text("One-time lifetime payment • Instant activation • Secured by Stripe")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    Button(action: {
+                        startInAppPurchase()
+                    }) {
+                        HStack {
+                            if isStartingCheckout {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else {
+                                Image(systemName: "crown.fill")
+                            }
+                            Text("Upgrade to Lifetime (\(priceText))")
+                                .fontWeight(.bold)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 4)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .disabled(isStartingCheckout || isActivating)
+
+                    Text("One-time payment • Converts your trial to lifetime • Secured by Stripe")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                } else {
+                    // Trial expired banner if applicable
+                    if let record = licenseManager.licenseRecord, (record.status == "expired" || record.isExpired) {
+                        HStack(spacing: 10) {
+                            Image(systemName: "clock.badge.exclamationmark.fill")
+                                .font(.title3)
+                                .foregroundStyle(.red)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("7-Day Free Trial Ended")
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                Text("Your trial has expired. Purchase a lifetime license to restore Pro features.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                        }
+                        .padding(12)
+                        .background(Color.red.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(Color.red.opacity(0.3), lineWidth: 0.8)
+                        )
+                    } else if !licenseManager.hasUsedTrial && !licenseManager.isPro {
+                        // Trial option available!
+                        VStack(spacing: 6) {
+                            Button(action: {
+                                startFreeTrial()
+                            }) {
+                                HStack {
+                                    if isActivating {
+                                        ProgressView()
+                                            .controlSize(.small)
+                                    } else {
+                                        Image(systemName: "sparkles")
+                                    }
+                                    Text("Start 7-Day Free Trial")
+                                        .fontWeight(.bold)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 5)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.orange)
+                            .controlSize(.large)
+                            .disabled(isStartingCheckout || isActivating)
+
+                            Text("No credit card required • Instant 1-click activation")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        HStack {
+                            Rectangle().fill(Color(NSColor.separatorColor)).frame(height: 0.8)
+                            Text("or purchase directly")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            Rectangle().fill(Color(NSColor.separatorColor)).frame(height: 0.8)
+                        }
+                        .padding(.vertical, 2)
+                    }
+
+                    if !licenseManager.hasUsedTrial && !licenseManager.isPro {
+                        Button(action: {
+                            startInAppPurchase()
+                        }) {
+                            HStack {
+                                if isStartingCheckout {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                } else {
+                                    Image(systemName: "creditcard.fill")
+                                }
+                                Text("Purchase License (\(priceText) Lifetime)")
+                                    .fontWeight(.semibold)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 4)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.large)
+                        .disabled(isStartingCheckout || isActivating || (licenseManager.isPro && licenseManager.licenseRecord?.isTrial != true))
+                    } else {
+                        Button(action: {
+                            startInAppPurchase()
+                        }) {
+                            HStack {
+                                if isStartingCheckout {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                } else {
+                                    Image(systemName: "creditcard.fill")
+                                }
+                                Text("Purchase License (\(priceText) Lifetime)")
+                                    .fontWeight(.semibold)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 4)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                        .disabled(isStartingCheckout || isActivating || (licenseManager.isPro && licenseManager.licenseRecord?.isTrial != true))
+                    }
+
+                    Text("One-time lifetime payment • Instant activation • Secured by Stripe")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Divider()
@@ -536,6 +670,30 @@ struct ProActivationSheet: View {
             } catch {
                 await MainActor.run {
                     self.isStartingCheckout = false
+                    self.errorMessage = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    private func startFreeTrial() {
+        errorMessage = nil
+        isActivating = true
+
+        Task {
+            do {
+                try await licenseManager.startTrial()
+                await AppPluginRegistry.shared.reloadLicenses()
+                await MainActor.run {
+                    self.isActivating = false
+                    self.showSuccessBanner = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                        dismiss()
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    self.isActivating = false
                     self.errorMessage = error.localizedDescription
                 }
             }

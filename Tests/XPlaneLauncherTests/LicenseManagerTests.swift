@@ -7,6 +7,7 @@
 //
 
 import XCTest
+import CryptoKit
 @testable import XPlaneLauncher
 
 final class LicenseManagerTests: XCTestCase {
@@ -218,5 +219,91 @@ final class LicenseManagerTests: XCTestCase {
         await manager.validateOnline()
         XCTAssertTrue(manager.isPro, "Must remain active when offline/network failure occurs")
         XCTAssertNotNil(LicenseStorage.loadLicense())
+    }
+
+    // MARK: - 7-Day Trial Tests
+
+    func testTrialLicenseRecordProperties() throws {
+        let privateKey = Curve25519.Signing.PrivateKey()
+
+        let futureDate = Date().addingTimeInterval(5 * 24 * 3600) // 5 days from now
+        let isoFormatter = ISO8601DateFormatter()
+        let expiryString = isoFormatter.string(from: futureDate)
+
+        let payload = """
+        {"policy":{"id":"22162e30-4146-4037-b806-6336e57e9e13"},"license":{"id":"lic_trial_test","expiry":"\(expiryString)"}}
+        """
+        let payloadBase64 = KeygenCrypto.base64URLEncode(payload.data(using: .utf8)!)
+        let signingData = "key/\(payloadBase64)"
+        let sig = try privateKey.signature(for: Data(signingData.utf8))
+        let sigBase64 = KeygenCrypto.base64URLEncode(sig)
+        let trialKey = "\(signingData).\(sigBase64)"
+
+        let record = LicenseRecord(
+            licenseKey: trialKey,
+            licenseId: "lic_trial_test",
+            machineFingerprint: DeviceFingerprint.getHashedFingerprint(),
+            machineName: "Test Mac",
+            status: "trial"
+        )
+
+        XCTAssertTrue(record.isTrial)
+        XCTAssertFalse(record.isExpired)
+        XCTAssertNotNil(record.expiryDate)
+        XCTAssertEqual(record.daysRemaining, 5)
+    }
+
+    func testExpiredTrialLicenseRecordProperties() throws {
+        let privateKey = Curve25519.Signing.PrivateKey()
+
+        let pastDate = Date().addingTimeInterval(-24 * 3600) // 1 day ago
+        let isoFormatter = ISO8601DateFormatter()
+        let expiryString = isoFormatter.string(from: pastDate)
+
+        let payload = """
+        {"policy":{"id":"22162e30-4146-4037-b806-6336e57e9e13"},"license":{"id":"lic_trial_expired","expiry":"\(expiryString)"}}
+        """
+        let payloadBase64 = KeygenCrypto.base64URLEncode(payload.data(using: .utf8)!)
+        let signingData = "key/\(payloadBase64)"
+        let sig = try privateKey.signature(for: Data(signingData.utf8))
+        let sigBase64 = KeygenCrypto.base64URLEncode(sig)
+        let trialKey = "\(signingData).\(sigBase64)"
+
+        let record = LicenseRecord(
+            licenseKey: trialKey,
+            licenseId: "lic_trial_expired",
+            machineFingerprint: DeviceFingerprint.getHashedFingerprint(),
+            machineName: "Test Mac",
+            status: "trial"
+        )
+
+        XCTAssertTrue(record.isTrial)
+        XCTAssertTrue(record.isExpired)
+        XCTAssertEqual(record.daysRemaining, 0)
+    }
+
+    func testTrialLicenseWithNullExpiryAndDurationComputesDaysRemaining() throws {
+        let now = Date()
+        let isoFormatter = ISO8601DateFormatter()
+        let createdStr = isoFormatter.string(from: now)
+
+        let payload = """
+        {"policy":{"id":"22162e30-4146-4037-b806-6336e57e9e13","duration":604800},"license":{"id":"lic_trial_null_exp","created":"\(createdStr)","expiry":null}}
+        """
+        let payloadBase64 = KeygenCrypto.base64URLEncode(payload.data(using: .utf8)!)
+        let trialKey = "key/\(payloadBase64).dummySignature"
+
+        let record = LicenseRecord(
+            licenseKey: trialKey,
+            licenseId: "lic_trial_null_exp",
+            machineFingerprint: DeviceFingerprint.getHashedFingerprint(),
+            machineName: "Test Mac",
+            status: "trial"
+        )
+
+        XCTAssertTrue(record.isTrial)
+        XCTAssertFalse(record.isExpired)
+        XCTAssertNotNil(record.expiryDate)
+        XCTAssertEqual(record.daysRemaining, 7)
     }
 }

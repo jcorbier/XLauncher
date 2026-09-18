@@ -417,10 +417,18 @@ struct ContentView: View {
                     if licenseManager.isPro {
                         HStack(spacing: 8) {
                             ProBadgeView(size: 11)
-                            Text("Active")
-                                .font(.caption2)
-                                .fontWeight(.semibold)
-                                .foregroundStyle(.secondary)
+                            if let record = licenseManager.licenseRecord, record.isTrial {
+                                let days = record.daysRemaining ?? 0
+                                Text("Trial (\(days)d left)")
+                                    .font(.caption2)
+                                    .fontWeight(.semibold)
+                                    .foregroundStyle(.orange)
+                            } else {
+                                Text("Active")
+                                    .font(.caption2)
+                                    .fontWeight(.semibold)
+                                    .foregroundStyle(.secondary)
+                            }
                             Spacer()
                         }
                         .padding(.horizontal, 4)
@@ -438,7 +446,7 @@ struct ContentView: View {
                                             endPoint: .bottomTrailing
                                         )
                                     )
-                                Text("Upgrade to Pro")
+                                Text(!licenseManager.hasUsedTrial ? "Start 7-Day Trial" : "Upgrade to Pro")
                                     .font(.subheadline)
                                     .fontWeight(.medium)
                                 Spacer()

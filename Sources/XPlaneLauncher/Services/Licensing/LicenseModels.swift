@@ -56,9 +56,62 @@ public struct LicenseRecord: Codable, Equatable, Sendable {
         }
         return "••••••••••••"
     }
+
+    /// Whether this license record represents a trial license.
+    public var isTrial: Bool {
+        status == "trial" || expiryDate != nil
+    }
+
+    /// Expiry date parsed from the cryptographic license key payload, if any.
+    public var expiryDate: Date? {
+        KeygenCrypto.extractExpiryDate(from: licenseKey)
+    }
+
+    /// Remaining days before trial expiration (rounded up to nearest day), or nil if lifetime.
+    public var daysRemaining: Int? {
+        guard let expiry = expiryDate else { return nil }
+        let remainingSeconds = expiry.timeIntervalSince(Date())
+        guard remainingSeconds > 0 else { return 0 }
+        return Int(ceil(remainingSeconds / 86400.0))
+    }
+
+    /// Whether this trial license has expired.
+    public var isExpired: Bool {
+        guard let expiry = expiryDate else { return false }
+        return Date() > expiry
+    }
 }
 
 // MARK: - API Payloads
+
+public struct StartTrialRequest: Codable, Sendable {
+    public let machineId: String
+    public let machineName: String
+
+    public init(machineId: String, machineName: String) {
+        self.machineId = machineId
+        self.machineName = machineName
+    }
+}
+
+public struct StartTrialResponse: Codable, Sendable {
+    public let status: String
+    public let licenseKey: String
+    public let licenseId: String?
+    public let expiresAt: String?
+
+    public init(
+        status: String = "active",
+        licenseKey: String,
+        licenseId: String? = nil,
+        expiresAt: String? = nil
+    ) {
+        self.status = status
+        self.licenseKey = licenseKey
+        self.licenseId = licenseId
+        self.expiresAt = expiresAt
+    }
+}
 
 public struct CreateCheckoutRequest: Codable, Sendable {
     public let machineId: String

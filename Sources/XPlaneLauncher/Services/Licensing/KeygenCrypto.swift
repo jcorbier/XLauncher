@@ -14,6 +14,7 @@ public struct KeygenVerificationResult: Sendable {
     public let payload: String?
     public let licenseId: String?
     public let expiryDate: Date?
+    public let isExpired: Bool
     public let errorMessage: String?
 
     public init(
@@ -21,21 +22,23 @@ public struct KeygenVerificationResult: Sendable {
         payload: String? = nil,
         licenseId: String? = nil,
         expiryDate: Date? = nil,
+        isExpired: Bool = false,
         errorMessage: String? = nil
     ) {
         self.isValid = isValid
         self.payload = payload
         self.licenseId = licenseId
         self.expiryDate = expiryDate
+        self.isExpired = isExpired
         self.errorMessage = errorMessage
     }
 
-    public static func failure(_ message: String) -> KeygenVerificationResult {
-        KeygenVerificationResult(isValid: false, errorMessage: message)
+    public static func failure(_ message: String, expiryDate: Date? = nil, isExpired: Bool = false) -> KeygenVerificationResult {
+        KeygenVerificationResult(isValid: false, expiryDate: expiryDate, isExpired: isExpired, errorMessage: message)
     }
 
     public static func success(payload: String? = nil, licenseId: String? = nil, expiryDate: Date? = nil) -> KeygenVerificationResult {
-        KeygenVerificationResult(isValid: true, payload: payload, licenseId: licenseId, expiryDate: expiryDate)
+        KeygenVerificationResult(isValid: true, payload: payload, licenseId: licenseId, expiryDate: expiryDate, isExpired: false)
     }
 }
 
@@ -138,19 +141,52 @@ public enum KeygenCrypto {
 
             // Attempt to parse JSON dataset if present
             if let json = try? JSONSerialization.jsonObject(with: decodedData) as? [String: Any] {
-                if let id = json["id"] as? String {
-                    extractedLicenseId = id
-                } else if let id = json["licenseId"] as? String {
-                    extractedLicenseId = id
+                let licDict = json["license"] as? [String: Any]
+                let dataDict = json["data"] as? [String: Any]
+                let attrDict = dataDict?["attributes"] as? [String: Any]
+
+                extractedLicenseId = licDict?["id"] as? String
+                    ?? json["id"] as? String
+                    ?? json["licenseId"] as? String
+                    ?? dataDict?["id"] as? String
+
+                let policyDict = json["policy"] as? [String: Any]
+                let expiryString = licDict?["expiry"] as? String
+                    ?? json["expiry"] as? String
+                    ?? json["expiresAt"] as? String
+                    ?? attrDict?["expiry"] as? String
+
+                var resolvedExpiryDate: Date? = nil
+                if let expiryString = expiryString {
+                    resolvedExpiryDate = parseISO8601Date(expiryString)
                 }
 
-                if let expiryString = json["expiry"] as? String ?? json["expiresAt"] as? String {
-                    let isoFormatter = ISO8601DateFormatter()
-                    if let date = isoFormatter.date(from: expiryString) {
-                        extractedExpiryDate = date
-                        if date < Date() {
-                            return .failure("License certificate has expired on \(expiryString)")
-                        }
+                // Fallback: If Keygen's signed payload has expiry: null, calculate from created + policy.duration
+                if resolvedExpiryDate == nil {
+                    let durationSeconds = (policyDict?["duration"] as? Double)
+                        ?? (policyDict?["duration"] as? Int).map { Double($0) }
+                        ?? (attrDict?["duration"] as? Double)
+                        ?? (attrDict?["duration"] as? Int).map { Double($0) }
+
+                    let createdString = licDict?["created"] as? String
+                        ?? json["created"] as? String
+                        ?? attrDict?["created"] as? String
+
+                    if let duration = durationSeconds, duration > 0,
+                       let createdString = createdString,
+                       let createdDate = parseISO8601Date(createdString) {
+                        resolvedExpiryDate = createdDate.addingTimeInterval(duration)
+                    }
+                }
+
+                if let date = resolvedExpiryDate {
+                    extractedExpiryDate = date
+                    if date < Date() {
+                        return .failure(
+                            "License certificate has expired on \(date)",
+                            expiryDate: date,
+                            isExpired: true
+                        )
                     }
                 }
             }
@@ -236,5 +272,63 @@ public enum KeygenCrypto {
             return true
         }
         return false
+    }
+
+    /// Parses ISO8601 strings with or without fractional seconds.
+    public static func parseISO8601Date(_ string: String) -> Date? {
+        let withFrac = ISO8601DateFormatter()
+        withFrac.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = withFrac.date(from: string) {
+            return date
+        }
+        let standard = ISO8601DateFormatter()
+        return standard.date(from: string)
+    }
+
+    /// Decodes the payload of a signed key and parses the expiration date, if present.
+    public static func extractExpiryDate(from key: String) -> Date? {
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("key/") else { return nil }
+        let parts = trimmed.split(separator: ".", maxSplits: 1, omittingEmptySubsequences: false)
+        guard parts.count == 2 else { return nil }
+        let signingDataString = String(parts[0])
+        let dataPart = signingDataString.dropFirst(4) // drop "key/"
+
+        guard let decodedData = base64URLDecode(String(dataPart)),
+              let json = try? JSONSerialization.jsonObject(with: decodedData) as? [String: Any] else {
+            return nil
+        }
+
+        let licDict = json["license"] as? [String: Any]
+        let policyDict = json["policy"] as? [String: Any]
+        let dataDict = json["data"] as? [String: Any]
+        let attrDict = dataDict?["attributes"] as? [String: Any]
+
+        let expiryString = licDict?["expiry"] as? String
+            ?? json["expiry"] as? String
+            ?? json["expiresAt"] as? String
+            ?? attrDict?["expiry"] as? String
+
+        if let expiryString = expiryString, let date = parseISO8601Date(expiryString) {
+            return date
+        }
+
+        // Fallback: If expiry is null, compute from policy.duration + license.created
+        let durationSeconds = (policyDict?["duration"] as? Double)
+            ?? (policyDict?["duration"] as? Int).map { Double($0) }
+            ?? (attrDict?["duration"] as? Double)
+            ?? (attrDict?["duration"] as? Int).map { Double($0) }
+
+        let createdString = licDict?["created"] as? String
+            ?? json["created"] as? String
+            ?? attrDict?["created"] as? String
+
+        if let duration = durationSeconds, duration > 0,
+           let createdString = createdString,
+           let createdDate = parseISO8601Date(createdString) {
+            return createdDate.addingTimeInterval(duration)
+        }
+
+        return nil
     }
 }

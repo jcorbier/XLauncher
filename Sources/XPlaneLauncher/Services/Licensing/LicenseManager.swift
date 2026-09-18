@@ -21,6 +21,9 @@ public final class LicenseManager: @unchecked Sendable {
     public var isActivating: Bool = false
     public var activationError: String? = nil
 
+    public var isStartingTrial: Bool = false
+    public var trialError: String? = nil
+
     public var isCheckingOut: Bool = false
     public var activeCheckoutURL: URL? = nil
     public var activeCheckoutSessionId: String? = nil
@@ -30,6 +33,17 @@ public final class LicenseManager: @unchecked Sendable {
 
     public let proxyBaseURL: URL
     public let productId: String
+
+    private static let hasUsedTrialDefaultsKey = "com.xlauncher.hasUsedTrial"
+
+    public var hasUsedTrial: Bool {
+        get {
+            UserDefaults.standard.bool(forKey: Self.hasUsedTrialDefaultsKey)
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: Self.hasUsedTrialDefaultsKey)
+        }
+    }
 
     public static let shared = LicenseManager()
 
@@ -49,30 +63,52 @@ public final class LicenseManager: @unchecked Sendable {
         if let cached = LicenseStorage.loadLicense() {
             let currentFingerprint = DeviceFingerprint.getHashedFingerprint()
             var isCryptographicallyValid = true
+            var isExpired = false
 
             // If the cached license is an Ed25519 cryptographic license/key, verify signature
             if KeygenCrypto.isCryptographicLicense(cached.licenseKey) {
                 if cached.licenseKey.hasPrefix("key/") {
                     let result = KeygenCrypto.verifySignedKey(cached.licenseKey)
                     isCryptographicallyValid = result.isValid
+                    isExpired = result.isExpired
                 } else if cached.licenseKey.contains("BEGIN") {
                     let result = KeygenCrypto.verifyLicenseFile(cached.licenseKey)
                     isCryptographicallyValid = result.isValid
+                    isExpired = result.isExpired
                 }
             }
 
+            if cached.isTrial {
+                self.hasUsedTrial = true
+            }
+
             let fingerprintMatches = cached.machineFingerprint.isEmpty || cached.machineFingerprint == currentFingerprint
-            let statusMatches = cached.status == "active" || cached.status.isEmpty
-            if isCryptographicallyValid && fingerprintMatches && statusMatches {
+            let statusMatches = (cached.status == "active" || cached.status == "trial" || cached.status.isEmpty) && cached.status != "expired"
+
+            if isCryptographicallyValid && !isExpired && fingerprintMatches && statusMatches {
                 self.isPro = true
                 self.licenseRecord = cached
             } else {
                 // Fingerprint mismatch, expired certificate, or forged cryptographic signature
-                if !isCryptographicallyValid {
+                if isExpired || cached.status == "expired" {
+                    let expiredRecord = LicenseRecord(
+                        licenseKey: cached.licenseKey,
+                        licenseId: cached.licenseId,
+                        machineFingerprint: cached.machineFingerprint,
+                        machineName: cached.machineName,
+                        activatedAt: cached.activatedAt,
+                        productId: cached.productId,
+                        status: "expired"
+                    )
+                    LicenseStorage.saveLicense(expiredRecord)
+                    self.licenseRecord = expiredRecord
+                } else if !isCryptographicallyValid {
                     LicenseStorage.deleteLicense()
+                    self.licenseRecord = nil
+                } else {
+                    self.licenseRecord = nil
                 }
                 self.isPro = false
-                self.licenseRecord = nil
             }
         }
 
@@ -80,7 +116,7 @@ public final class LicenseManager: @unchecked Sendable {
 
         Task {
             await fetchProductInfo()
-            if self.licenseRecord != nil {
+            if self.licenseRecord != nil && self.isPro {
                 await validateOnline()
             }
         }
@@ -208,6 +244,109 @@ public final class LicenseManager: @unchecked Sendable {
         }
 
         return nil
+    }
+
+    // MARK: - 7-Day Free Trial
+
+    /// Activates a 7-day free trial on Keygen and locks it to this machine.
+    @MainActor
+    public func startTrial() async throws {
+        isStartingTrial = true
+        trialError = nil
+        defer { isStartingTrial = false }
+
+        let endpoint = proxyBaseURL
+            .appendingPathComponent("api/v1")
+            .appendingPathComponent(productId)
+            .appendingPathComponent("trial/start")
+
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 15
+
+        let reqPayload = StartTrialRequest(
+            machineId: DeviceFingerprint.getHashedFingerprint(),
+            machineName: DeviceFingerprint.getMachineName()
+        )
+        request.httpBody = try JSONEncoder().encode(reqPayload)
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                let err = "Invalid response from server"
+                self.trialError = err
+                throw LicenseError.networkError(err)
+            }
+
+            if http.statusCode != 200 {
+                if let errResp = try? JSONDecoder().decode(APIErrorResponse.self, from: data) {
+                    self.trialError = errResp.error
+                    throw LicenseError.serverError(errResp.error)
+                }
+                let generic = "Trial activation failed (HTTP \(http.statusCode))."
+                self.trialError = generic
+                throw LicenseError.serverError(generic)
+            }
+
+            let trialResp = try JSONDecoder().decode(StartTrialResponse.self, from: data)
+            let cleanedKey = trialResp.licenseKey.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            // Verify cryptographic signature locally
+            if KeygenCrypto.isCryptographicLicense(cleanedKey) {
+                let result = KeygenCrypto.verifySignedKey(cleanedKey)
+                guard result.isValid else {
+                    let err = result.errorMessage ?? "Invalid cryptographic signature on trial key."
+                    self.trialError = err
+                    throw LicenseError.invalidKey(err)
+                }
+            }
+
+            let record = LicenseRecord(
+                licenseKey: cleanedKey,
+                licenseId: trialResp.licenseId,
+                machineFingerprint: DeviceFingerprint.getHashedFingerprint(),
+                machineName: DeviceFingerprint.getMachineName(),
+                activatedAt: Date(),
+                productId: productId,
+                status: "trial"
+            )
+
+            LicenseStorage.saveLicense(record)
+            self.hasUsedTrial = true
+            self.isPro = true
+            self.licenseRecord = record
+            self.trialError = nil
+            NotificationCenter.default.post(name: .proLicenseStateChanged, object: nil)
+        } catch {
+            if let licErr = error as? LicenseError {
+                throw licErr
+            }
+            let netErr = error.localizedDescription
+            self.trialError = netErr
+            throw LicenseError.networkError(netErr)
+        }
+    }
+
+    /// Checks if active trial license has expired, updating state if so.
+    @MainActor
+    public func checkTrialExpiration() {
+        guard let record = licenseRecord, record.isTrial else { return }
+        if record.isExpired {
+            self.isPro = false
+            let expiredRecord = LicenseRecord(
+                licenseKey: record.licenseKey,
+                licenseId: record.licenseId,
+                machineFingerprint: record.machineFingerprint,
+                machineName: record.machineName,
+                activatedAt: record.activatedAt,
+                productId: record.productId,
+                status: "expired"
+            )
+            LicenseStorage.saveLicense(expiredRecord)
+            self.licenseRecord = expiredRecord
+            NotificationCenter.default.post(name: .proLicenseStateChanged, object: nil)
+        }
     }
 
     // MARK: - Manual Key Activation
@@ -390,11 +529,29 @@ public final class LicenseManager: @unchecked Sendable {
                 let valResp = try JSONDecoder().decode(LicenseActionResponse.self, from: data)
                 if valResp.valid == false {
                     // License was revoked, expired, suspended, or machine was removed from dashboard
-                    LicenseStorage.deleteLicense()
-                    await MainActor.run {
-                        self.isPro = false
-                        self.licenseRecord = nil
-                        NotificationCenter.default.post(name: .proLicenseStateChanged, object: nil)
+                    if current.isTrial {
+                        let expiredRecord = LicenseRecord(
+                            licenseKey: current.licenseKey,
+                            licenseId: current.licenseId,
+                            machineFingerprint: current.machineFingerprint,
+                            machineName: current.machineName,
+                            activatedAt: current.activatedAt,
+                            productId: current.productId,
+                            status: "expired"
+                        )
+                        LicenseStorage.saveLicense(expiredRecord)
+                        await MainActor.run {
+                            self.isPro = false
+                            self.licenseRecord = expiredRecord
+                            NotificationCenter.default.post(name: .proLicenseStateChanged, object: nil)
+                        }
+                    } else {
+                        LicenseStorage.deleteLicense()
+                        await MainActor.run {
+                            self.isPro = false
+                            self.licenseRecord = nil
+                            NotificationCenter.default.post(name: .proLicenseStateChanged, object: nil)
+                        }
                     }
                 }
             } else if http.statusCode == 400 || http.statusCode == 404 {

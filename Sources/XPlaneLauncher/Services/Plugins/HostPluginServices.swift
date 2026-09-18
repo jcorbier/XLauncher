@@ -50,19 +50,24 @@ public final class HostPluginLicenseVerifier: PluginLicenseVerifier, Sendable {
 
     public func isFeatureUnlocked(featureId: String) async -> Bool {
         await MainActor.run {
-            if LicenseManager.shared.isPro {
-                return true
+            guard LicenseManager.shared.isPro else { return false }
+            if let record = LicenseManager.shared.licenseRecord, record.status == "expired" || record.isExpired {
+                return false
             }
-            if let record = LicenseStorage.loadLicense(), (record.status == "active" || record.status.isEmpty) {
-                return true
-            }
-            return false
+            return true
         }
     }
 
     public func activeLicenseKey() async -> String? {
         await MainActor.run {
-            LicenseManager.shared.licenseRecord?.licenseKey ?? LicenseStorage.loadLicense()?.licenseKey
+            guard LicenseManager.shared.isPro else { return nil }
+            if let record = LicenseManager.shared.licenseRecord, record.status == "expired" || record.isExpired {
+                return nil
+            }
+            if let cached = LicenseStorage.loadLicense(), cached.status == "expired" || cached.isExpired {
+                return nil
+            }
+            return LicenseManager.shared.licenseRecord?.licenseKey ?? LicenseStorage.loadLicense()?.licenseKey
         }
     }
 

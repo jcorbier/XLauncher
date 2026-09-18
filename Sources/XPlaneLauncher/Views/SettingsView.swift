@@ -134,13 +134,34 @@ struct SettingsView: View {
                                 Spacer()
 
                                 if licenseManager.isPro {
+                                    if let record = licenseManager.licenseRecord, record.isTrial {
+                                        HStack(spacing: 5) {
+                                            Image(systemName: "clock.badge.checkmark.fill")
+                                                .foregroundStyle(.orange)
+                                            let days = record.daysRemaining ?? 0
+                                            Text("Active (7-Day Trial • \(days) \(days == 1 ? "day" : "days") left)")
+                                                .font(.subheadline)
+                                                .fontWeight(.semibold)
+                                                .foregroundStyle(.orange)
+                                        }
+                                    } else {
+                                        HStack(spacing: 5) {
+                                            Image(systemName: "checkmark.seal.fill")
+                                                .foregroundStyle(.green)
+                                            Text("Active (Lifetime)")
+                                                .font(.subheadline)
+                                                .fontWeight(.semibold)
+                                                .foregroundStyle(.green)
+                                        }
+                                    }
+                                } else if let record = licenseManager.licenseRecord, record.status == "expired" || record.isExpired {
                                     HStack(spacing: 5) {
-                                        Image(systemName: "checkmark.seal.fill")
-                                            .foregroundStyle(.green)
-                                        Text("Active")
+                                        Image(systemName: "clock.badge.exclamationmark.fill")
+                                            .foregroundStyle(.red)
+                                        Text("Trial Expired")
                                             .font(.subheadline)
                                             .fontWeight(.semibold)
-                                            .foregroundStyle(.green)
+                                            .foregroundStyle(.red)
                                     }
                                 } else {
                                     Text("Standard Edition")
@@ -177,9 +198,16 @@ struct SettingsView: View {
                                             Text("License Type:")
                                                 .font(.caption)
                                                 .foregroundStyle(.secondary)
-                                            Text("Node-locked lifetime license (up to 3 Macs)")
-                                                .font(.caption)
-                                                .foregroundStyle(.secondary)
+                                            if license.isTrial {
+                                                let days = license.daysRemaining ?? 0
+                                                Text("7-Day Free Trial (\(days) \(days == 1 ? "day" : "days") remaining)")
+                                                    .font(.caption)
+                                                    .foregroundStyle(.orange)
+                                            } else {
+                                                Text("Node-locked lifetime license (up to 3 Macs)")
+                                                    .font(.caption)
+                                                    .foregroundStyle(.secondary)
+                                            }
                                         }
                                     }
 
@@ -187,6 +215,16 @@ struct SettingsView: View {
                                 }
 
                                 HStack(spacing: 8) {
+                                    if license.isTrial {
+                                        Button {
+                                            activeProSheet = .purchase
+                                        } label: {
+                                            Label("Upgrade to Lifetime...", systemImage: "crown.fill")
+                                        }
+                                        .controlSize(.small)
+                                        .buttonStyle(.borderedProminent)
+                                    }
+
                                     Button {
                                         exportLicenseFile(licenseKey: license.licenseKey)
                                     } label: {
@@ -221,11 +259,28 @@ struct SettingsView: View {
                                     .foregroundStyle(.secondary)
 
                                 HStack(spacing: 8) {
-                                    Button("Upgrade to Pro...") {
-                                        activeProSheet = .purchase
+                                    if !licenseManager.hasUsedTrial {
+                                        Button("Start 7-Day Free Trial...") {
+                                            activeProSheet = .purchase
+                                        }
+                                        .controlSize(.small)
+                                        .buttonStyle(.borderedProminent)
+                                        .tint(.orange)
                                     }
-                                    .controlSize(.small)
-                                    .buttonStyle(.borderedProminent)
+
+                                    if !licenseManager.hasUsedTrial {
+                                        Button("Upgrade to Pro...") {
+                                            activeProSheet = .purchase
+                                        }
+                                        .controlSize(.small)
+                                        .buttonStyle(.bordered)
+                                    } else {
+                                        Button("Upgrade to Pro...") {
+                                            activeProSheet = .purchase
+                                        }
+                                        .controlSize(.small)
+                                        .buttonStyle(.borderedProminent)
+                                    }
 
                                     Button("Open License File...") {
                                         activeProSheet = .activateLicense
