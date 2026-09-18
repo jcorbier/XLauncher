@@ -277,24 +277,18 @@ final class AppPluginRegistryTests: XCTestCase {
         let activeId = await provider.activeProfileId()
         XCTAssertEqual(activeId, profile1.id)
 
-        // 3. Register notification observer
-        var receivedNotificationId: UUID? = nil
-        let expectation = self.expectation(description: "ProfileDidChange Notification")
-        let observer = NotificationCenter.default.addObserver(
-            forName: .pluginActiveProfileDidChange,
-            object: nil,
-            queue: .main
+        // 3. Register notification observer expectation
+        let expectation = expectation(
+            forNotification: .pluginActiveProfileDidChange,
+            object: nil
         ) { notification in
-            receivedNotificationId = notification.object as? UUID
-            expectation.fulfill()
+            (notification.object as? UUID) == profile2.id
         }
-        defer { NotificationCenter.default.removeObserver(observer) }
 
         // 4. Select profile 2
         try await provider.selectProfile(id: profile2.id)
 
         await fulfillment(of: [expectation], timeout: 2.0)
-        XCTAssertEqual(receivedNotificationId, profile2.id)
         XCTAssertEqual(pluginManager.selectedProfileId, profile2.id)
         let newActiveId = await provider.activeProfileId()
         XCTAssertEqual(newActiveId, profile2.id)

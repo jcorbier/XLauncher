@@ -306,4 +306,32 @@ final class LicenseManagerTests: XCTestCase {
         XCTAssertNotNil(record.expiryDate)
         XCTAssertEqual(record.daysRemaining, 7)
     }
+
+    func testLifetimeLicenseCannotExpire() throws {
+        // Genuine production lifetime license payload (duration: null, expiry: null)
+        let lifetimeKey = "key/eyJhY2NvdW50Ijp7ImlkIjoiMDVlZjlhNDQtZDYwNi00MzBlLWEyN2QtMWRhYjQ2NjI2NmE5In0sInByb2R1Y3QiOnsiaWQiOiI4NmZkMmI5ZS0zMjIzLTQ0MzgtODMwOC1mZDA3NDM0NTJmNzAifSwicG9saWN5Ijp7ImlkIjoiY2Y3YTk1MDQtYTE3OC00ZWZhLTlkMWEtMzE5OWYwYjNjMjYwIiwiZHVyYXRpb24iOm51bGx9LCJ1c2VyIjpudWxsLCJsaWNlbnNlIjp7ImlkIjoiNDNkODU0YzktMmFlNi00YWQwLTk1ZjYtNzg2MjNmNTcxZTlmIiwiY3JlYXRlZCI6IjIwMjYtMDktMDNUMTU6NTQ6NTMuMDAzWiIsImV4cGlyeSI6bnVsbH19.ou0CM1WEQiwT4cxNeSK84jzvTlKmfPwtaxnhHNtwgraQXZsfPPVQOpgZUXcvrp6IknGAp5i-YonKtO2PIiX0Ag=="
+
+        let record = LicenseRecord(
+            licenseKey: lifetimeKey,
+            licenseId: "43d854c9-2ae6-4ad0-95f6-78623f571e9f",
+            machineFingerprint: "7980569c7054e9ffbb04258eaf5caa10286056ff5ad6a66f6ef0653eb5138991",
+            machineName: "Mac Studio",
+            status: "active"
+        )
+
+        // 1. LicenseRecord properties
+        XCTAssertFalse(record.isTrial, "Lifetime license must not be identified as a trial")
+        XCTAssertFalse(record.isExpired, "Lifetime license must never expire")
+        XCTAssertNil(record.expiryDate, "Lifetime license must have nil expiryDate")
+        XCTAssertNil(record.daysRemaining, "Lifetime license must have nil daysRemaining")
+
+        // 2. Cryptographic verification
+        let cryptoResult = KeygenCrypto.verifySignedKey(lifetimeKey)
+        XCTAssertTrue(cryptoResult.isValid)
+        XCTAssertFalse(cryptoResult.isExpired)
+        XCTAssertNil(cryptoResult.expiryDate)
+
+        // 3. Expiry date extraction
+        XCTAssertNil(KeygenCrypto.extractExpiryDate(from: lifetimeKey))
+    }
 }
