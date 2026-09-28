@@ -42,6 +42,15 @@ class UpdateManager {
         }
     }
 
+    var addonBetaPreferences: [String: Bool] {
+        get {
+            defaults.object(forKey: .addonBetaPreferences) as? [String: Bool] ?? [:]
+        }
+        set {
+            defaults.set(newValue, forKey: .addonBetaPreferences)
+        }
+    }
+
     var storagePools: [StoragePool] = [] {
         didSet {
             guard storagePools != oldValue else { return }
@@ -126,7 +135,7 @@ class UpdateManager {
         let folderName: String
         let folderURL: URL
         let updaterType: UpdaterType
-        let configFileURL: URL
+        var configFileURL: URL
         var currentVersion: String?
         var latestVersion: String?
         var isUpdateAvailable: Bool = false
@@ -134,6 +143,12 @@ class UpdateManager {
         var isUpdating: Bool = false
         var statusMessage: String = "Unknown"
         var remoteManifestURL: String?
+        var hasBetaChannel: Bool = false
+        var isBetaEnabled: Bool = false
+
+        var persistenceKey: String {
+            "\(addonCategory.rawValue.lowercased()):\(folderName)"
+        }
     }
 
     init(storagePools: [StoragePool] = []) {
@@ -189,7 +204,13 @@ class UpdateManager {
         return (defaultName, nil, nil)
     }
 
-    private nonisolated static func scanDirectoryForAddons(subFolderURL: URL, category: AddonCategory, currentDepth: Int = 0, maxDepth: Int = 5) -> [UpdatableAddon] {
+    private nonisolated static func scanDirectoryForAddons(
+        subFolderURL: URL,
+        category: AddonCategory,
+        betaPreferences: [String: Bool] = [:],
+        currentDepth: Int = 0,
+        maxDepth: Int = 5
+    ) -> [UpdatableAddon] {
         var results: [UpdatableAddon] = []
         guard currentDepth <= maxDepth else { return results }
 
@@ -201,7 +222,28 @@ class UpdateManager {
 
                 if let updaterInfo = findUpdaterConfig(in: itemURL) {
                     let folderName = itemURL.lastPathComponent
-                    let (parsedName, version, remoteURL) = parseUpdaterConfig(url: updaterInfo.fileURL, type: updaterInfo.type, defaultName: folderName)
+                    let persistenceKey = "\(category.rawValue.lowercased()):\(folderName)"
+                    let pathKey = itemURL.path
+
+                    let hasBeta: Bool
+                    var isBeta: Bool = betaPreferences[persistenceKey] ?? betaPreferences[pathKey] ?? false
+                    var activeConfigFileURL = updaterInfo.fileURL
+
+                    if updaterInfo.type == .skunkcrafts {
+                        hasBeta = SkunkCraftsUpdaterService.shared.hasBetaChannel(in: itemURL)
+                        if !hasBeta {
+                            isBeta = false
+                        }
+                        if isBeta, let betaURL = SkunkCraftsUpdaterService.shared.findConfig(in: itemURL, preferBeta: true) {
+                            activeConfigFileURL = betaURL
+                        }
+                    } else if updaterInfo.type == .xUpdater {
+                        hasBeta = true
+                    } else {
+                        hasBeta = false
+                    }
+
+                    let (parsedName, version, remoteURL) = parseUpdaterConfig(url: activeConfigFileURL, type: updaterInfo.type, defaultName: folderName)
 
                     results.append(UpdatableAddon(
                         name: parsedName,
@@ -209,12 +251,20 @@ class UpdateManager {
                         folderName: folderName,
                         folderURL: itemURL,
                         updaterType: updaterInfo.type,
-                        configFileURL: updaterInfo.fileURL,
+                        configFileURL: activeConfigFileURL,
                         currentVersion: version,
-                        remoteManifestURL: remoteURL
+                        remoteManifestURL: remoteURL,
+                        hasBetaChannel: hasBeta,
+                        isBetaEnabled: isBeta
                     ))
                 } else {
-                    let subResults = scanDirectoryForAddons(subFolderURL: itemURL, category: category, currentDepth: currentDepth + 1, maxDepth: maxDepth)
+                    let subResults = scanDirectoryForAddons(
+                        subFolderURL: itemURL,
+                        category: category,
+                        betaPreferences: betaPreferences,
+                        currentDepth: currentDepth + 1,
+                        maxDepth: maxDepth
+                    )
                     results.append(contentsOf: subResults)
                 }
             }
@@ -232,6 +282,7 @@ class UpdateManager {
         }
 
         isScanning = true
+        let currentBetaPrefs = self.addonBetaPreferences
 
         Task {
             let allAddons = await Task.detached(priority: .userInitiated) {
@@ -240,7 +291,11 @@ class UpdateManager {
                     for category in AddonCategory.allCases {
                         let folderURL = PathService.shared.dataFolder(category.dataSubfolder, in: pool.url)
                         if FileManager.default.fileExists(atPath: folderURL.path) {
-                            let addons = Self.scanDirectoryForAddons(subFolderURL: folderURL, category: category)
+                            let addons = Self.scanDirectoryForAddons(
+                                subFolderURL: folderURL,
+                                category: category,
+                                betaPreferences: currentBetaPrefs
+                            )
                             results.append(contentsOf: addons)
                         }
                     }
@@ -376,6 +431,55 @@ class UpdateManager {
             log("Error fetching release notes for \(addon.name): \(error.localizedDescription)", level: .error)
             return nil
         }
+    }
+
+    func setBetaUpdatesEnabled(_ enabled: Bool, for addon: UpdatableAddon) {
+        guard let index = updatableAddons.firstIndex(where: { $0.id == addon.id }) else { return }
+        guard !updatableAddons[index].isUpdating else { return }
+
+        // Update stored preferences
+        var prefs = addonBetaPreferences
+        prefs[addon.persistenceKey] = enabled
+        prefs[addon.folderURL.path] = enabled
+        addonBetaPreferences = prefs
+
+        updatableAddons[index].isBetaEnabled = enabled
+
+        // If SkunkCrafts, swap active config file
+        if addon.updaterType == .skunkcrafts {
+            let activeConfigFileURL: URL
+            if enabled {
+                activeConfigFileURL = addon.folderURL.appendingPathComponent("skunkcrafts_updater_beta.cfg")
+            } else {
+                activeConfigFileURL = addon.folderURL.appendingPathComponent("skunkcrafts_updater.cfg")
+            }
+            if FileManager.default.fileExists(atPath: activeConfigFileURL.path) {
+                updatableAddons[index].configFileURL = activeConfigFileURL
+                let (_, version, remoteURL) = Self.parseUpdaterConfig(url: activeConfigFileURL, type: .skunkcrafts, defaultName: addon.name)
+                if let version {
+                    updatableAddons[index].currentVersion = version
+                }
+                if let remoteURL {
+                    updatableAddons[index].remoteManifestURL = remoteURL
+                }
+            }
+        } else if addon.updaterType == .xUpdater {
+            // Update settings.ini / x-updater.json on disk asynchronously
+            let folderURL = addon.folderURL
+            Task {
+                await XUpdaterService.shared.setBetaEnabled(enabled, in: folderURL)
+            }
+        }
+
+        updatableAddons[index].isChecking = false
+        updatableAddons[index].latestVersion = nil
+        updatableAddons[index].isUpdateAvailable = false
+        updatableAddons[index].statusMessage = "Channel: \(enabled ? "Beta" : "Release")"
+
+        log("[Updates] \(addon.name): Switched to \(enabled ? "Beta" : "Release") channel")
+
+        // Trigger immediate check on the newly selected channel
+        checkForUpdates(for: updatableAddons[index])
     }
 }
 

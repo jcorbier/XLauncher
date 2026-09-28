@@ -65,8 +65,8 @@ Control application window behavior when launching X-Plane:
 Configure which components automatically check for new versions and updates when X-Plane Launcher starts:
 
 - **X-Plane Launcher application**: When enabled, checks GitHub for new application versions on startup.
-- **SkunkCrafts add-ons**: When enabled, queries remote servers for updates to SkunkCrafts-managed add-ons on startup.
-- **X-Updater add-ons**: When enabled, queries remote servers for updates to X-Updater-managed add-ons on startup.
+- **SkunkCrafts add-ons**: When enabled, queries remote servers for updates to SkunkCrafts-managed add-ons on startup according to each add-on's configured channel (Release or Beta).
+- **X-Updater add-ons**: When enabled, queries remote servers for updates to X-Updater-managed add-ons on startup according to each add-on's configured channel (Release or Beta).
 - **X-CSL models**: When enabled, synchronizes the package index and checks for model updates from the X-CSL repository on startup (available when X-CSL support is enabled).
 - **Navigation data (Navigraph)**: When enabled, checks Navigraph for newly published AIRAC cycles on startup (available when Navigation Data support is enabled).
 

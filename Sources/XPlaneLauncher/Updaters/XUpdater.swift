@@ -513,7 +513,16 @@ actor XUpdaterService {
         if let snapshots = product["snapshots"] as? [[String: Any]], !snapshots.isEmpty {
             let targetType = config.betaEnabled ? "beta" : "release"
             let filteredSnapshots = snapshots.filter { ($0["type"] as? String)?.lowercased() == targetType }
-            let selectedSnapshot = filteredSnapshots.last ?? snapshots.last
+            let selectedSnapshot: [String: Any]?
+            if !filteredSnapshots.isEmpty {
+                selectedSnapshot = filteredSnapshots.last
+                await logHandler("[X-Updater] Selected \(targetType) snapshot (\(filteredSnapshots.count) available)")
+            } else {
+                selectedSnapshot = snapshots.last
+                if config.betaEnabled {
+                    await logHandler("[X-Updater] No beta snapshots available for '\(productName)'; falling back to latest release snapshot.")
+                }
+            }
 
             if let snap = selectedSnapshot {
                 if let num = snap["number"] as? Int ?? (snap["snapshot"] as? Int) ?? (snap["snapshot_num"] as? Int) {
@@ -638,8 +647,11 @@ actor XUpdaterService {
            let fullConfig = parseConfig(at: configFile, defaultName: config.name) {
             activeConfig = fullConfig
         }
+        activeConfig.betaEnabled = config.betaEnabled
+        activeConfig.releaseType = config.betaEnabled ? "beta" : "release"
 
-        await logHandler("[X-Updater] Checking '\(activeConfig.name)' (Local: \(activeConfig.version ?? "none"), Snapshot: \(activeConfig.snapshotNum.map(String.init) ?? "none"))")
+        let channelLabel = activeConfig.betaEnabled ? " [Beta Channel]" : ""
+        await logHandler("[X-Updater] Checking '\(activeConfig.name)'\(channelLabel) (Local: \(activeConfig.version ?? "none"), Snapshot: \(activeConfig.snapshotNum.map(String.init) ?? "none"))")
         if let user = activeConfig.login {
             await logHandler("[X-Updater] User: \(user)")
         } else {
@@ -725,8 +737,11 @@ actor XUpdaterService {
            let fullConfig = parseConfig(at: configFile, defaultName: config.name) {
             activeConfig = fullConfig
         }
+        activeConfig.betaEnabled = config.betaEnabled
+        activeConfig.releaseType = config.betaEnabled ? "beta" : "release"
 
-        await logHandler("[X-Updater] Starting update / repair for \(activeConfig.name)...")
+        let channelLabel = activeConfig.betaEnabled ? " [Beta Channel]" : ""
+        await logHandler("[X-Updater] Starting update / repair for \(activeConfig.name)\(channelLabel)...")
         let (remoteVersion, remoteSnapshotNum, files) = try await checkRemoteVersion(config: activeConfig, logHandler: logHandler)
 
         if files.isEmpty {
@@ -834,13 +849,14 @@ actor XUpdaterService {
             await logHandler("[X-Updater] Repaired/Updated \(item.path) (\(finalData.count) bytes)")
         }
 
-        // Update snapshot_num and version in local config files if available
+        // Update snapshot_num, version, and beta channel in local config files if available
         let manifestPaths = Set(files.map { $0.path.lowercased() })
         if remoteSnapshotNum != nil || remoteVersion != nil {
             updateLocalSettings(
                 in: addonFolder,
                 newSnapshotNum: remoteSnapshotNum,
                 newVersion: remoteVersion,
+                betaEnabled: activeConfig.betaEnabled,
                 manifestPaths: manifestPaths
             )
         }
@@ -866,10 +882,15 @@ actor XUpdaterService {
         return version
     }
 
+    func setBetaEnabled(_ betaEnabled: Bool, in addonFolder: URL) {
+        updateLocalSettings(in: addonFolder, newSnapshotNum: nil, newVersion: nil, betaEnabled: betaEnabled)
+    }
+
     func updateLocalSettings(
         in addonFolder: URL,
         newSnapshotNum: Int?,
         newVersion: String?,
+        betaEnabled: Bool? = nil,
         manifestPaths: Set<String> = []
     ) {
         let nativeSubdirectories = ["", ".xupdater", ".x-updater", ".x_updater", "x-updater", "x_updater", "xupdater"]
@@ -930,6 +951,11 @@ actor XUpdaterService {
                                 modified = true
                             }
                         }
+                        if let beta = betaEnabled {
+                            json["preferred_release_type"] = beta ? "beta" : "release"
+                            json["beta_enabled"] = beta
+                            modified = true
+                        }
                         json["updated_at"] = nowTimestamp
                         modified = true
 
@@ -947,6 +973,8 @@ actor XUpdaterService {
                 var foundSnapshot = false
                 var foundVersion = false
                 var foundUpdatedAt = false
+                var foundPreferredReleaseType = false
+                var foundBetaEnabled = false
 
                 for (idx, line) in lines.enumerated() {
                     let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -967,6 +995,16 @@ actor XUpdaterService {
                             lines[idx] = "\(rawKey)=\(encoded)"
                             foundVersion = true
                         }
+                    } else if key == "preferred_release_type" {
+                        if let beta = betaEnabled {
+                            lines[idx] = "\(rawKey)=\(beta ? "beta" : "release")"
+                            foundPreferredReleaseType = true
+                        }
+                    } else if key == "beta_enabled" || key == "betaenabled" {
+                        if let beta = betaEnabled {
+                            lines[idx] = "\(rawKey)=\(beta ? "true" : "false")"
+                            foundBetaEnabled = true
+                        }
                     } else if key == "updated_at" {
                         lines[idx] = "\(rawKey)=\(nowTimestamp)"
                         foundUpdatedAt = true
@@ -978,6 +1016,12 @@ actor XUpdaterService {
                 }
                 if !foundVersion, let ver = newVersion {
                     lines.append("version=\(ver)")
+                }
+                if !foundPreferredReleaseType, let beta = betaEnabled {
+                    lines.append("preferred_release_type=\(beta ? "beta" : "release")")
+                }
+                if !foundBetaEnabled, let beta = betaEnabled {
+                    lines.append("beta_enabled=\(beta ? "true" : "false")")
                 }
                 if !foundUpdatedAt {
                     lines.append("updated_at=\(nowTimestamp)")
@@ -997,6 +1041,10 @@ actor XUpdaterService {
             var defaultLines: [String] = []
             if let ver = newVersion { defaultLines.append("version=\(ver)") }
             if let snapshot = newSnapshotNum { defaultLines.append("snapshot_num=\(snapshot)") }
+            if let beta = betaEnabled {
+                defaultLines.append("preferred_release_type=\(beta ? "beta" : "release")")
+                defaultLines.append("beta_enabled=\(beta ? "true" : "false")")
+            }
             defaultLines.append("updated_at=\(nowTimestamp)")
             let content = defaultLines.joined(separator: "\n")
             try? content.write(to: defaultURL, atomically: true, encoding: .utf8)
@@ -1059,7 +1107,9 @@ extension XUpdaterService: AddonUpdater {
         let config = XUpdaterConfig(
             name: addon.name,
             version: addon.currentVersion,
-            remoteURL: addon.remoteManifestURL
+            remoteURL: addon.remoteManifestURL,
+            releaseType: addon.isBetaEnabled ? "beta" : "release",
+            betaEnabled: addon.isBetaEnabled
         )
         let result = try await checkAddonStatus(folderURL: addon.folderURL, config: config, logHandler: logHandler)
         return AddonUpdateCheckResult(
@@ -1077,7 +1127,9 @@ extension XUpdaterService: AddonUpdater {
         let config = XUpdaterConfig(
             name: addon.name,
             version: addon.currentVersion,
-            remoteURL: addon.remoteManifestURL
+            remoteURL: addon.remoteManifestURL,
+            releaseType: addon.isBetaEnabled ? "beta" : "release",
+            betaEnabled: addon.isBetaEnabled
         )
         try await downloadAndApplyUpdates(
             for: addon.folderURL,
@@ -1094,7 +1146,9 @@ extension XUpdaterService: AddonUpdater {
         let config = XUpdaterConfig(
             name: addon.name,
             version: addon.latestVersion ?? addon.currentVersion,
-            remoteURL: addon.remoteManifestURL
+            remoteURL: addon.remoteManifestURL,
+            releaseType: addon.isBetaEnabled ? "beta" : "release",
+            betaEnabled: addon.isBetaEnabled
         )
         return try await fetchReleaseNotes(for: addon.folderURL, config: config, logHandler: logHandler)
     }

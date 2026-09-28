@@ -28,6 +28,8 @@ struct SkunkCraftsConfig: Sendable {
     var version: String?
     var remoteManifestURL: String?
     var baseURL: String?
+    var configFileName: String? = nil
+    var isBetaEnabled: Bool = false
 }
 
 struct SkunkCraftsFileItem: Sendable {
@@ -50,7 +52,18 @@ actor SkunkCraftsUpdaterService {
 
     // MARK: - Config Detection & Parsing
 
-    nonisolated func findConfig(in folderURL: URL) -> URL? {
+    nonisolated func hasBetaChannel(in folderURL: URL) -> Bool {
+        let betaURL = folderURL.appendingPathComponent("skunkcrafts_updater_beta.cfg")
+        return FileManager.default.fileExists(atPath: betaURL.path)
+    }
+
+    nonisolated func findConfig(in folderURL: URL, preferBeta: Bool = false) -> URL? {
+        if preferBeta {
+            let betaURL = folderURL.appendingPathComponent("skunkcrafts_updater_beta.cfg")
+            if FileManager.default.fileExists(atPath: betaURL.path) {
+                return betaURL
+            }
+        }
         let skunkcraftsFiles = [
             "skunkcrafts_updater.cfg",
             "skunkcrafts_updater_beta.cfg",
@@ -106,7 +119,15 @@ actor SkunkCraftsUpdaterService {
             }
         }
 
-        return SkunkCraftsConfig(name: name, version: version, remoteManifestURL: remoteURL, baseURL: baseURL)
+        let isBeta = url.lastPathComponent.lowercased().contains("beta")
+        return SkunkCraftsConfig(
+            name: name,
+            version: version,
+            remoteManifestURL: remoteURL,
+            baseURL: baseURL,
+            configFileName: url.lastPathComponent,
+            isBetaEnabled: isBeta
+        )
     }
 
     // MARK: - Ignore & Blacklist Parsing
@@ -284,6 +305,8 @@ actor SkunkCraftsUpdaterService {
         var base = baseURLString
         if base.hasSuffix("skunkcrafts_updater.cfg") {
             base = String(base.dropLast("skunkcrafts_updater.cfg".count))
+        } else if base.hasSuffix("skunkcrafts_updater_beta.cfg") {
+            base = String(base.dropLast("skunkcrafts_updater_beta.cfg".count))
         }
         if !base.hasSuffix("/") {
             base += "/"
@@ -292,18 +315,19 @@ actor SkunkCraftsUpdaterService {
             throw URLError(.badURL)
         }
 
-        await logHandler("[SkunkCrafts] Checking \(config.name) from \(baseURL.absoluteString)...")
+        let channelLabel = config.isBetaEnabled ? " (Beta Channel)" : ""
+        await logHandler("[SkunkCrafts] Checking \(config.name)\(channelLabel) from \(baseURL.absoluteString)...")
+
+        let configFileName = config.configFileName ?? (config.isBetaEnabled ? "skunkcrafts_updater_beta.cfg" : "skunkcrafts_updater.cfg")
 
         var localVersion = config.version
-        if localVersion == nil, let cfgURL = findConfig(in: folderURL), let parsed = parseConfig(at: cfgURL, defaultName: config.name) {
-            localVersion = parsed.version
-        }
-
-        let configFileName: String
-        if let cfgURL = findConfig(in: folderURL) {
-            configFileName = cfgURL.lastPathComponent
-        } else {
-            configFileName = "skunkcrafts_updater.cfg"
+        if localVersion == nil {
+            let specificURL = folderURL.appendingPathComponent(configFileName)
+            if FileManager.default.fileExists(atPath: specificURL.path), let parsed = parseConfig(at: specificURL, defaultName: config.name) {
+                localVersion = parsed.version
+            } else if let cfgURL = findConfig(in: folderURL, preferBeta: config.isBetaEnabled), let parsed = parseConfig(at: cfgURL, defaultName: config.name) {
+                localVersion = parsed.version
+            }
         }
 
         // 1. Fetch remote skunkcrafts_updater.cfg
@@ -423,24 +447,27 @@ actor SkunkCraftsUpdaterService {
         var base = baseURLString
         if base.hasSuffix("skunkcrafts_updater.cfg") {
             base = String(base.dropLast("skunkcrafts_updater.cfg".count))
+        } else if base.hasSuffix("skunkcrafts_updater_beta.cfg") {
+            base = String(base.dropLast("skunkcrafts_updater_beta.cfg".count))
         }
         if !base.hasSuffix("/") {
             base += "/"
         }
         guard let baseURL = URL(string: base) else { return }
 
-        await logHandler("[SkunkCrafts] Starting update check for \(config.name)...")
+        let channelLabel = config.isBetaEnabled ? " (Beta Channel)" : ""
+        await logHandler("[SkunkCrafts] Starting update check for \(config.name)\(channelLabel)...")
+
+        let configFileName = config.configFileName ?? (config.isBetaEnabled ? "skunkcrafts_updater_beta.cfg" : "skunkcrafts_updater.cfg")
 
         var localVersion = config.version
-        if localVersion == nil, let cfgURL = findConfig(in: addonFolder), let parsed = parseConfig(at: cfgURL, defaultName: config.name) {
-            localVersion = parsed.version
-        }
-
-        let configFileName: String
-        if let cfgURL = findConfig(in: addonFolder) {
-            configFileName = cfgURL.lastPathComponent
-        } else {
-            configFileName = "skunkcrafts_updater.cfg"
+        if localVersion == nil {
+            let specificURL = addonFolder.appendingPathComponent(configFileName)
+            if FileManager.default.fileExists(atPath: specificURL.path), let parsed = parseConfig(at: specificURL, defaultName: config.name) {
+                localVersion = parsed.version
+            } else if let cfgURL = findConfig(in: addonFolder, preferBeta: config.isBetaEnabled), let parsed = parseConfig(at: cfgURL, defaultName: config.name) {
+                localVersion = parsed.version
+            }
         }
 
         // 1. Fetch remote skunkcrafts_updater.cfg for version comparison
@@ -607,6 +634,8 @@ actor SkunkCraftsUpdaterService {
             var base = baseURLString
             if base.hasSuffix("skunkcrafts_updater.cfg") {
                 base = String(base.dropLast("skunkcrafts_updater.cfg".count))
+            } else if base.hasSuffix("skunkcrafts_updater_beta.cfg") {
+                base = String(base.dropLast("skunkcrafts_updater_beta.cfg".count))
             }
             if !base.hasSuffix("/") {
                 base += "/"
@@ -657,7 +686,9 @@ extension SkunkCraftsUpdaterService: AddonUpdater {
             name: addon.name,
             version: addon.currentVersion,
             remoteManifestURL: addon.remoteManifestURL,
-            baseURL: nil
+            baseURL: nil,
+            configFileName: addon.configFileURL.lastPathComponent,
+            isBetaEnabled: addon.isBetaEnabled
         )
         let result = try await checkAddonStatus(folderURL: addon.folderURL, config: config, logHandler: logHandler)
         return AddonUpdateCheckResult(
@@ -676,7 +707,9 @@ extension SkunkCraftsUpdaterService: AddonUpdater {
             name: addon.name,
             version: addon.currentVersion,
             remoteManifestURL: addon.remoteManifestURL,
-            baseURL: nil
+            baseURL: nil,
+            configFileName: addon.configFileURL.lastPathComponent,
+            isBetaEnabled: addon.isBetaEnabled
         )
         try await downloadAndApplyUpdates(
             for: addon.folderURL,
@@ -694,7 +727,9 @@ extension SkunkCraftsUpdaterService: AddonUpdater {
             name: addon.name,
             version: addon.currentVersion,
             remoteManifestURL: addon.remoteManifestURL,
-            baseURL: nil
+            baseURL: nil,
+            configFileName: addon.configFileURL.lastPathComponent,
+            isBetaEnabled: addon.isBetaEnabled
         )
         return try await fetchReleaseNotes(for: addon.folderURL, config: config, logHandler: logHandler)
     }

@@ -50,6 +50,7 @@ enum UserDefaultsKey: String, CaseIterable, Sendable {
     case autoCheckXUpdaterUpdates = "AutoCheckXUpdaterUpdates"
     case autoCheckCSLUpdates = "AutoCheckCSLUpdates"
     case autoCheckNavdataUpdates = "AutoCheckNavdataUpdates"
+    case addonBetaPreferences = "AddonBetaPreferences"
 
     // Launch & Companion Mode
     case launchBehavior = "LaunchBehavior"

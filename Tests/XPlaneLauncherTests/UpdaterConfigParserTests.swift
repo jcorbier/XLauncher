@@ -493,6 +493,148 @@ final class UpdaterConfigParserTests: XCTestCase {
         XCTAssertFalse(VersionComparator.isNewer("1.13", than: "1.14"))
         XCTAssertTrue(VersionComparator.isNewer("1.14", than: "1.13"))
     }
+
+    // MARK: - Beta Channel Tests
+
+    func testSkunkCraftsBetaChannelDetectionAndParsing() throws {
+        let addonDir = tempDir.appendingPathComponent("ToLissA321")
+        try fm.createDirectory(at: addonDir, withIntermediateDirectories: true)
+
+        let service = SkunkCraftsUpdaterService.shared
+        XCTAssertFalse(service.hasBetaChannel(in: addonDir))
+
+        let releaseCfg = addonDir.appendingPathComponent("skunkcrafts_updater.cfg")
+        let releaseContent = """
+        name|ToLiss A321
+        version|1.4.1
+        url|https://updates.toliss.com/a321/
+        """
+        try releaseContent.write(to: releaseCfg, atomically: true, encoding: .utf8)
+        XCTAssertFalse(service.hasBetaChannel(in: addonDir))
+
+        let betaCfg = addonDir.appendingPathComponent("skunkcrafts_updater_beta.cfg")
+        let betaContent = """
+        name|ToLiss A321 (Beta)
+        version|1.5.0-beta.1
+        url|https://updates.toliss.com/a321_beta/
+        """
+        try betaContent.write(to: betaCfg, atomically: true, encoding: .utf8)
+        XCTAssertTrue(service.hasBetaChannel(in: addonDir))
+
+        let foundRelease = service.findConfig(in: addonDir, preferBeta: false)
+        XCTAssertEqual(foundRelease?.lastPathComponent, "skunkcrafts_updater.cfg")
+
+        let foundBeta = service.findConfig(in: addonDir, preferBeta: true)
+        XCTAssertEqual(foundBeta?.lastPathComponent, "skunkcrafts_updater_beta.cfg")
+
+        let parsedRelease = service.parseConfig(at: foundRelease!, defaultName: "A321")
+        XCTAssertEqual(parsedRelease?.version, "1.4.1")
+        XCTAssertFalse(parsedRelease?.isBetaEnabled ?? true)
+
+        let parsedBeta = service.parseConfig(at: foundBeta!, defaultName: "A321")
+        XCTAssertEqual(parsedBeta?.version, "1.5.0-beta.1")
+        XCTAssertTrue(parsedBeta?.isBetaEnabled ?? false)
+    }
+
+    func testXUpdaterSetBetaEnabledIni() async throws {
+        let service = XUpdaterService.shared
+        let addonDir = tempDir.appendingPathComponent("FlightFactor777")
+        let updaterDir = addonDir.appendingPathComponent(".xupdater")
+        try fm.createDirectory(at: updaterDir, withIntermediateDirectories: true)
+
+        let settingsFile = updaterDir.appendingPathComponent("settings.ini")
+        let initialContent = """
+        [General]
+        product_name = FlightFactor 777-200ER
+        product_version = 020100
+        snapshot_num = 450
+        preferred_release_type = release
+        beta_enabled = false
+        """
+        try initialContent.write(to: settingsFile, atomically: true, encoding: .utf8)
+
+        await service.setBetaEnabled(true, in: addonDir)
+        let configBeta = service.parseConfig(at: settingsFile, defaultName: "FF777")
+        XCTAssertNotNil(configBeta)
+        XCTAssertTrue(configBeta?.betaEnabled ?? false)
+
+        let contentBeta = try String(contentsOf: settingsFile, encoding: .utf8)
+        XCTAssertTrue(contentBeta.contains("preferred_release_type=beta") || contentBeta.contains("preferred_release_type = beta"))
+        XCTAssertTrue(contentBeta.contains("beta_enabled=true") || contentBeta.contains("beta_enabled = true"))
+
+        await service.setBetaEnabled(false, in: addonDir)
+        let configRelease = service.parseConfig(at: settingsFile, defaultName: "FF777")
+        XCTAssertNotNil(configRelease)
+        XCTAssertFalse(configRelease?.betaEnabled ?? true)
+
+        let contentRelease = try String(contentsOf: settingsFile, encoding: .utf8)
+        XCTAssertTrue(contentRelease.contains("preferred_release_type=release") || contentRelease.contains("preferred_release_type = release"))
+        XCTAssertTrue(contentRelease.contains("beta_enabled=false") || contentRelease.contains("beta_enabled = false"))
+    }
+
+    func testXUpdaterSetBetaEnabledJson() async throws {
+        let service = XUpdaterService.shared
+        let addonDir = tempDir.appendingPathComponent("JsonAircraft")
+        try fm.createDirectory(at: addonDir, withIntermediateDirectories: true)
+
+        let jsonFile = addonDir.appendingPathComponent("x-updater.json")
+        let initialJson: [String: Any] = [
+            "name": "Json Aircraft",
+            "version": "1.0.0",
+            "snapshot_num": 10
+        ]
+        let data = try JSONSerialization.data(withJSONObject: initialJson, options: .prettyPrinted)
+        try data.write(to: jsonFile)
+
+        await service.setBetaEnabled(true, in: addonDir)
+        let parsedData = try Data(contentsOf: jsonFile)
+        let parsedJson = try JSONSerialization.jsonObject(with: parsedData) as? [String: Any]
+
+        XCTAssertEqual(parsedJson?["preferred_release_type"] as? String, "beta")
+        XCTAssertEqual(parsedJson?["beta_enabled"] as? Bool, true)
+    }
+
+    @MainActor
+    func testUpdateManagerBetaUpdatesToggleAndPersistence() async throws {
+        let addonDir = tempDir.appendingPathComponent("ToLissA320")
+        try fm.createDirectory(at: addonDir, withIntermediateDirectories: true)
+
+        let releaseCfg = addonDir.appendingPathComponent("skunkcrafts_updater.cfg")
+        try "name|ToLiss A320\nversion|1.0.0\nurl|http://example.com/a320/\n".write(to: releaseCfg, atomically: true, encoding: .utf8)
+        let betaCfg = addonDir.appendingPathComponent("skunkcrafts_updater_beta.cfg")
+        try "name|ToLiss A320 Beta\nversion|1.1.0-b1\nurl|http://example.com/a320-beta/\n".write(to: betaCfg, atomically: true, encoding: .utf8)
+
+        let updateManager = UpdateManager()
+        var addon = UpdateManager.UpdatableAddon(
+            name: "ToLiss A320",
+            addonCategory: .aircraft,
+            folderName: "ToLissA320",
+            folderURL: addonDir,
+            updaterType: .skunkcrafts,
+            configFileURL: releaseCfg,
+            currentVersion: "1.0.0",
+            remoteManifestURL: "http://example.com/a320/",
+            hasBetaChannel: true,
+            isBetaEnabled: false
+        )
+        updateManager.updatableAddons = [addon]
+
+        updateManager.setBetaUpdatesEnabled(true, for: addon)
+
+        let updatedAddon = updateManager.updatableAddons.first!
+        XCTAssertTrue(updatedAddon.isBetaEnabled)
+        XCTAssertEqual(updatedAddon.configFileURL.lastPathComponent, "skunkcrafts_updater_beta.cfg")
+        XCTAssertEqual(updatedAddon.currentVersion, "1.1.0-b1")
+        XCTAssertEqual(updateManager.addonBetaPreferences[addon.persistenceKey], true)
+
+        updateManager.setBetaUpdatesEnabled(false, for: updatedAddon)
+
+        let revertedAddon = updateManager.updatableAddons.first!
+        XCTAssertFalse(revertedAddon.isBetaEnabled)
+        XCTAssertEqual(revertedAddon.configFileURL.lastPathComponent, "skunkcrafts_updater.cfg")
+        XCTAssertEqual(revertedAddon.currentVersion, "1.0.0")
+        XCTAssertEqual(updateManager.addonBetaPreferences[addon.persistenceKey], false)
+    }
 }
 
 

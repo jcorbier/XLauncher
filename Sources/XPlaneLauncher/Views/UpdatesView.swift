@@ -202,6 +202,17 @@ struct UpdatableAddonRow: View {
                         .padding(.vertical, 2)
                         .background(Color.secondary.opacity(0.12))
                         .clipShape(Capsule())
+
+                    if addon.isBetaEnabled {
+                        Text("BETA")
+                            .font(.caption2)
+                            .fontWeight(.bold)
+                            .foregroundStyle(.purple)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.purple.opacity(0.15))
+                            .clipShape(Capsule())
+                    }
                 }
 
                 HStack(spacing: 8) {
@@ -210,7 +221,7 @@ struct UpdatableAddonRow: View {
                         .foregroundStyle(.secondary)
 
                     if let ver = addon.currentVersion {
-                        Text("•  Version \(ver)")
+                        Text("•  Version \(ver)\(addon.isBetaEnabled ? " (Beta Channel)" : "")")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -250,6 +261,16 @@ struct UpdatableAddonRow: View {
                             Button("Verify & Repair Files") {
                                 updateManager.updateAddon(addon)
                             }
+                            if addon.hasBetaChannel {
+                                Divider()
+                                Toggle(isOn: Binding(
+                                    get: { addon.isBetaEnabled },
+                                    set: { updateManager.setBetaUpdatesEnabled($0, for: addon) }
+                                )) {
+                                    Label("Enable Beta Updates", systemImage: "flask")
+                                }
+                                .disabled(addon.isUpdating)
+                            }
                         } label: {
                             Text(isRepair ? "Repair" : "Update")
                         } primaryAction: {
@@ -271,6 +292,16 @@ struct UpdatableAddonRow: View {
                             }
                             Button("Verify & Repair Files") {
                                 updateManager.updateAddon(addon)
+                            }
+                            if addon.hasBetaChannel {
+                                Divider()
+                                Toggle(isOn: Binding(
+                                    get: { addon.isBetaEnabled },
+                                    set: { updateManager.setBetaUpdatesEnabled($0, for: addon) }
+                                )) {
+                                    Label("Enable Beta Updates", systemImage: "flask")
+                                }
+                                .disabled(addon.isUpdating)
                             }
                         } label: {
                             Text("Check")
@@ -303,6 +334,16 @@ struct UpdatableAddonRow: View {
             }
             Button("Verify & Repair Files") {
                 updateManager.updateAddon(addon)
+            }
+            if addon.hasBetaChannel {
+                Divider()
+                Toggle(isOn: Binding(
+                    get: { addon.isBetaEnabled },
+                    set: { updateManager.setBetaUpdatesEnabled($0, for: addon) }
+                )) {
+                    Label("Enable Beta Updates", systemImage: "flask")
+                }
+                .disabled(addon.isUpdating)
             }
             Divider()
             Button("Show in Finder") {

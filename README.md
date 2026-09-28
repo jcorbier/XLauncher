@@ -15,7 +15,7 @@ X-Plane Launcher lets you organize your add-ons in a central folder, create dist
 - **X-Plane Log Analyzer**: Built-in viewer and diagnostic engine for `Log.txt`. Inspect crashes, find missing scenery objects and textures, track down FlyWithLua/SASL errors, profile startup loading times, and browse archived sessions.
 - **Scenery pack ordering & grouping**: Reorder `scenery_packs.ini` with drag-and-drop, enable or disable packs without deleting files, and organize scenery into groups.
 - **Smart add-on installer & deletion**: Drag and drop `.zip` archives, folders, or `.lua` scripts to install add-ons to any configured storage pool, or delete them directly from the UI with automated profile cleanup and unlinking.
-- **Add-on updates**: Check and install updates for add-ons supported by SkunkCrafts Updater or X-Updater directly from the UI.
+- **Add-on updates**: Check and install updates for add-ons supported by SkunkCrafts Updater or X-Updater directly from the UI, with support for release and beta channels.
 - **In-app self-updates**: Check for new versions, review release notes, and install updates in-place with automatic restart.
 - **Navigation data updates**: Download and update AIRAC cycles directly from Navigraph for X-Plane 12 and supported aircrafts.
 - **CSL packages & lights**: Manage CSL model matching packages, apply lighting intensity presets (high/medium/low), or restore original lights.
