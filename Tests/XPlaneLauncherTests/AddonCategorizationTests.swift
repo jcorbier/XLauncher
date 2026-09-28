@@ -91,21 +91,39 @@ final class AddonCategorizationTests: XCTestCase {
         try "1100 Version".write(to: aptDir.appendingPathComponent("apt.dat"), atomically: true, encoding: .utf8)
         XCTAssertEqual(service.detectSceneryCategory(name: "Custom Airport", folderName: "Custom_Airport", folderURL: airportDir), .airport)
 
+        // Airport with local library.txt should still be categorized as airport, not library
+        try "A\n800\nLIBRARY".write(to: airportDir.appendingPathComponent("library.txt"), atomically: true, encoding: .utf8)
+        XCTAssertEqual(service.detectSceneryCategory(name: "Custom Airport", folderName: "Custom_Airport", folderURL: airportDir), .airport)
+
         // Airport by ICAO code
         XCTAssertEqual(service.detectSceneryCategory(name: "Paris CDG Airport", folderName: "LFPG_Paris_CDG", folderURL: nil), .airport)
+        XCTAssertEqual(service.detectSceneryCategory(name: "Heathrow", folderName: "EGLL_Heathrow", folderURL: nil), .airport)
 
-        // Mesh / Ortho
-        XCTAssertEqual(service.detectSceneryCategory(name: "Ortho Tile", folderName: "zOrtho4XP_+48+002", folderURL: nil), .meshOrtho)
-        XCTAssertEqual(service.detectSceneryCategory(name: "SimHeaven X-World Europe", folderName: "simheaven_xworld_europe", folderURL: nil), .meshOrtho)
+        // Overlays
+        XCTAssertEqual(service.detectSceneryCategory(name: "SimHeaven X-World Europe", folderName: "simheaven_xworld_europe", folderURL: nil), .overlay)
+        XCTAssertEqual(service.detectSceneryCategory(name: "SimHeaven Forests", folderName: "simHeaven_X-World_Europe-3-forests", folderURL: nil), .overlay)
+        XCTAssertEqual(service.detectSceneryCategory(name: "W2XP Europe", folderName: "w2xp_Europe_osm", folderURL: nil), .overlay)
+        XCTAssertEqual(service.detectSceneryCategory(name: "Global Forests", folderName: "Global_Forests_Europe", folderURL: nil), .overlay)
+        XCTAssertEqual(service.detectSceneryCategory(name: "Ortho Overlays", folderName: "yOrtho4XP_Overlays", folderURL: nil), .overlay)
+
+        // Landmarks - even with Earth nav data on disk without apt.dat, it should be landmark, not mesh
+        let landmarkDir = tempDir.appendingPathComponent("Paris_Landmarks_VFR")
+        let landmarkNavDir = landmarkDir.appendingPathComponent("Earth nav data")
+        try FileManager.default.createDirectory(at: landmarkNavDir, withIntermediateDirectories: true)
+        XCTAssertEqual(service.detectSceneryCategory(name: "Paris VFR Landmarks", folderName: "Paris_Landmarks_VFR", folderURL: landmarkDir), .landmark)
+        XCTAssertEqual(service.detectSceneryCategory(name: "Chicago Bridges and Buildings", folderName: "Chicago_City_POI", folderURL: nil), .landmark)
 
         // Library by library.txt
         let libDir = tempDir.appendingPathComponent("Custom_Lib")
         try FileManager.default.createDirectory(at: libDir, withIntermediateDirectories: true)
         try "A\n800\nLIBRARY".write(to: libDir.appendingPathComponent("library.txt"), atomically: true, encoding: .utf8)
         XCTAssertEqual(service.detectSceneryCategory(name: "Custom Lib", folderName: "Custom_Lib", folderURL: libDir), .library)
+        XCTAssertEqual(service.detectSceneryCategory(name: "OpenSceneryX", folderName: "OpenSceneryX", folderURL: nil), .library)
 
-        // Landmarks
-        XCTAssertEqual(service.detectSceneryCategory(name: "Paris VFR Landmarks", folderName: "Paris_Landmarks_VFR", folderURL: nil), .landmark)
+        // Mesh / Ortho
+        XCTAssertEqual(service.detectSceneryCategory(name: "Ortho Tile", folderName: "zOrtho4XP_+48+002", folderURL: nil), .meshOrtho)
+        XCTAssertEqual(service.detectSceneryCategory(name: "Raw Ortho Tile", folderName: "+48-002", folderURL: nil), .meshOrtho)
+        XCTAssertEqual(service.detectSceneryCategory(name: "Alps UHD Mesh", folderName: "Alps_UHD_Mesh", folderURL: nil), .meshOrtho)
     }
 
     // MARK: - Plugin Heuristics Tests

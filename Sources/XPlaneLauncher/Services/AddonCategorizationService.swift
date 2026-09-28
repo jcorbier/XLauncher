@@ -128,20 +128,49 @@ final class AddonCategorizationService: Sendable {
     func detectSceneryCategory(name: String, folderName: String, folderURL: URL?) -> SceneryTypeCategory {
         let combined = "\(name) \(folderName)".lowercased()
 
-        // 1. Mesh & Ortho check (checked first to prevent simheaven/ortho overlays from matching libraries)
-        let orthoKeywords = ["zortho", "yortho", "ortho", "photoreal", "mesh", "dem", "simheaven", "x-world", "w2xp"]
-        if orthoKeywords.contains(where: { combined.contains($0) }) {
-            return .meshOrtho
-        }
+        // 1. Airport check
+        // Checked first so airports with a local library.txt or DSF placement aren't misclassified
         if let url = folderURL {
-            let earthNav = url.appendingPathComponent("Earth nav data")
             let aptDat = url.appendingPathComponent("Earth nav data/apt.dat")
-            if fileManager.fileExists(atPath: earthNav.path) && !fileManager.fileExists(atPath: aptDat.path) {
-                return .meshOrtho
+            if fileManager.fileExists(atPath: aptDat.path) {
+                return .airport
+            }
+        }
+        let airportKeywords = [
+            "airport", "airfield", "intl", "international", "aerodrome", "flytampa",
+            "orbx", "aerosoft", "justsim", "scenecraft", "shortfinal", "airstrip", "heliport"
+        ]
+        if airportKeywords.contains(where: { combined.contains($0) }) {
+            return .airport
+        }
+        // 4-letter ICAO prefix or token check (e.g. "LFPG", "KLAX", "EGLL", "EDDF")
+        let nonIcaoWords: Set<String> = [
+            "TEST", "DEMO", "BASE", "MESH", "DATA", "PACK", "ROAD", "TREE",
+            "ZONE", "AREA", "POLY", "SIMH", "W2XP", "VFR1", "VFR2", "OVER", "FORE"
+        ]
+        let words = folderName.components(separatedBy: CharacterSet(charactersIn: "_ -"))
+        for word in words where word.count == 4 && word == word.uppercased() && word.range(of: "^[A-Z]{4}$", options: .regularExpression) != nil {
+            if !nonIcaoWords.contains(word) {
+                return .airport
             }
         }
 
-        // 2. Library check (known libraries or library.txt)
+        // 2. Overlay check (SimHeaven X-World, OSM/W2XP layers, forests, roads, autogen)
+        let overlayKeywords = [
+            "simheaven", "x-world", "w2xp", "world2xplane", "overlay", "overlays",
+            "forest", "forests", "autogen", "corine", "osm", "powerlines", "roads", "network"
+        ]
+        if overlayKeywords.contains(where: { combined.contains($0) }) {
+            return .overlay
+        }
+
+        // 3. Landmark check (checked before generic mesh check so VFR objects with .dsf aren't tagged as mesh)
+        let landmarkKeywords = ["landmark", "landmarks", "city", "bridges", "buildings", "poi", "vfr", "monuments"]
+        if landmarkKeywords.contains(where: { combined.contains($0) }) {
+            return .landmark
+        }
+
+        // 4. Library check (known libraries or library.txt)
         if let url = folderURL {
             let libTxt = url.appendingPathComponent("library.txt")
             if fileManager.fileExists(atPath: libTxt.path) {
@@ -154,29 +183,29 @@ final class AddonCategorizationService: Sendable {
                 return .library
             }
         }
+        let libraryKeywords = ["library", "libraries", "opensceneryx", "misterx", "handyobjects", "pm_library", "rd_library", "ruscenery"]
+        if libraryKeywords.contains(where: { combined.contains($0) }) {
+            return .library
+        }
 
-        // 2. Airport check (apt.dat or ICAO patterns)
+        // 5. Mesh & Ortho check
+        let meshKeywords = [
+            "zortho", "yortho", "ortho", "photoreal", "mesh", "dem",
+            "elevation", "terrain", "srtm", "elevation_data", "hd_mesh", "uhd_mesh"
+        ]
+        if meshKeywords.contains(where: { combined.contains($0) }) {
+            return .meshOrtho
+        }
+        // Ortho tile coordinate pattern: e.g. +48+002, +48-002, -12-077, +32-117
+        if folderName.range(of: "[+-][0-9]{2}[+-][0-9]{3}", options: .regularExpression) != nil {
+            return .meshOrtho
+        }
         if let url = folderURL {
+            let earthNav = url.appendingPathComponent("Earth nav data")
             let aptDat = url.appendingPathComponent("Earth nav data/apt.dat")
-            if fileManager.fileExists(atPath: aptDat.path) {
-                return .airport
+            if fileManager.fileExists(atPath: earthNav.path) && !fileManager.fileExists(atPath: aptDat.path) {
+                return .meshOrtho
             }
-        }
-        let airportKeywords = ["airport", "airfield", "intl", "international", "aerodrome", "flytampa", "orbx", "aerosoft", "justsim"]
-        if airportKeywords.contains(where: { combined.contains($0) }) {
-            return .airport
-        }
-        // 4-letter ICAO prefix check (e.g. "LFPG", "KLAX", "EGLL", "EDDF")
-        let words = folderName.components(separatedBy: CharacterSet(charactersIn: "_ -"))
-        for word in words where word.count == 4 && word == word.uppercased() && word.range(of: "^[A-Z]{4}$", options: .regularExpression) != nil {
-            return .airport
-        }
-
-
-        // 4. Landmarks check
-        let landmarkKeywords = ["landmark", "landmarks", "city", "bridges", "buildings", "poi", "vfr", "monuments"]
-        if landmarkKeywords.contains(where: { combined.contains($0) }) {
-            return .landmark
         }
 
         return .other
