@@ -55,9 +55,10 @@ enum AircraftCategory: String, CaseIterable, Identifiable, Codable, Sendable {
 
 enum SceneryTypeCategory: String, CaseIterable, Identifiable, Codable, Sendable {
     case airport = "Airports"
-    case meshOrtho = "Mesh & Ortho"
     case landmark = "Landmarks"
     case library = "Libraries"
+    case overlay = "Overlays"
+    case meshOrtho = "Mesh & Ortho"
     case other = "Other"
 
     var id: String { rawValue }
@@ -65,9 +66,10 @@ enum SceneryTypeCategory: String, CaseIterable, Identifiable, Codable, Sendable 
     var systemImage: String {
         switch self {
         case .airport: return "airplane.arrival"
-        case .meshOrtho: return "photo.stack"
         case .landmark: return "building.columns"
         case .library: return "building.2"
+        case .overlay: return "square.3.layers.3d"
+        case .meshOrtho: return "photo.stack"
         case .other: return "map"
         }
     }
@@ -75,10 +77,22 @@ enum SceneryTypeCategory: String, CaseIterable, Identifiable, Codable, Sendable 
     var color: Color {
         switch self {
         case .airport: return .green
-        case .meshOrtho: return .teal
         case .landmark: return .purple
         case .library: return .orange
+        case .overlay: return .indigo
+        case .meshOrtho: return .teal
         case .other: return .secondary
+        }
+    }
+
+    var loadOrderRank: Int {
+        switch self {
+        case .airport: return 1
+        case .landmark: return 2
+        case .library: return 3
+        case .other: return 4
+        case .overlay: return 5
+        case .meshOrtho: return 6
         }
     }
 }

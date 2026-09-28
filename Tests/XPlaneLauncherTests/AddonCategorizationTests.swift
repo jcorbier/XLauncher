@@ -68,6 +68,19 @@ final class AddonCategorizationTests: XCTestCase {
 
     // MARK: - Scenery Heuristics Tests
 
+    func testSceneryTypeCategoryProperties() {
+        XCTAssertEqual(SceneryTypeCategory.overlay.rawValue, "Overlays")
+        XCTAssertEqual(SceneryTypeCategory.overlay.systemImage, "square.3.layers.3d")
+        XCTAssertEqual(SceneryTypeCategory.overlay.color, .indigo)
+        XCTAssertEqual(SceneryTypeCategory.overlay.loadOrderRank, 5)
+
+        XCTAssertTrue(SceneryTypeCategory.airport.loadOrderRank < SceneryTypeCategory.landmark.loadOrderRank)
+        XCTAssertTrue(SceneryTypeCategory.landmark.loadOrderRank < SceneryTypeCategory.library.loadOrderRank)
+        XCTAssertTrue(SceneryTypeCategory.library.loadOrderRank < SceneryTypeCategory.other.loadOrderRank)
+        XCTAssertTrue(SceneryTypeCategory.other.loadOrderRank < SceneryTypeCategory.overlay.loadOrderRank)
+        XCTAssertTrue(SceneryTypeCategory.overlay.loadOrderRank < SceneryTypeCategory.meshOrtho.loadOrderRank)
+    }
+
     func testSceneryClassificationHeuristics() throws {
         let service = AddonCategorizationService.shared
 
