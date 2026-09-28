@@ -16,9 +16,10 @@ When add-ons are scanned from your storage pools, the launcher automatically inf
 
 ### Scenery Categories
 - **Airports**: Packages containing `Earth nav data/apt.dat`, 4-letter ICAO codes (e.g. `LFPG`, `KLAX`, `EGLL`), or airport keywords.
-- **Mesh & Ortho**: Orthophoto tiles (`zOrtho4XP`), global overlay meshes (`simheaven_xworld`), and terrain elevation packages.
-- **Libraries**: Shared asset libraries containing `library.txt` (OpenSceneryX, MisterX, SAM, HandyObjects, etc.).
 - **Landmarks**: City sceneries, VFR objects, bridges, and monuments.
+- **Libraries**: Shared asset libraries containing `library.txt` (OpenSceneryX, MisterX, SAM, HandyObjects, etc.).
+- **Overlays**: Global and regional overlay networks, OSM autogen layers, forests, powerlines, and road networks (e.g. SimHeaven X-World, W2XP layers).
+- **Mesh & Ortho**: Orthophoto tiles (`zOrtho4XP`), digital elevation models (DEM), and terrain base mesh packages.
 
 ### Plugin Categories
 - **Utilities**: General tools, flight planning, terrain radars, and ground handling.

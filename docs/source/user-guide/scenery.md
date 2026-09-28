@@ -47,12 +47,22 @@ X-Plane Launcher creates symbolic links in `<X-Plane 12>/Custom Scenery/` and ma
 - Drag any scenery row up or down using its drag handle to adjust its load order.
 - The order is automatically saved and written to `scenery_packs.ini`.
 
+### Auto-Organize Scenery
+- Click the **Auto-Organize** button in the filter bar to automatically organize all scenery packages into the standard X-Plane hierarchy:
+  1. Custom Airports
+  2. Landmarks & Regional Scenery
+  3. Libraries
+  4. Overlays & Forests
+  5. Photoreal Orthos & Mesh
+- Existing scenery groups and their members are kept together and positioned according to their category.
+- The reorganized order is automatically saved and written to `scenery_packs.ini`.
+
 ### Enabling & Disabling
 - Toggle the switch next to any scenery pack.
 - When disabled, X-Plane Launcher marks the entry as `SCENERY_PACK_DISABLED` in `scenery_packs.ini` (or removes the symlink), preventing X-Plane from loading it.
 
 ### Filtering, Categories & Tags
-- **Search & Filter Bar**: Filter scenery by name, folder name, category (Airports, Mesh & Ortho, Landmarks, Libraries), or assigned tags.
+- **Search & Filter Bar**: Filter scenery by name, folder name, category (Airports, Landmarks, Libraries, Overlays, Mesh & Ortho), or assigned tags.
 - **Stable Load Order**: While a search query or filter is active, drag-and-drop reordering is temporarily disabled to prevent unintentional disruption of `scenery_packs.ini`.
 - **Edit Tags & Categories**: Click the tag icon on any scenery row (or right-click and choose **Edit Category & Tags...**) to assign custom tags or override its auto-detected category.
 
