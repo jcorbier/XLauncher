@@ -340,4 +340,58 @@ final class SceneryService: Sendable {
         }
         return groups
     }
+
+    // MARK: - Auto-Organize
+
+    func autoOrganizeScenery(
+        scenery: [Scenery],
+        groups: [SceneryGroup],
+        categoryProvider: (Scenery) -> SceneryTypeCategory
+    ) -> [Scenery] {
+        guard !scenery.isEmpty else { return [] }
+
+        struct SortUnit {
+            let name: String
+            let rank: Int
+            let items: [Scenery]
+        }
+
+        var units: [SortUnit] = []
+        var processedFolders = Set<String>()
+
+        // 1. Process groups first to maintain group integrity
+        for group in groups {
+            var groupMembers: [Scenery] = []
+            for folderName in group.childFolderNames {
+                if let item = scenery.first(where: { $0.folderName == folderName }) {
+                    groupMembers.append(item)
+                    processedFolders.insert(folderName)
+                }
+            }
+
+            if !groupMembers.isEmpty {
+                // Natural alphabetical sort of member packages within the group
+                groupMembers.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+                let groupRank = groupMembers.map { categoryProvider($0).loadOrderRank }.min() ?? SceneryTypeCategory.other.loadOrderRank
+                units.append(SortUnit(name: group.name, rank: groupRank, items: groupMembers))
+            }
+        }
+
+        // 2. Process standalone items
+        for item in scenery where !processedFolders.contains(item.folderName) {
+            let rank = categoryProvider(item).loadOrderRank
+            units.append(SortUnit(name: item.name, rank: rank, items: [item]))
+        }
+
+        // 3. Sort units by category hierarchy rank, then alphabetically by name
+        units.sort {
+            if $0.rank != $1.rank {
+                return $0.rank < $1.rank
+            }
+            return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+        }
+
+        // 4. Flatten back to an ordered list of Scenery
+        return units.flatMap { $0.items }
+    }
 }

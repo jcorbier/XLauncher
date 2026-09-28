@@ -33,6 +33,7 @@ struct SceneryListView: View {
     @State private var searchText: String = ""
     @State private var selectedCategory: SceneryTypeCategory? = nil
     @State private var selectedTag: String = "All"
+    @State private var isConfirmingAutoOrganize = false
 
     private var allKnownTags: [String] {
         ["All"] + pluginManager.allKnownTags(for: "scenery:")
@@ -98,6 +99,14 @@ struct SceneryListView: View {
 
                 Spacer()
 
+                Button {
+                    isConfirmingAutoOrganize = true
+                } label: {
+                    Label("Auto-Organize", systemImage: "arrow.up.arrow.down")
+                }
+                .disabled(pluginManager.scenery.isEmpty)
+                .help("Reorder scenery packs according to the recommended hierarchy (Airports → Landmarks → Libraries → Overlays → Mesh & Ortho)")
+
                 if isFilterActive {
                     Button("Reset") {
                         selectedCategory = nil
@@ -161,6 +170,16 @@ struct SceneryListView: View {
             }
         } message: {
             Text("Enter a name for the new scenery group.")
+        }
+        .alert("Auto-Organize Scenery", isPresented: $isConfirmingAutoOrganize) {
+            Button("Cancel", role: .cancel) { }
+            Button("Organize") {
+                withAnimation {
+                    pluginManager.autoOrganizeScenery()
+                }
+            }
+        } message: {
+            Text("This will reorder all scenery packs in scenery_packs.ini following the recommended X-Plane hierarchy:\n\n1. Airports\n2. Landmarks\n3. Libraries\n4. Overlays & Forests\n5. Mesh & Ortho\n\nExisting scenery groups and their members will be kept together.")
         }
         .alert(
             "Delete Scenery",

@@ -1201,6 +1201,18 @@ class PluginManager {
         ConsoleLogger.shared.log("Reordered scenery packs", category: .scenery)
     }
 
+    func autoOrganizeScenery() {
+        guard !scenery.isEmpty else { return }
+        let organized = sceneryService.autoOrganizeScenery(
+            scenery: scenery,
+            groups: sceneryGroups,
+            categoryProvider: { [weak self] in self?.category(for: $0) ?? .other }
+        )
+        self.scenery = organized
+        saveSceneryOrder()
+        ConsoleLogger.shared.log("Auto-organized \(scenery.count) scenery packs into standard hierarchy", category: .scenery)
+    }
+
     func moveSceneryToGroup(items: [Scenery], group: SceneryGroup) {
         guard !items.isEmpty else { return }
         let currentMembers = scenery.filter { group.childFolderNames.contains($0.folderName) }

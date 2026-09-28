@@ -221,4 +221,85 @@ final class SceneryServiceTests: XCTestCase {
         let afterRemoval = sceneryService.removeFromGroup(sceneryItem: item1, existingGroups: result.groups)
         XCTAssertEqual(afterRemoval[0].childFolderNames, ["Scenery3"])
     }
+
+    // MARK: - Auto-Organize Tests
+
+    func testAutoOrganizeSceneryStandardHierarchy() {
+        let airport1 = Scenery(name: "LFPG Paris CDG", isEnabled: true, folderName: "LFPG_Paris_CDG", isManaged: true, iniLine: "")
+        let airport2 = Scenery(name: "EDDF Frankfurt", isEnabled: true, folderName: "EDDF_Frankfurt", isManaged: true, iniLine: "")
+        let landmark = Scenery(name: "Paris Landmarks VFR", isEnabled: true, folderName: "Paris_Landmarks_VFR", isManaged: true, iniLine: "")
+        let library = Scenery(name: "OpenSceneryX", isEnabled: true, folderName: "OpenSceneryX", isManaged: true, iniLine: "")
+        let other = Scenery(name: "Custom Objects", isEnabled: true, folderName: "Custom_Objects", isManaged: true, iniLine: "")
+        let overlay = Scenery(name: "SimHeaven X-World Europe Forests", isEnabled: true, folderName: "simHeaven_X-World_Europe-3-forests", isManaged: true, iniLine: "")
+        let mesh = Scenery(name: "zOrtho4XP +48+002", isEnabled: true, folderName: "zOrtho4XP_+48+002", isManaged: true, iniLine: "")
+
+        // Pass sceneries in reverse/random order
+        let unordered = [mesh, overlay, library, landmark, airport1, other, airport2]
+
+        let organized = sceneryService.autoOrganizeScenery(scenery: unordered, groups: []) { item in
+            switch item.folderName {
+            case "LFPG_Paris_CDG", "EDDF_Frankfurt": return .airport
+            case "Paris_Landmarks_VFR": return .landmark
+            case "OpenSceneryX": return .library
+            case "Custom_Objects": return .other
+            case "simHeaven_X-World_Europe-3-forests": return .overlay
+            case "zOrtho4XP_+48+002": return .meshOrtho
+            default: return .other
+            }
+        }
+
+        // Expected hierarchy:
+        // 1. Airports (alphabetical: EDDF Frankfurt, then LFPG Paris CDG)
+        // 2. Landmarks (Paris Landmarks VFR)
+        // 3. Libraries (OpenSceneryX)
+        // 4. Other (Custom Objects)
+        // 5. Overlays (SimHeaven X-World Europe Forests)
+        // 6. Mesh & Ortho (zOrtho4XP +48+002)
+        let expectedNames = [
+            "EDDF Frankfurt",
+            "LFPG Paris CDG",
+            "Paris Landmarks VFR",
+            "OpenSceneryX",
+            "Custom Objects",
+            "SimHeaven X-World Europe Forests",
+            "zOrtho4XP +48+002"
+        ]
+
+        XCTAssertEqual(organized.map(\.name), expectedNames)
+    }
+
+    func testAutoOrganizeSceneryWithGroups() {
+        let airport = Scenery(name: "LFPG Paris", isEnabled: true, folderName: "LFPG_Paris", isManaged: true, iniLine: "")
+        let shVFR = Scenery(name: "simHeaven X-World Europe 1 VFR", isEnabled: true, folderName: "sh_1_vfr", isManaged: true, iniLine: "")
+        let shRegions = Scenery(name: "simHeaven X-World Europe 2 Regions", isEnabled: true, folderName: "sh_2_regions", isManaged: true, iniLine: "")
+        let shForests = Scenery(name: "simHeaven X-World Europe 3 Forests", isEnabled: true, folderName: "sh_3_forests", isManaged: true, iniLine: "")
+        let mesh = Scenery(name: "zOrtho4XP +48+002", isEnabled: true, folderName: "zOrtho4XP_+48+002", isManaged: true, iniLine: "")
+
+        let shGroup = SceneryGroup(
+            name: "SimHeaven Europe",
+            childFolderNames: ["sh_3_forests", "sh_1_vfr", "sh_2_regions"]
+        )
+
+        let unordered = [mesh, airport, shForests, shVFR, shRegions]
+
+        let organized = sceneryService.autoOrganizeScenery(scenery: unordered, groups: [shGroup]) { item in
+            switch item.folderName {
+            case "LFPG_Paris": return .airport
+            case "sh_1_vfr", "sh_2_regions", "sh_3_forests": return .overlay
+            case "zOrtho4XP_+48+002": return .meshOrtho
+            default: return .other
+            }
+        }
+
+        // Expected:
+        // 1. Airport (LFPG Paris)
+        // 2. SimHeaven Group (SimHeaven Europe members sorted naturally within the group: sh_1_vfr, sh_2_regions, sh_3_forests)
+        // 3. Mesh (zOrtho4XP +48+002)
+        XCTAssertEqual(organized.count, 5)
+        XCTAssertEqual(organized[0].folderName, "LFPG_Paris")
+        XCTAssertEqual(organized[1].folderName, "sh_1_vfr")
+        XCTAssertEqual(organized[2].folderName, "sh_2_regions")
+        XCTAssertEqual(organized[3].folderName, "sh_3_forests")
+        XCTAssertEqual(organized[4].folderName, "zOrtho4XP_+48+002")
+    }
 }
