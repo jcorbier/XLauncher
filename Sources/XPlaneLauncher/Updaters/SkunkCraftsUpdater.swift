@@ -39,6 +39,14 @@ struct SkunkCraftsFileItem: Sendable {
 actor SkunkCraftsUpdaterService {
     static let shared = SkunkCraftsUpdaterService()
     private var fileManager: FileManager { .default }
+    private let session: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        config.urlCache = nil
+        config.timeoutIntervalForRequest = 30
+        config.timeoutIntervalForResource = 300
+        return URLSession(configuration: config)
+    }()
 
     // MARK: - Config Detection & Parsing
 
@@ -198,7 +206,13 @@ actor SkunkCraftsUpdaterService {
     // MARK: - Remote Data Fetching & CRC Verification
 
     private func fetchTextContent(from url: URL) async throws -> String {
-        let (data, response) = try await URLSession.shared.data(from: url)
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+        request.setValue("no-cache", forHTTPHeaderField: "Pragma")
+        URLCache.shared.removeCachedResponse(for: request)
+
+        let (data, response) = try await session.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
             throw URLError(.badServerResponse)
         }
@@ -333,11 +347,17 @@ actor SkunkCraftsUpdaterService {
         }
 
         let latestVersion = remoteVersion ?? localVersion
-        let versionMismatch = (remoteVersion != nil && localVersion != nil && remoteVersion != localVersion)
-        if versionMismatch {
-            let rVersion = remoteVersion!
-            await logHandler("[SkunkCrafts] Version mismatch: Local '\(localVersion ?? "none")' vs Remote '\(rVersion)'. Marking addon for update.")
-            return (rVersion, true, "Update available (\(rVersion))")
+
+        if let remoteVersion = remoteVersion, let localVersion = localVersion {
+            if VersionComparator.isNewer(remoteVersion, than: localVersion) {
+                await logHandler("[SkunkCrafts] Newer remote version found: Local '\(localVersion)' vs Remote '\(remoteVersion)'. Marking addon for update.")
+                return (remoteVersion, true, "Update available (\(remoteVersion))")
+            } else if VersionComparator.isNewer(localVersion, than: remoteVersion) {
+                // Local version is ahead of remote (e.g. user manually installed newer build, or running a pre-release).
+                // Do not downgrade or run CRC check against an older manifest!
+                await logHandler("[SkunkCrafts] Local version '\(localVersion)' is newer than remote '\(remoteVersion)'. Addon is up to date.")
+                return (localVersion, false, "Up to date")
+            }
         }
 
         // 4. Compare local CRC vs distant CRC for all whitelist files (early exit on first mismatch)
@@ -556,7 +576,13 @@ actor SkunkCraftsUpdaterService {
 
             await logHandler("[SkunkCrafts] Downloading: \(item.relativePath)...")
 
-            let (tempDownloadedURL, response) = try await URLSession.shared.download(from: fileURL)
+            var downloadRequest = URLRequest(url: fileURL)
+            downloadRequest.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+            downloadRequest.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+            downloadRequest.setValue("no-cache", forHTTPHeaderField: "Pragma")
+            URLCache.shared.removeCachedResponse(for: downloadRequest)
+
+            let (tempDownloadedURL, response) = try await session.download(for: downloadRequest)
             guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
                 await logHandler("[SkunkCrafts] Failed downloading \(item.relativePath): HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0)")
                 continue

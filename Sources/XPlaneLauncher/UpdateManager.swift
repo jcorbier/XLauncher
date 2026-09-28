@@ -137,6 +137,8 @@ class UpdateManager {
     }
 
     init(storagePools: [StoragePool] = []) {
+        URLCache.shared.removeAllCachedResponses()
+
         if defaults.object(forKey: .autoCheckSkunkCraftsUpdates) == nil {
             self.automaticallyCheckSkunkCraftsUpdates = true
         } else {
@@ -343,8 +345,12 @@ class UpdateManager {
                 )
 
                 if let i = self.updatableAddons.firstIndex(where: { $0.id == addonId }) {
-                    if let latest = self.updatableAddons[i].latestVersion {
-                        self.updatableAddons[i].currentVersion = latest
+                    let updatedAddon = self.updatableAddons[i]
+                    let (_, newVersion, _) = Self.parseUpdaterConfig(url: updatedAddon.configFileURL, type: updatedAddon.updaterType, defaultName: updatedAddon.name)
+                    let finalVersion = newVersion ?? self.updatableAddons[i].latestVersion
+                    if let finalVersion {
+                        self.updatableAddons[i].currentVersion = finalVersion
+                        self.updatableAddons[i].latestVersion = finalVersion
                     }
                     self.updatableAddons[i].isUpdating = false
                     self.updatableAddons[i].isUpdateAvailable = false

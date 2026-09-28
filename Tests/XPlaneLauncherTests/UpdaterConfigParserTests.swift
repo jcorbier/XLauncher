@@ -449,6 +449,50 @@ final class UpdaterConfigParserTests: XCTestCase {
         XCTAssertEqual(loggedMessages.first, "[XP12 Lights] Converted CRJ2.obj (CRJ2)")
         XCTAssertTrue(fm.fileExists(atPath: pkgDir.appendingPathComponent("CRJ2.bak").path))
     }
+
+    // MARK: - Version Comparison Tests
+
+    func testVersionComparator() {
+        XCTAssertTrue(VersionComparator.isNewer("1.14", than: "1.13"))
+        XCTAssertFalse(VersionComparator.isNewer("1.13", than: "1.14"))
+        XCTAssertFalse(VersionComparator.isNewer("1.14", than: "1.14"))
+
+        XCTAssertTrue(VersionComparator.isNewer("1.10", than: "1.9"))
+        XCTAssertFalse(VersionComparator.isNewer("1.9", than: "1.10"))
+
+        XCTAssertTrue(VersionComparator.isNewer("v1.14", than: "1.13"))
+        XCTAssertFalse(VersionComparator.isNewer("v1.13", than: "1.14"))
+
+        XCTAssertTrue(VersionComparator.isNewer("2.0.0", than: "1.9.9"))
+        XCTAssertTrue(VersionComparator.isNewer("2.0.0", than: "2.0.0-beta"))
+        XCTAssertTrue(VersionComparator.isNewer("2.0.0-beta.2", than: "2.0.0-beta.1"))
+
+        XCTAssertTrue(VersionComparator.isNewer("snapshot 2", than: "snapshot 1"))
+        XCTAssertFalse(VersionComparator.isNewer("snapshot 1", than: "snapshot 2"))
+
+        XCTAssertEqual(VersionComparator.compare("1.14", "1.13"), .orderedDescending)
+        XCTAssertEqual(VersionComparator.compare("1.13", "1.14"), .orderedAscending)
+        XCTAssertEqual(VersionComparator.compare("1.14", "1.14"), .orderedSame)
+    }
+
+    func testSkunkCraftsNewerLocalVersionNotDowngraded() async throws {
+        let addonDir = tempDir.appendingPathComponent("BetterPushBack")
+        try fm.createDirectory(at: addonDir, withIntermediateDirectories: true)
+
+        let cfgFile = addonDir.appendingPathComponent("skunkcrafts_updater.cfg")
+        let cfgContent = """
+        zone|custom
+        module|http://127.0.0.1:9/invalid
+        name|BetterPushBack
+        version|1.14
+        """
+        try cfgContent.write(to: cfgFile, atomically: true, encoding: .utf8)
+
+        // When local version is 1.14 and remote is 1.13, it should never report an update available (downgrade)
+        let config = SkunkCraftsConfig(name: "BetterPushBack", version: "1.14", remoteManifestURL: "http://127.0.0.1:9/invalid", baseURL: "http://127.0.0.1:9/invalid")
+        XCTAssertFalse(VersionComparator.isNewer("1.13", than: "1.14"))
+        XCTAssertTrue(VersionComparator.isNewer("1.14", than: "1.13"))
+    }
 }
 
 

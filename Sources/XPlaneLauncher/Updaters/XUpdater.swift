@@ -94,6 +94,14 @@ struct XUpdaterFileItem: Codable, Sendable {
 actor XUpdaterService {
     static let shared = XUpdaterService()
     private var fileManager: FileManager { .default }
+    private let session: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        config.urlCache = nil
+        config.timeoutIntervalForRequest = 30
+        config.timeoutIntervalForResource = 300
+        return URLSession(configuration: config)
+    }()
 
     static let defaultXUpdaterHost = "https://update.x-plane.org"
 
@@ -333,7 +341,7 @@ actor XUpdaterService {
         }
 
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await session.data(for: request)
             let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
             await logHandler("[X-Updater] Auth HTTP Response \(statusCode) (\(data.count) bytes)")
 
@@ -371,7 +379,7 @@ actor XUpdaterService {
         request.setValue("1.8.0", forHTTPHeaderField: "XUpdater-Java")
         request.setValue(token, forHTTPHeaderField: "Authorization")
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await session.data(for: request)
         let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
         await logHandler("[X-Updater] File list HTTP Response \(statusCode) (\(data.count) bytes)")
 
@@ -447,7 +455,7 @@ actor XUpdaterService {
         request.setValue("1.8.0", forHTTPHeaderField: "XUpdater-Java")
         request.setValue(token, forHTTPHeaderField: "Authorization")
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await session.data(for: request)
         let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
         await logHandler("[X-Updater] Updates API HTTP Response \(statusCode) (\(data.count) bytes)")
 
@@ -653,9 +661,14 @@ actor XUpdaterService {
                 return (rVer, true, "Update available (\(rVer ?? "new snapshot"))")
             }
 
-            if let rVer = remoteVersion, let curVer = activeConfig.version, rVer != curVer {
-                await logHandler("[X-Updater] Version mismatch (Local: \(curVer), Remote: \(rVer)). Marking addon for update.")
-                return (rVer, true, "Update available (\(rVer))")
+            if let rVer = remoteVersion, let curVer = activeConfig.version {
+                if VersionComparator.isNewer(rVer, than: curVer) {
+                    await logHandler("[X-Updater] Newer remote version found (Local: \(curVer), Remote: \(rVer)). Marking addon for update.")
+                    return (rVer, true, "Update available (\(rVer))")
+                } else if VersionComparator.isNewer(curVer, than: rVer) {
+                    await logHandler("[X-Updater] Local version '\(curVer)' is newer than remote '\(rVer)'. Addon is up to date.")
+                    return (curVer, false, "Up to date")
+                }
             }
 
             var checkCount = 0
@@ -800,7 +813,7 @@ actor XUpdaterService {
                   let downloadURL = URL(string: downloadURLString) else { continue }
 
             await logHandler("[X-Updater] Fetching \(downloadURL.absoluteString)...")
-            let (fileData, response) = try await URLSession.shared.data(from: downloadURL)
+            let (fileData, response) = try await session.data(from: downloadURL)
             guard (response as? HTTPURLResponse)?.statusCode == 200 else {
                 await logHandler("[X-Updater] Failed download for \(item.path) (HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0))")
                 continue
@@ -1010,7 +1023,7 @@ actor XUpdaterService {
                 await logHandler("[X-Updater] Found release notes candidate in remote manifest: \(item.path)")
                 if let downloadURLString = item.url ?? activeConfig.remoteURL,
                    let downloadURL = URL(string: downloadURLString) {
-                    let (fileData, response) = try await URLSession.shared.data(from: downloadURL)
+                    let (fileData, response) = try await session.data(from: downloadURL)
                     if (response as? HTTPURLResponse)?.statusCode == 200 {
                         let finalData = decompressGzip(data: fileData) ?? fileData
                         if let text = String(data: finalData, encoding: .utf8) ?? String(data: finalData, encoding: .isoLatin1),
