@@ -353,7 +353,7 @@ class UpdateManager {
 
         let updater = addon.updaterType.updater
 
-        Task { @MainActor in
+        Task { @MainActor [self] in
             do {
                 let result = try await updater.checkStatus(for: addon) { [weak self] msg in
                     self?.log(msg)
@@ -385,7 +385,7 @@ class UpdateManager {
         let addonId = addon.id
         let updater = addon.updaterType.updater
 
-        Task { @MainActor in
+        Task { @MainActor [self] in
             do {
                 try await updater.applyUpdates(
                     for: addon,

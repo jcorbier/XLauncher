@@ -1047,7 +1047,7 @@ final class CSLManager {
         let effectiveXPlane = xPlaneFolderURL ?? folderURL.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let centralFolder = launcherDataFolder
 
-        let task = Task { @MainActor in
+        let task = Task { @MainActor [self] in
             do {
                 try await service.downloadPackage(
                     package: pkgToUpdate,
@@ -1186,7 +1186,7 @@ final class CSLManager {
         isApplyingLights = true
         log("[XP12 Lights] Applying modern X-Plane 12 lighting to all installed CSL models...")
 
-        Task { @MainActor in
+        Task { @MainActor [self] in
             let installedPackages = self.packages.filter { $0.isInstalled && !$0.isResourcePackage }
             for pkg in installedPackages {
                 let pkgDir = folderURL.appendingPathComponent(pkg.name)
@@ -1210,7 +1210,7 @@ final class CSLManager {
         isApplyingLights = true
         log("[XP12 Lights] Reverting all CSL models to original unmodified lighting...")
 
-        Task { @MainActor in
+        Task { @MainActor [self] in
             let installedPackages = self.packages.filter { $0.isInstalled && !$0.isResourcePackage }
             for pkg in installedPackages {
                 let pkgDir = folderURL.appendingPathComponent(pkg.name)
