@@ -334,4 +334,47 @@ final class LicenseManagerTests: XCTestCase {
         // 3. Expiry date extraction
         XCTAssertNil(KeygenCrypto.extractExpiryDate(from: lifetimeKey))
     }
+
+    // MARK: - Staging & Live Licensing Tests
+
+    @MainActor
+    func testLiveStagingProductInfoAndOfflineLifecycle() async throws {
+        let manager = LicenseManager(proxyBaseURL: LicenseManager.stagingProxyURL)
+        await manager.fetchProductInfo()
+
+        XCTAssertNotNil(manager.productInfo, "Must fetch product info from staging worker")
+        XCTAssertEqual(manager.productInfo?.id, "xlauncher")
+        XCTAssertEqual(manager.productInfo?.maxMachines, 3)
+
+        // Offline lifecycle check with a genuine CyberPatate signed key
+        let cyberpatatePrivHex = "17226da897e61859d314a059c473d0415a0ea60e45fbb1dd59e4649647763334"
+        let privData = KeygenCrypto.hexToData(cyberpatatePrivHex)!
+        let privateKey = try Curve25519.Signing.PrivateKey(rawRepresentation: privData)
+
+        let localFP = DeviceFingerprint.getHashedFingerprint()
+        let payloadJSON = """
+        {"account":{"id":"cyberpatate"},"product":{"id":"xlauncher"},"policy":{"id":"pro-lifetime"},"license":{"id":"lic_staging_test"},"machine":{"id":"\(localFP)"}}
+        """
+        let payloadBase64 = KeygenCrypto.base64URLEncode(payloadJSON.data(using: .utf8)!)
+        let signingData = "key/\(payloadBase64)"
+        let sig = try privateKey.signature(for: Data(signingData.utf8))
+        let sigBase64 = KeygenCrypto.base64URLEncode(sig)
+        let genuineKey = "\(signingData).\(sigBase64)"
+
+        let record = LicenseRecord(
+            licenseKey: genuineKey,
+            licenseId: "lic_staging_test",
+            machineFingerprint: localFP,
+            machineName: DeviceFingerprint.getMachineName(),
+            status: "active"
+        )
+        LicenseStorage.saveLicense(record)
+
+        // Completely offline initialize
+        let offlineManager = LicenseManager(proxyBaseURL: URL(string: "http://127.0.0.1:59999")!)
+        offlineManager.initialize(skipNetwork: true)
+
+        XCTAssertTrue(offlineManager.isPro, "CyberPatate signed license must activate Pro 100% offline")
+        XCTAssertEqual(offlineManager.licenseRecord?.licenseId, "lic_staging_test")
+    }
 }

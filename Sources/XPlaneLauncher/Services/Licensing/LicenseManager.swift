@@ -45,19 +45,36 @@ public final class LicenseManager: @unchecked Sendable {
         }
     }
 
+    public static let defaultProxyURL = URL(string: "https://cyberpatate-license.cyberpatate.workers.dev")!
+    public static let stagingProxyURL = URL(string: "https://cyberpatate-license-staging.cyberpatate.workers.dev")!
+
+    nonisolated(unsafe) public static var customProxyURL: URL? = nil
+
     public static let shared = LicenseManager()
 
     public init(
-        proxyBaseURL: URL = URL(string: "https://cyberpatate-license.cyberpatate.workers.dev")!,
+        proxyBaseURL: URL = defaultProxyURL,
         productId: String = "xlauncher"
     ) {
-        self.proxyBaseURL = proxyBaseURL
+        self.proxyBaseURL = Self.customProxyURL ?? proxyBaseURL
         self.productId = productId
+    }
+
+    public var clientVersion: String {
+        let v = AppInfo.version.trimmingCharacters(in: .whitespacesAndNewlines)
+        return v.isEmpty ? "2.2.0" : v
+    }
+
+    private func applyClientHeaders(to request: inout URLRequest) {
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(clientVersion, forHTTPHeaderField: "X-App-Version")
+        request.setValue("XLauncher/\(clientVersion) (macOS)", forHTTPHeaderField: "User-Agent")
     }
 
     // MARK: - Lifecycle
 
     /// Restores cached license from Application Support at launch and validates against this machine and Ed25519 signature.
+    /// Operates completely offline with zero network requests required for authorization.
     @MainActor
     public func initialize(skipNetwork: Bool = false) {
         if let cached = LicenseStorage.loadLicense() {
@@ -65,14 +82,14 @@ public final class LicenseManager: @unchecked Sendable {
             var isCryptographicallyValid = true
             var isExpired = false
 
-            // If the cached license is an Ed25519 cryptographic license/key, verify signature
+            // If the cached license is an Ed25519 cryptographic license/key, verify signature & node locking
             if KeygenCrypto.isCryptographicLicense(cached.licenseKey) {
                 if cached.licenseKey.hasPrefix("key/") {
-                    let result = KeygenCrypto.verifySignedKey(cached.licenseKey)
+                    let result = KeygenCrypto.verifySignedKey(cached.licenseKey, expectedFingerprint: currentFingerprint)
                     isCryptographicallyValid = result.isValid
                     isExpired = result.isExpired
                 } else if cached.licenseKey.contains("BEGIN") {
-                    let result = KeygenCrypto.verifyLicenseFile(cached.licenseKey)
+                    let result = KeygenCrypto.verifyLicenseFile(cached.licenseKey, expectedFingerprint: currentFingerprint)
                     isCryptographicallyValid = result.isValid
                     isExpired = result.isExpired
                 }
@@ -116,9 +133,6 @@ public final class LicenseManager: @unchecked Sendable {
 
         Task {
             await fetchProductInfo()
-            if self.licenseRecord != nil && self.isPro {
-                await validateOnline()
-            }
         }
     }
 
@@ -129,6 +143,7 @@ public final class LicenseManager: @unchecked Sendable {
         let url = proxyBaseURL.appendingPathComponent("api/v1/products")
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
+        applyClientHeaders(to: &request)
         request.timeoutInterval = 10
 
         do {
@@ -163,7 +178,7 @@ public final class LicenseManager: @unchecked Sendable {
 
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        applyClientHeaders(to: &request)
         request.timeoutInterval = 15
 
         let reqPayload = CreateCheckoutRequest(
@@ -212,6 +227,7 @@ public final class LicenseManager: @unchecked Sendable {
 
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
+        applyClientHeaders(to: &request)
         request.timeoutInterval = 10
 
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -262,7 +278,7 @@ public final class LicenseManager: @unchecked Sendable {
 
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        applyClientHeaders(to: &request)
         request.timeoutInterval = 15
 
         let reqPayload = StartTrialRequest(
@@ -294,7 +310,7 @@ public final class LicenseManager: @unchecked Sendable {
 
             // Verify cryptographic signature locally
             if KeygenCrypto.isCryptographicLicense(cleanedKey) {
-                let result = KeygenCrypto.verifySignedKey(cleanedKey)
+                let result = KeygenCrypto.verifySignedKey(cleanedKey, expectedFingerprint: DeviceFingerprint.getHashedFingerprint())
                 guard result.isValid else {
                     let err = result.errorMessage ?? "Invalid cryptographic signature on trial key."
                     self.trialError = err
@@ -393,7 +409,7 @@ public final class LicenseManager: @unchecked Sendable {
 
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        applyClientHeaders(to: &request)
         request.timeoutInterval = 15
 
         let reqPayload = ActivateLicenseRequest(
@@ -439,10 +455,17 @@ public final class LicenseManager: @unchecked Sendable {
         } catch {
             // If offline, but we verified a genuine Ed25519 cryptographic signature, activate locally!
             if cryptoResult?.isValid == true {
+                let currentFP = DeviceFingerprint.getHashedFingerprint()
+                if let boundFp = cryptoResult?.machineFingerprint, !boundFp.isEmpty, boundFp != currentFP {
+                    let err = "License is bound to another machine (\(boundFp))"
+                    self.activationError = err
+                    throw LicenseError.invalidKey(err)
+                }
+
                 let record = LicenseRecord(
                     licenseKey: cleanedKey,
                     licenseId: cryptoResult?.licenseId,
-                    machineFingerprint: DeviceFingerprint.getHashedFingerprint(),
+                    machineFingerprint: currentFP,
                     machineName: DeviceFingerprint.getMachineName(),
                     activatedAt: Date(),
                     productId: productId,
@@ -479,7 +502,7 @@ public final class LicenseManager: @unchecked Sendable {
 
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        applyClientHeaders(to: &request)
         request.timeoutInterval = 15
 
         let reqPayload = DeactivateLicenseRequest(
@@ -510,7 +533,7 @@ public final class LicenseManager: @unchecked Sendable {
 
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        applyClientHeaders(to: &request)
         request.timeoutInterval = 10
 
         let reqPayload = ValidateLicenseRequest(

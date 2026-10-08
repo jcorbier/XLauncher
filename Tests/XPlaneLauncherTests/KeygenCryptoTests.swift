@@ -39,9 +39,17 @@ final class KeygenCryptoTests: XCTestCase {
     }
 
     func testLoadEmbeddedPublicKey() {
-        let pubKey = KeygenCrypto.loadPublicKey()
-        XCTAssertNotNil(pubKey, "Embedded Keygen public key must be valid Ed25519 key")
-        XCTAssertEqual(pubKey?.rawRepresentation.count, 32)
+        let cyberpatateKey = KeygenCrypto.loadPublicKey(hex: KeygenCrypto.cyberpatatePublicKeyHex)
+        XCTAssertNotNil(cyberpatateKey, "CyberPatate public key must be valid Ed25519 key")
+        XCTAssertEqual(cyberpatateKey?.rawRepresentation.count, 32)
+
+        let legacyKey = KeygenCrypto.loadPublicKey(hex: KeygenCrypto.legacyKeygenPublicKeyHex)
+        XCTAssertNotNil(legacyKey, "Legacy Keygen public key must be valid Ed25519 key")
+        XCTAssertEqual(legacyKey?.rawRepresentation.count, 32)
+
+        let defaultKey = KeygenCrypto.loadPublicKey()
+        XCTAssertNotNil(defaultKey, "Default public key must load successfully")
+        XCTAssertEqual(defaultKey?.rawRepresentation.count, 32)
     }
 
     // MARK: - Base64URL Tests
@@ -194,5 +202,94 @@ final class KeygenCryptoTests: XCTestCase {
         XCTAssertFalse(manager.isPro, "Manager must reject forged cryptographic license")
         XCTAssertNil(manager.licenseRecord)
         XCTAssertNil(LicenseStorage.loadLicense(), "Forged license should be wiped from storage")
+    }
+
+    // MARK: - CyberPatate Native Licensing & Node Locking Tests
+
+    func testVerifyCyberPatateSignedKeyWithMachineBindingSucceeds() throws {
+        let cyberpatatePrivHex = "17226da897e61859d314a059c473d0415a0ea60e45fbb1dd59e4649647763334"
+        let privData = KeygenCrypto.hexToData(cyberpatatePrivHex)!
+        let privateKey = try Curve25519.Signing.PrivateKey(rawRepresentation: privData)
+
+        let machineFP = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        let payloadJSON = """
+        {"account":{"id":"cyberpatate"},"product":{"id":"xlauncher"},"policy":{"id":"pro-lifetime"},"license":{"id":"lic_cb_123","created":"2026-10-08T12:00:00Z","expiry":null},"machine":{"id":"\(machineFP)"}}
+        """
+        let payloadBase64 = KeygenCrypto.base64URLEncode(payloadJSON.data(using: .utf8)!)
+        let signingData = "key/\(payloadBase64)"
+        let sig = try privateKey.signature(for: Data(signingData.utf8))
+        let sigBase64 = KeygenCrypto.base64URLEncode(sig)
+        let signedKey = "\(signingData).\(sigBase64)"
+
+        // Verifying with default trusted keys (CyberPatate primary) and matching fingerprint
+        let result = KeygenCrypto.verifySignedKey(signedKey, expectedFingerprint: machineFP)
+        XCTAssertTrue(result.isValid, "Valid CyberPatate signed key matching machine must succeed")
+        XCTAssertEqual(result.licenseId, "lic_cb_123")
+        XCTAssertEqual(result.machineFingerprint, machineFP)
+    }
+
+    func testVerifyCyberPatateSignedKeyWithMismatchedMachineFails() throws {
+        let cyberpatatePrivHex = "17226da897e61859d314a059c473d0415a0ea60e45fbb1dd59e4649647763334"
+        let privData = KeygenCrypto.hexToData(cyberpatatePrivHex)!
+        let privateKey = try Curve25519.Signing.PrivateKey(rawRepresentation: privData)
+
+        let payloadJSON = """
+        {"account":{"id":"cyberpatate"},"product":{"id":"xlauncher"},"license":{"id":"lic_cb_456"},"machine":{"id":"machine-mac-original"}}
+        """
+        let payloadBase64 = KeygenCrypto.base64URLEncode(payloadJSON.data(using: .utf8)!)
+        let signingData = "key/\(payloadBase64)"
+        let sig = try privateKey.signature(for: Data(signingData.utf8))
+        let sigBase64 = KeygenCrypto.base64URLEncode(sig)
+        let signedKey = "\(signingData).\(sigBase64)"
+
+        // Verifying with DIFFERENT expected machine
+        let result = KeygenCrypto.verifySignedKey(signedKey, expectedFingerprint: "machine-mac-pirate")
+        XCTAssertFalse(result.isValid, "Mismatched machine fingerprint must fail cryptographic validation")
+        XCTAssertTrue(result.errorMessage?.contains("bound to another machine") == true)
+    }
+
+    func testVerifyLegacyKeygenKeyStillSucceedsWithMultiKeyTrust() {
+        let genuineKeygenKey = "key/eyJhY2NvdW50Ijp7ImlkIjoiMDVlZjlhNDQtZDYwNi00MzBlLWEyN2QtMWRhYjQ2NjI2NmE5In0sInByb2R1Y3QiOnsiaWQiOiI4NmZkMmI5ZS0zMjIzLTQ0MzgtODMwOC1mZDA3NDM0NTJmNzAifSwicG9saWN5Ijp7ImlkIjoiY2Y3YTk1MDQtYTE3OC00ZWZhLTlkMWEtMzE5OWYwYjNjMjYwIiwiZHVyYXRpb24iOm51bGx9LCJ1c2VyIjpudWxsLCJsaWNlbnNlIjp7ImlkIjoiNDNkODU0YzktMmFlNi00YWQwLTk1ZjYtNzg2MjNmNTcxZTlmIiwiY3JlYXRlZCI6IjIwMjYtMDktMDNUMTU6NTQ6NTMuMDAzWiIsImV4cGlyeSI6bnVsbH19.ou0CM1WEQiwT4cxNeSK84jzvTlKmfPwtaxnhHNtwgraQXZsfPPVQOpgZUXcvrp6IknGAp5i-YonKtO2PIiX0Ag=="
+
+        // Verifying with default trusted keys (must fallback and match legacy Keygen key)
+        let result = KeygenCrypto.verifySignedKey(genuineKeygenKey)
+        XCTAssertTrue(result.isValid, "Legacy Keygen key must be validated via multi-key fallback")
+        XCTAssertEqual(result.licenseId, "43d854c9-2ae6-4ad0-95f6-78623f571e9f")
+    }
+
+    @MainActor
+    func testLicenseManagerRejectsTamperedMachineFingerprintOffline() throws {
+        let cyberpatatePrivHex = "17226da897e61859d314a059c473d0415a0ea60e45fbb1dd59e4649647763334"
+        let privData = KeygenCrypto.hexToData(cyberpatatePrivHex)!
+        let privateKey = try Curve25519.Signing.PrivateKey(rawRepresentation: privData)
+
+        // License was generated and signed for "original-mac-fp"
+        let payloadJSON = """
+        {"account":{"id":"cyberpatate"},"product":{"id":"xlauncher"},"license":{"id":"lic_anti_tamper"},"machine":{"id":"original-mac-fp"}}
+        """
+        let payloadBase64 = KeygenCrypto.base64URLEncode(payloadJSON.data(using: .utf8)!)
+        let signingData = "key/\(payloadBase64)"
+        let sig = try privateKey.signature(for: Data(signingData.utf8))
+        let sigBase64 = KeygenCrypto.base64URLEncode(sig)
+        let signedKey = "\(signingData).\(sigBase64)"
+
+        // Rogue user attempts to alter cached.machineFingerprint in license.json to match local fingerprint
+        let localFP = DeviceFingerprint.getHashedFingerprint()
+        let tamperedRecord = LicenseRecord(
+            licenseKey: signedKey,
+            licenseId: "lic_anti_tamper",
+            machineFingerprint: localFP, // Changed in license.json
+            machineName: "My Mac",
+            status: "active"
+        )
+        LicenseStorage.saveLicense(tamperedRecord)
+
+        let manager = LicenseManager()
+        manager.initialize(skipNetwork: true)
+
+        // Offline verification detects signed payload bound to "original-mac-fp" != localFP
+        XCTAssertFalse(manager.isPro, "Manager must reject license when cached fingerprint does not match payload")
+        XCTAssertNil(manager.licenseRecord)
+        XCTAssertNil(LicenseStorage.loadLicense(), "Tampered license must be removed")
     }
 }

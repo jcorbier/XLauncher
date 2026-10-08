@@ -16,6 +16,7 @@ public struct KeygenVerificationResult: Sendable {
     public let expiryDate: Date?
     public let isExpired: Bool
     public let errorMessage: String?
+    public let machineFingerprint: String?
 
     public init(
         isValid: Bool,
@@ -23,7 +24,8 @@ public struct KeygenVerificationResult: Sendable {
         licenseId: String? = nil,
         expiryDate: Date? = nil,
         isExpired: Bool = false,
-        errorMessage: String? = nil
+        errorMessage: String? = nil,
+        machineFingerprint: String? = nil
     ) {
         self.isValid = isValid
         self.payload = payload
@@ -31,20 +33,56 @@ public struct KeygenVerificationResult: Sendable {
         self.expiryDate = expiryDate
         self.isExpired = isExpired
         self.errorMessage = errorMessage
+        self.machineFingerprint = machineFingerprint
     }
 
-    public static func failure(_ message: String, expiryDate: Date? = nil, isExpired: Bool = false) -> KeygenVerificationResult {
-        KeygenVerificationResult(isValid: false, expiryDate: expiryDate, isExpired: isExpired, errorMessage: message)
+    public static func failure(
+        _ message: String,
+        expiryDate: Date? = nil,
+        isExpired: Bool = false,
+        machineFingerprint: String? = nil
+    ) -> KeygenVerificationResult {
+        KeygenVerificationResult(
+            isValid: false,
+            expiryDate: expiryDate,
+            isExpired: isExpired,
+            errorMessage: message,
+            machineFingerprint: machineFingerprint
+        )
     }
 
-    public static func success(payload: String? = nil, licenseId: String? = nil, expiryDate: Date? = nil) -> KeygenVerificationResult {
-        KeygenVerificationResult(isValid: true, payload: payload, licenseId: licenseId, expiryDate: expiryDate, isExpired: false)
+    public static func success(
+        payload: String? = nil,
+        licenseId: String? = nil,
+        expiryDate: Date? = nil,
+        machineFingerprint: String? = nil
+    ) -> KeygenVerificationResult {
+        KeygenVerificationResult(
+            isValid: true,
+            payload: payload,
+            licenseId: licenseId,
+            expiryDate: expiryDate,
+            isExpired: false,
+            machineFingerprint: machineFingerprint
+        )
     }
 }
 
 public enum KeygenCrypto {
-    /// Default Keygen account Ed25519 public key (hexadecimal).
-    public static let defaultPublicKeyHex = "9e5e772db02b01a5fb823d8bab781056f794a4c9a0681f180d2b2be4efa4d254"
+    /// Dedicated CyberPatate Ed25519 public key (hexadecimal).
+    public static let cyberpatatePublicKeyHex = "2cd7ed42f41da5bdb96b78642ebc496931db6d5dd78933fe0354161bca44aa11"
+
+    /// Legacy Keygen account Ed25519 public key (hexadecimal).
+    public static let legacyKeygenPublicKeyHex = "9e5e772db02b01a5fb823d8bab781056f794a4c9a0681f180d2b2be4efa4d254"
+
+    /// Default public key (CyberPatate).
+    public static let defaultPublicKeyHex = cyberpatatePublicKeyHex
+
+    /// Trusted Ed25519 public keys: primary CyberPatate key first, followed by legacy Keygen key.
+    public static let trustedPublicKeys: [String] = [
+        cyberpatatePublicKeyHex,
+        legacyKeygenPublicKeyHex
+    ]
 
     // MARK: - Key Conversion
 
@@ -94,10 +132,11 @@ public enum KeygenCrypto {
 
     // MARK: - Verification
 
-    /// Verifies a Keygen license key formatted as `key/{BASE64URL_DATA}.{BASE64URL_SIGNATURE}`.
+    /// Verifies a Keygen or CyberPatate license key formatted as `key/{BASE64URL_DATA}.{BASE64URL_SIGNATURE}`.
     public static func verifySignedKey(
         _ key: String,
-        publicKeyHex: String = defaultPublicKeyHex
+        publicKeyHex: String? = nil,
+        expectedFingerprint: String? = nil
     ) -> KeygenVerificationResult {
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.hasPrefix("key/") else {
@@ -119,13 +158,25 @@ public enum KeygenCrypto {
             return .failure("Ed25519 signature must be exactly 64 bytes (got \(signatureData.count))")
         }
 
-        guard let publicKey = loadPublicKey(hex: publicKeyHex) else {
-            return .failure("Failed to initialize Ed25519 public key")
-        }
+        let candidateKeys: [String] = {
+            if let specificKey = publicKeyHex {
+                return [specificKey]
+            }
+            return trustedPublicKeys
+        }()
 
         let signingBytes = Data(signingDataString.utf8)
-        let isValid = publicKey.isValidSignature(signatureData, for: signingBytes)
-        guard isValid else {
+        var isSignatureValid = false
+
+        for keyHex in candidateKeys {
+            if let publicKey = loadPublicKey(hex: keyHex),
+               publicKey.isValidSignature(signatureData, for: signingBytes) {
+                isSignatureValid = true
+                break
+            }
+        }
+
+        guard isSignatureValid else {
             return .failure("Cryptographic signature verification failed: invalid signature for key")
         }
 
@@ -134,6 +185,7 @@ public enum KeygenCrypto {
         var payloadString: String? = nil
         var extractedLicenseId: String? = nil
         var extractedExpiryDate: Date? = nil
+        var extractedMachineFingerprint: String? = nil
 
         if let decodedData = base64URLDecode(String(dataPart)),
            let utf8 = String(data: decodedData, encoding: .utf8) {
@@ -144,11 +196,15 @@ public enum KeygenCrypto {
                 let licDict = json["license"] as? [String: Any]
                 let dataDict = json["data"] as? [String: Any]
                 let attrDict = dataDict?["attributes"] as? [String: Any]
+                let machineDict = json["machine"] as? [String: Any]
 
                 extractedLicenseId = licDict?["id"] as? String
                     ?? json["id"] as? String
                     ?? json["licenseId"] as? String
                     ?? dataDict?["id"] as? String
+
+                extractedMachineFingerprint = machineDict?["id"] as? String
+                    ?? (dataDict?["attributes"] as? [String: Any])?["machineId"] as? String
 
                 let policyDict = json["policy"] as? [String: Any]
                 let expiryString = licDict?["expiry"] as? String
@@ -185,7 +241,21 @@ public enum KeygenCrypto {
                         return .failure(
                             "License certificate has expired on \(date)",
                             expiryDate: date,
-                            isExpired: true
+                            isExpired: true,
+                            machineFingerprint: extractedMachineFingerprint
+                        )
+                    }
+                }
+
+                // If this license is node-locked to a specific machine fingerprint in its signed payload:
+                if let boundFp = extractedMachineFingerprint, !boundFp.isEmpty,
+                   let expectedFp = expectedFingerprint, !expectedFp.isEmpty {
+                    if boundFp != expectedFp {
+                        return .failure(
+                            "License certificate is bound to another machine (\(boundFp))",
+                            expiryDate: extractedExpiryDate,
+                            isExpired: false,
+                            machineFingerprint: extractedMachineFingerprint
                         )
                     }
                 }
@@ -195,7 +265,8 @@ public enum KeygenCrypto {
         return .success(
             payload: payloadString,
             licenseId: extractedLicenseId,
-            expiryDate: extractedExpiryDate
+            expiryDate: extractedExpiryDate,
+            machineFingerprint: extractedMachineFingerprint
         )
     }
 
@@ -203,7 +274,8 @@ public enum KeygenCrypto {
     /// Supports `-----BEGIN LICENSE FILE-----` and `-----BEGIN MACHINE FILE-----` formats.
     public static func verifyLicenseFile(
         _ content: String,
-        publicKeyHex: String = defaultPublicKeyHex
+        publicKeyHex: String? = nil,
+        expectedFingerprint: String? = nil
     ) -> KeygenVerificationResult {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -250,16 +322,65 @@ public enum KeygenCrypto {
         }
 
         let signingDataString = "\(prefix)\(payloadValue)"
-        guard let publicKey = loadPublicKey(hex: publicKeyHex) else {
-            return .failure("Failed to initialize Ed25519 public key")
+        let signingBytes = Data(signingDataString.utf8)
+
+        let candidateKeys: [String] = {
+            if let specificKey = publicKeyHex {
+                return [specificKey]
+            }
+            return trustedPublicKeys
+        }()
+
+        var isSignatureValid = false
+        for keyHex in candidateKeys {
+            if let publicKey = loadPublicKey(hex: keyHex),
+               publicKey.isValidSignature(signatureData, for: signingBytes) {
+                isSignatureValid = true
+                break
+            }
         }
 
-        let isValid = publicKey.isValidSignature(signatureData, for: Data(signingDataString.utf8))
-        guard isValid else {
+        guard isSignatureValid else {
             return .failure("Cryptographic signature verification failed: certificate signature invalid")
         }
 
-        return .success(payload: payloadValue)
+        // Parse payload if data is present
+        var extractedExpiryDate: Date? = nil
+        var extractedMachineFingerprint: String? = nil
+        if let dataString = json["data"] as? String,
+           let dataBytes = base64URLDecode(dataString) ?? Data(base64Encoded: dataString),
+           let payloadJSON = try? JSONSerialization.jsonObject(with: dataBytes) as? [String: Any] {
+            let licDict = payloadJSON["license"] as? [String: Any]
+            let attrDict = (payloadJSON["data"] as? [String: Any])?["attributes"] as? [String: Any]
+            let machineDict = payloadJSON["machine"] as? [String: Any]
+
+            extractedMachineFingerprint = machineDict?["id"] as? String
+                ?? attrDict?["machineId"] as? String
+
+            let expiryStr = licDict?["expiry"] as? String
+                ?? payloadJSON["expiry"] as? String
+                ?? payloadJSON["expiresAt"] as? String
+                ?? attrDict?["expiry"] as? String
+            if let expiryStr = expiryStr, let date = parseISO8601Date(expiryStr) {
+                extractedExpiryDate = date
+                if date < Date() {
+                    return .failure("License certificate has expired on \(date)", expiryDate: date, isExpired: true)
+                }
+            }
+
+            if let boundFp = extractedMachineFingerprint, !boundFp.isEmpty,
+               let expectedFp = expectedFingerprint, !expectedFp.isEmpty {
+                if boundFp != expectedFp {
+                    return .failure("License certificate is bound to another machine (\(boundFp))")
+                }
+            }
+        }
+
+        return .success(
+            payload: payloadValue,
+            expiryDate: extractedExpiryDate,
+            machineFingerprint: extractedMachineFingerprint
+        )
     }
 
     /// Checks whether a given string is any form of cryptographically signed Keygen license or certificate.
