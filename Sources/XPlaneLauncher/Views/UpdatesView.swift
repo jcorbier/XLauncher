@@ -203,14 +203,16 @@ struct UpdatableAddonRow: View {
                         .background(Color.secondary.opacity(0.12))
                         .clipShape(Capsule())
 
-                    if addon.isBetaEnabled {
-                        Text("BETA")
+                    let channel = addon.activeChannel.lowercased()
+                    if channel != "stable" && channel != "release" && !channel.isEmpty {
+                        let isBeta = (channel == "beta")
+                        Text(addon.activeChannel.uppercased())
                             .font(.caption2)
                             .fontWeight(.bold)
-                            .foregroundStyle(.purple)
+                            .foregroundStyle(isBeta ? .purple : .blue)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
-                            .background(Color.purple.opacity(0.15))
+                            .background((isBeta ? Color.purple : Color.blue).opacity(0.15))
                             .clipShape(Capsule())
                     }
                 }
@@ -221,7 +223,14 @@ struct UpdatableAddonRow: View {
                         .foregroundStyle(.secondary)
 
                     if let ver = addon.currentVersion {
-                        Text("•  Version \(ver)\(addon.isBetaEnabled ? " (Beta Channel)" : "")")
+                        let channelSuffix: String = {
+                            let ch = addon.activeChannel.lowercased()
+                            if ch != "stable" && ch != "release" && !ch.isEmpty {
+                                return " (\(addon.activeChannel.capitalized) Channel)"
+                            }
+                            return ""
+                        }()
+                        Text("•  Version \(ver)\(channelSuffix)")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -261,16 +270,7 @@ struct UpdatableAddonRow: View {
                             Button("Verify & Repair Files") {
                                 updateManager.updateAddon(addon)
                             }
-                            if addon.hasBetaChannel {
-                                Divider()
-                                Toggle(isOn: Binding(
-                                    get: { addon.isBetaEnabled },
-                                    set: { updateManager.setBetaUpdatesEnabled($0, for: addon) }
-                                )) {
-                                    Label("Enable Beta Updates", systemImage: "flask")
-                                }
-                                .disabled(addon.isUpdating)
-                            }
+                            channelMenuSection
                         } label: {
                             Text(isRepair ? "Repair" : "Update")
                         } primaryAction: {
@@ -293,16 +293,7 @@ struct UpdatableAddonRow: View {
                             Button("Verify & Repair Files") {
                                 updateManager.updateAddon(addon)
                             }
-                            if addon.hasBetaChannel {
-                                Divider()
-                                Toggle(isOn: Binding(
-                                    get: { addon.isBetaEnabled },
-                                    set: { updateManager.setBetaUpdatesEnabled($0, for: addon) }
-                                )) {
-                                    Label("Enable Beta Updates", systemImage: "flask")
-                                }
-                                .disabled(addon.isUpdating)
-                            }
+                            channelMenuSection
                         } label: {
                             Text("Check")
                         } primaryAction: {
@@ -335,20 +326,34 @@ struct UpdatableAddonRow: View {
             Button("Verify & Repair Files") {
                 updateManager.updateAddon(addon)
             }
-            if addon.hasBetaChannel {
-                Divider()
-                Toggle(isOn: Binding(
-                    get: { addon.isBetaEnabled },
-                    set: { updateManager.setBetaUpdatesEnabled($0, for: addon) }
-                )) {
-                    Label("Enable Beta Updates", systemImage: "flask")
-                }
-                .disabled(addon.isUpdating)
-            }
+            channelMenuSection
             Divider()
             Button("Show in Finder") {
                 NSWorkspace.shared.activateFileViewerSelecting([addon.folderURL])
             }
+        }
+    }
+
+    @ViewBuilder
+    private var channelMenuSection: some View {
+        if addon.availableChannels.count > 1 {
+            Divider()
+            Menu {
+                ForEach(addon.availableChannels, id: \.self) { ch in
+                    Button {
+                        updateManager.setChannel(ch, for: addon)
+                    } label: {
+                        if ch.lowercased() == addon.activeChannel.lowercased() {
+                            Label(ch.capitalized, systemImage: "checkmark")
+                        } else {
+                            Text(ch.capitalized)
+                        }
+                    }
+                }
+            } label: {
+                Label("Channel: \(addon.activeChannel.capitalized)", systemImage: "arrow.triangle.branch")
+            }
+            .disabled(addon.isUpdating)
         }
     }
 }

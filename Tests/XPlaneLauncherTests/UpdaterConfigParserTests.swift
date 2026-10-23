@@ -653,7 +653,7 @@ final class UpdaterConfigParserTests: XCTestCase {
         try cfgContent.write(to: cfgFile, atomically: true, encoding: .utf8)
 
         // When local version is 1.14 and remote is 1.13, it should never report an update available (downgrade)
-        let config = SkunkCraftsConfig(name: "BetterPushBack", version: "1.14", remoteManifestURL: "http://127.0.0.1:9/invalid", baseURL: "http://127.0.0.1:9/invalid")
+        _ = SkunkCraftsConfig(name: "BetterPushBack", version: "1.14", remoteManifestURL: "http://127.0.0.1:9/invalid", baseURL: "http://127.0.0.1:9/invalid")
         XCTAssertFalse(VersionComparator.isNewer("1.13", than: "1.14"))
         XCTAssertTrue(VersionComparator.isNewer("1.14", than: "1.13"))
     }
@@ -822,7 +822,7 @@ final class UpdaterConfigParserTests: XCTestCase {
         try "name|ToLiss A320 Beta\nversion|1.1.0-b1\nurl|http://example.com/a320-beta/\n".write(to: betaCfg, atomically: true, encoding: .utf8)
 
         let updateManager = UpdateManager()
-        var addon = UpdateManager.UpdatableAddon(
+        let addon = UpdateManager.UpdatableAddon(
             name: "ToLiss A320",
             addonCategory: .aircraft,
             folderName: "ToLissA320",
@@ -850,6 +850,142 @@ final class UpdaterConfigParserTests: XCTestCase {
         XCTAssertFalse(revertedAddon.isBetaEnabled)
         XCTAssertEqual(revertedAddon.configFileURL.lastPathComponent, "skunkcrafts_updater.cfg")
         XCTAssertEqual(revertedAddon.currentVersion, "1.0.0")
+        XCTAssertEqual(updateManager.addonBetaPreferences[addon.persistenceKey], false)
+    }
+
+    @MainActor
+    func testSkunkCraftsMultiChannelListingAndDefaulting() async throws {
+        let addonDir = tempDir.appendingPathComponent("MultiChannelAircraft")
+        let channelsDir = addonDir.appendingPathComponent("skunkcrafts/channels")
+        try fm.createDirectory(at: channelsDir, withIntermediateDirectories: true)
+
+        let cfg = addonDir.appendingPathComponent("skunkcrafts_updater.cfg")
+        let cfgContent = """
+        name|Multi-Channel Aircraft
+        version|2.0.0
+        channel|alpha
+        channel.alpha.module|http://example.com/alpha/
+        channel.beta.module|http://example.com/beta/
+        """
+        try cfgContent.write(to: cfg, atomically: true, encoding: .utf8)
+
+        let expCfg = channelsDir.appendingPathComponent("experimental.cfg")
+        try "channel|experimental\nmodule|http://example.com/exp/\n".write(to: expCfg, atomically: true, encoding: .utf8)
+
+        let service = SkunkCraftsUpdaterService.shared
+        let parsed = service.parseConfig(at: cfg, defaultName: "MultiChannelAircraft")
+        XCTAssertNotNil(parsed)
+        guard let parsed = parsed else { return }
+
+        // Must default to the channel listed in skunkcrafts_updater.cfg ("alpha")
+        XCTAssertEqual(parsed.activeChannel, "alpha")
+        // Available channels must contain all defined channels plus stable
+        XCTAssertTrue(parsed.availableChannels.contains("stable"))
+        XCTAssertTrue(parsed.availableChannels.contains("alpha"))
+        XCTAssertTrue(parsed.availableChannels.contains("beta"))
+        XCTAssertTrue(parsed.availableChannels.contains("experimental"))
+
+        let updateManager = UpdateManager()
+        let addon = UpdateManager.UpdatableAddon(
+            name: parsed.name,
+            addonCategory: .aircraft,
+            folderName: "MultiChannelAircraft",
+            folderURL: addonDir,
+            updaterType: .skunkcrafts,
+            configFileURL: cfg,
+            currentVersion: parsed.version,
+            remoteManifestURL: parsed.remoteManifestURL,
+            hasBetaChannel: parsed.availableChannels.count > 1,
+            isBetaEnabled: false,
+            availableChannels: parsed.availableChannels,
+            activeChannel: parsed.activeChannel
+        )
+        updateManager.updatableAddons = [addon]
+
+        // Switch to experimental channel
+        updateManager.setChannel("experimental", for: addon)
+        let experimentalAddon = updateManager.updatableAddons.first!
+        XCTAssertEqual(experimentalAddon.activeChannel, "experimental")
+        XCTAssertFalse(experimentalAddon.isBetaEnabled)
+        XCTAssertEqual(updateManager.addonChannelPreferences[addon.persistenceKey], "experimental")
+
+        // Verify skunkcrafts/channel.cfg was written to disk
+        let channelCfgURL = addonDir.appendingPathComponent("skunkcrafts/channel.cfg")
+        XCTAssertTrue(fm.fileExists(atPath: channelCfgURL.path))
+        let channelCfgContent = try String(contentsOf: channelCfgURL, encoding: .utf8)
+        XCTAssertEqual(channelCfgContent.trimmingCharacters(in: .whitespacesAndNewlines), "channel|experimental")
+
+        // Switch to beta channel
+        updateManager.setChannel("beta", for: experimentalAddon)
+        let betaAddon = updateManager.updatableAddons.first!
+        XCTAssertEqual(betaAddon.activeChannel, "beta")
+        XCTAssertTrue(betaAddon.isBetaEnabled)
+        XCTAssertEqual(updateManager.addonChannelPreferences[addon.persistenceKey], "beta")
+        XCTAssertEqual(updateManager.addonBetaPreferences[addon.persistenceKey], true)
+
+        // Switch to stable channel
+        updateManager.setChannel("stable", for: betaAddon)
+        let stableAddon = updateManager.updatableAddons.first!
+        XCTAssertEqual(stableAddon.activeChannel, "stable")
+        XCTAssertFalse(stableAddon.isBetaEnabled)
+        XCTAssertEqual(updateManager.addonChannelPreferences[addon.persistenceKey], "stable")
+        XCTAssertEqual(updateManager.addonBetaPreferences[addon.persistenceKey], false)
+    }
+
+    @MainActor
+    func testXUpdaterMultiChannelListingAndDefaulting() async throws {
+        let addonDir = tempDir.appendingPathComponent("MultiChannelXUpdaterAddon")
+        try fm.createDirectory(at: addonDir, withIntermediateDirectories: true)
+
+        let settingsFile = addonDir.appendingPathComponent("settings.ini")
+        let settingsContent = """
+        name = Test X-Updater Aircraft
+        version = 1.0.0
+        preferred_release_type = release
+        beta_enabled = false
+        """
+        try settingsContent.write(to: settingsFile, atomically: true, encoding: .utf8)
+
+        let service = XUpdaterService.shared
+        let parsed = service.parseConfig(at: settingsFile, defaultName: "MultiChannelXUpdaterAddon")
+        XCTAssertNotNil(parsed)
+        guard let parsed = parsed else { return }
+
+        // X-Updater default channel is always "stable" (release)
+        XCTAssertFalse(parsed.betaEnabled)
+        XCTAssertEqual(parsed.releaseType, "release")
+
+        let updateManager = UpdateManager()
+        let addon = UpdateManager.UpdatableAddon(
+            name: parsed.name,
+            addonCategory: .aircraft,
+            folderName: "MultiChannelXUpdaterAddon",
+            folderURL: addonDir,
+            updaterType: .xUpdater,
+            configFileURL: settingsFile,
+            currentVersion: parsed.version,
+            remoteManifestURL: parsed.remoteURL,
+            hasBetaChannel: true,
+            isBetaEnabled: false,
+            availableChannels: ["stable", "beta"],
+            activeChannel: "stable"
+        )
+        updateManager.updatableAddons = [addon]
+
+        // Switch to beta channel
+        updateManager.setChannel("beta", for: addon)
+        let betaAddon = updateManager.updatableAddons.first!
+        XCTAssertEqual(betaAddon.activeChannel, "beta")
+        XCTAssertTrue(betaAddon.isBetaEnabled)
+        XCTAssertEqual(updateManager.addonChannelPreferences[addon.persistenceKey], "beta")
+        XCTAssertEqual(updateManager.addonBetaPreferences[addon.persistenceKey], true)
+
+        // Switch back to stable channel
+        updateManager.setChannel("stable", for: betaAddon)
+        let stableAddon = updateManager.updatableAddons.first!
+        XCTAssertEqual(stableAddon.activeChannel, "stable")
+        XCTAssertFalse(stableAddon.isBetaEnabled)
+        XCTAssertEqual(updateManager.addonChannelPreferences[addon.persistenceKey], "stable")
         XCTAssertEqual(updateManager.addonBetaPreferences[addon.persistenceKey], false)
     }
 }

@@ -315,6 +315,9 @@ actor SkunkCraftsUpdaterService {
         for ch in channelModules.keys {
             availableChannels.insert(ch)
         }
+        if !activeChannel.isEmpty {
+            availableChannels.insert(activeChannel)
+        }
 
         // Check skunkcrafts/channels/
         let channelsDir = folderURL.appendingPathComponent("skunkcrafts/channels")
@@ -365,6 +368,7 @@ actor SkunkCraftsUpdaterService {
                 let chParts = chLine.components(separatedBy: "|")
                 if chParts.count >= 2 && chParts[0].trimmingCharacters(in: .whitespaces).lowercased() == "channel" {
                     activeChannel = chParts[1].trimmingCharacters(in: .whitespaces).lowercased()
+                    availableChannels.insert(activeChannel)
                     break
                 }
             }
@@ -385,6 +389,12 @@ actor SkunkCraftsUpdaterService {
 
         let resolvedBase = resolveBaseURL(module: baseURL ?? remoteURL, zone: zone)
 
+        let sortedChannels = availableChannels.sorted { a, b in
+            if a.lowercased() == "stable" { return true }
+            if b.lowercased() == "stable" { return false }
+            return a.localizedCaseInsensitiveCompare(b) == .orderedAscending
+        }
+
         return SkunkCraftsConfig(
             name: name,
             version: version,
@@ -396,7 +406,7 @@ actor SkunkCraftsUpdaterService {
             zone: zone,
             manifestFileName: manifestFileName,
             activeChannel: activeChannel,
-            availableChannels: Array(availableChannels).sorted(),
+            availableChannels: sortedChannels,
             changelogPath: changelogPath,
             readmePath: readmePath,
             isDisabled: isDisabled,
@@ -1173,10 +1183,8 @@ extension SkunkCraftsUpdaterService: AddonUpdater {
             configFileName: addon.configFileURL.lastPathComponent,
             isBetaEnabled: addon.isBetaEnabled
         )
-        config.isBetaEnabled = addon.isBetaEnabled
-        if addon.isBetaEnabled && config.activeChannel == "stable" {
-            config.activeChannel = "beta"
-        }
+        config.activeChannel = addon.activeChannel
+        config.isBetaEnabled = addon.isBetaEnabled || (addon.activeChannel.lowercased() == "beta")
         let result = try await checkAddonStatus(folderURL: addon.folderURL, config: config, logHandler: logHandler)
         return AddonUpdateCheckResult(
             latestVersion: result.latestVersion,
@@ -1198,10 +1206,8 @@ extension SkunkCraftsUpdaterService: AddonUpdater {
             configFileName: addon.configFileURL.lastPathComponent,
             isBetaEnabled: addon.isBetaEnabled
         )
-        config.isBetaEnabled = addon.isBetaEnabled
-        if addon.isBetaEnabled && config.activeChannel == "stable" {
-            config.activeChannel = "beta"
-        }
+        config.activeChannel = addon.activeChannel
+        config.isBetaEnabled = addon.isBetaEnabled || (addon.activeChannel.lowercased() == "beta")
         try await downloadAndApplyUpdates(
             for: addon.folderURL,
             config: config,
@@ -1222,7 +1228,8 @@ extension SkunkCraftsUpdaterService: AddonUpdater {
             configFileName: addon.configFileURL.lastPathComponent,
             isBetaEnabled: addon.isBetaEnabled
         )
-        config.isBetaEnabled = addon.isBetaEnabled
+        config.activeChannel = addon.activeChannel
+        config.isBetaEnabled = addon.isBetaEnabled || (addon.activeChannel.lowercased() == "beta")
         return try await fetchReleaseNotes(for: addon.folderURL, config: config, logHandler: logHandler)
     }
 }

@@ -51,6 +51,15 @@ class UpdateManager {
         }
     }
 
+    var addonChannelPreferences: [String: String] {
+        get {
+            defaults.object(forKey: .addonChannelPreferences) as? [String: String] ?? [:]
+        }
+        set {
+            defaults.set(newValue, forKey: .addonChannelPreferences)
+        }
+    }
+
     var storagePools: [StoragePool] = [] {
         didSet {
             guard storagePools != oldValue else { return }
@@ -145,9 +154,49 @@ class UpdateManager {
         var remoteManifestURL: String?
         var hasBetaChannel: Bool = false
         var isBetaEnabled: Bool = false
+        var availableChannels: [String] = ["stable"]
+        var activeChannel: String = "stable"
 
         var persistenceKey: String {
             "\(addonCategory.rawValue.lowercased()):\(folderName)"
+        }
+
+        init(
+            name: String,
+            addonCategory: AddonCategory,
+            folderName: String,
+            folderURL: URL,
+            updaterType: UpdaterType,
+            configFileURL: URL,
+            currentVersion: String? = nil,
+            latestVersion: String? = nil,
+            isUpdateAvailable: Bool = false,
+            isChecking: Bool = false,
+            isUpdating: Bool = false,
+            statusMessage: String = "Unknown",
+            remoteManifestURL: String? = nil,
+            hasBetaChannel: Bool = false,
+            isBetaEnabled: Bool = false,
+            availableChannels: [String] = ["stable"],
+            activeChannel: String = "stable"
+        ) {
+            self.name = name
+            self.addonCategory = addonCategory
+            self.folderName = folderName
+            self.folderURL = folderURL
+            self.updaterType = updaterType
+            self.configFileURL = configFileURL
+            self.currentVersion = currentVersion
+            self.latestVersion = latestVersion
+            self.isUpdateAvailable = isUpdateAvailable
+            self.isChecking = isChecking
+            self.isUpdating = isUpdating
+            self.statusMessage = statusMessage
+            self.remoteManifestURL = remoteManifestURL
+            self.hasBetaChannel = hasBetaChannel
+            self.isBetaEnabled = isBetaEnabled
+            self.availableChannels = availableChannels
+            self.activeChannel = activeChannel
         }
     }
 
@@ -191,22 +240,49 @@ class UpdateManager {
         return nil
     }
 
-    private nonisolated static func parseUpdaterConfig(url: URL, type: UpdaterType, defaultName: String) -> (name: String, version: String?, remoteURL: String?) {
+    private nonisolated static func parseUpdaterConfig(
+        url: URL,
+        type: UpdaterType,
+        defaultName: String
+    ) -> (
+        name: String,
+        version: String?,
+        remoteURL: String?,
+        availableChannels: [String],
+        defaultChannel: String,
+        activeChannel: String
+    ) {
         if type == .skunkcrafts {
             if let config = SkunkCraftsUpdaterService.shared.parseConfig(at: url, defaultName: defaultName) {
-                return (config.name, config.version, config.remoteManifestURL)
+                return (
+                    config.name,
+                    config.version,
+                    config.remoteManifestURL,
+                    config.availableChannels.isEmpty ? ["stable"] : config.availableChannels,
+                    config.activeChannel,
+                    config.activeChannel
+                )
             }
         } else if type == .xUpdater {
             if let config = XUpdaterService.shared.parseConfig(at: url, defaultName: defaultName) {
-                return (config.name, config.version, config.remoteURL)
+                let active = config.betaEnabled ? "beta" : "stable"
+                return (
+                    config.name,
+                    config.version,
+                    config.remoteURL,
+                    ["stable", "beta"],
+                    "stable",
+                    active
+                )
             }
         }
-        return (defaultName, nil, nil)
+        return (defaultName, nil, nil, ["stable"], "stable", "stable")
     }
 
     private nonisolated static func scanDirectoryForAddons(
         subFolderURL: URL,
         category: AddonCategory,
+        channelPreferences: [String: String] = [:],
         betaPreferences: [String: Bool] = [:],
         currentDepth: Int = 0,
         maxDepth: Int = 5
@@ -225,25 +301,40 @@ class UpdateManager {
                     let persistenceKey = "\(category.rawValue.lowercased()):\(folderName)"
                     let pathKey = itemURL.path
 
-                    let hasBeta: Bool
-                    var isBeta: Bool = betaPreferences[persistenceKey] ?? betaPreferences[pathKey] ?? false
                     var activeConfigFileURL = updaterInfo.fileURL
 
-                    if updaterInfo.type == .skunkcrafts {
-                        hasBeta = SkunkCraftsUpdaterService.shared.hasBetaChannel(in: itemURL)
-                        if !hasBeta {
-                            isBeta = false
+                    var (parsedName, version, remoteURL, availableChannels, _, configActiveChannel) = parseUpdaterConfig(
+                        url: activeConfigFileURL,
+                        type: updaterInfo.type,
+                        defaultName: folderName
+                    )
+
+                    var selectedChannel = configActiveChannel
+                    if let pref = channelPreferences[persistenceKey] ?? channelPreferences[pathKey],
+                       availableChannels.contains(where: { $0.lowercased() == pref.lowercased() }) {
+                        selectedChannel = pref.lowercased()
+                    } else if let legacyBeta = betaPreferences[persistenceKey] ?? betaPreferences[pathKey] {
+                        if legacyBeta && availableChannels.contains("beta") {
+                            selectedChannel = "beta"
+                        } else if !legacyBeta {
+                            selectedChannel = "stable"
                         }
-                        if isBeta, let betaURL = SkunkCraftsUpdaterService.shared.findConfig(in: itemURL, preferBeta: true) {
-                            activeConfigFileURL = betaURL
-                        }
-                    } else if updaterInfo.type == .xUpdater {
-                        hasBeta = true
                     } else {
-                        hasBeta = false
+                        selectedChannel = configActiveChannel
                     }
 
-                    let (parsedName, version, remoteURL) = parseUpdaterConfig(url: activeConfigFileURL, type: updaterInfo.type, defaultName: folderName)
+                    let isBeta = (selectedChannel.lowercased() == "beta")
+
+                    if updaterInfo.type == .skunkcrafts {
+                        if isBeta, let betaURL = SkunkCraftsUpdaterService.shared.findConfig(in: itemURL, preferBeta: true), betaURL != activeConfigFileURL {
+                            activeConfigFileURL = betaURL
+                            let betaParsed = parseUpdaterConfig(url: betaURL, type: .skunkcrafts, defaultName: folderName)
+                            if let v = betaParsed.version { version = v }
+                            if let u = betaParsed.remoteURL { remoteURL = u }
+                        }
+                    }
+
+                    let hasBeta = availableChannels.count > 1 || availableChannels.contains(where: { $0.lowercased() != "stable" })
 
                     results.append(UpdatableAddon(
                         name: parsedName,
@@ -255,12 +346,15 @@ class UpdateManager {
                         currentVersion: version,
                         remoteManifestURL: remoteURL,
                         hasBetaChannel: hasBeta,
-                        isBetaEnabled: isBeta
+                        isBetaEnabled: isBeta,
+                        availableChannels: availableChannels,
+                        activeChannel: selectedChannel
                     ))
                 } else {
                     let subResults = scanDirectoryForAddons(
                         subFolderURL: itemURL,
                         category: category,
+                        channelPreferences: channelPreferences,
                         betaPreferences: betaPreferences,
                         currentDepth: currentDepth + 1,
                         maxDepth: maxDepth
@@ -282,6 +376,7 @@ class UpdateManager {
         }
 
         isScanning = true
+        let currentChannelPrefs = self.addonChannelPreferences
         let currentBetaPrefs = self.addonBetaPreferences
 
         Task {
@@ -294,6 +389,7 @@ class UpdateManager {
                             let addons = Self.scanDirectoryForAddons(
                                 subFolderURL: folderURL,
                                 category: category,
+                                channelPreferences: currentChannelPrefs,
                                 betaPreferences: currentBetaPrefs
                             )
                             results.append(contentsOf: addons)
@@ -401,8 +497,8 @@ class UpdateManager {
 
                 if let i = self.updatableAddons.firstIndex(where: { $0.id == addonId }) {
                     let updatedAddon = self.updatableAddons[i]
-                    let (_, newVersion, _) = Self.parseUpdaterConfig(url: updatedAddon.configFileURL, type: updatedAddon.updaterType, defaultName: updatedAddon.name)
-                    let finalVersion = newVersion ?? self.updatableAddons[i].latestVersion
+                    let parsed = Self.parseUpdaterConfig(url: updatedAddon.configFileURL, type: updatedAddon.updaterType, defaultName: updatedAddon.name)
+                    let finalVersion = parsed.version ?? self.updatableAddons[i].latestVersion
                     if let finalVersion {
                         self.updatableAddons[i].currentVersion = finalVersion
                         self.updatableAddons[i].latestVersion = finalVersion
@@ -433,54 +529,81 @@ class UpdateManager {
         }
     }
 
-    func setBetaUpdatesEnabled(_ enabled: Bool, for addon: UpdatableAddon) {
+    func setChannel(_ channel: String, for addon: UpdatableAddon) {
         guard let index = updatableAddons.firstIndex(where: { $0.id == addon.id }) else { return }
         guard !updatableAddons[index].isUpdating else { return }
 
+        let normalized = channel.lowercased()
+        let isBeta = (normalized == "beta")
+
         // Update stored preferences
-        var prefs = addonBetaPreferences
-        prefs[addon.persistenceKey] = enabled
-        prefs[addon.folderURL.path] = enabled
-        addonBetaPreferences = prefs
+        var channelPrefs = addonChannelPreferences
+        channelPrefs[addon.persistenceKey] = normalized
+        channelPrefs[addon.folderURL.path] = normalized
+        addonChannelPreferences = channelPrefs
 
-        updatableAddons[index].isBetaEnabled = enabled
+        var betaPrefs = addonBetaPreferences
+        betaPrefs[addon.persistenceKey] = isBeta
+        betaPrefs[addon.folderURL.path] = isBeta
+        addonBetaPreferences = betaPrefs
 
-        // If SkunkCrafts, swap active config file
+        updatableAddons[index].activeChannel = normalized
+        updatableAddons[index].isBetaEnabled = isBeta
+
+        // If SkunkCrafts, swap active config file if legacy beta and update pointer
         if addon.updaterType == .skunkcrafts {
+            SkunkCraftsUpdaterService.shared.setChannel(normalized, in: addon.folderURL)
+
             let activeConfigFileURL: URL
-            if enabled {
-                activeConfigFileURL = addon.folderURL.appendingPathComponent("skunkcrafts_updater_beta.cfg")
+            if isBeta {
+                let betaURL = addon.folderURL.appendingPathComponent("skunkcrafts_updater_beta.cfg")
+                if FileManager.default.fileExists(atPath: betaURL.path) {
+                    activeConfigFileURL = betaURL
+                } else {
+                    activeConfigFileURL = addon.folderURL.appendingPathComponent("skunkcrafts_updater.cfg")
+                }
             } else {
                 activeConfigFileURL = addon.folderURL.appendingPathComponent("skunkcrafts_updater.cfg")
             }
+
             if FileManager.default.fileExists(atPath: activeConfigFileURL.path) {
                 updatableAddons[index].configFileURL = activeConfigFileURL
-                let (_, version, remoteURL) = Self.parseUpdaterConfig(url: activeConfigFileURL, type: .skunkcrafts, defaultName: addon.name)
-                if let version {
+                let parsed = Self.parseUpdaterConfig(url: activeConfigFileURL, type: .skunkcrafts, defaultName: addon.name)
+                if let version = parsed.version {
                     updatableAddons[index].currentVersion = version
                 }
-                if let remoteURL {
+                if let remoteURL = parsed.remoteURL {
                     updatableAddons[index].remoteManifestURL = remoteURL
                 }
             }
-            SkunkCraftsUpdaterService.shared.setChannel(enabled ? "beta" : "stable", in: addon.folderURL)
         } else if addon.updaterType == .xUpdater {
             // Update settings.ini / x-updater.json on disk asynchronously
             let folderURL = addon.folderURL
             Task {
-                await XUpdaterService.shared.setBetaEnabled(enabled, in: folderURL)
+                await XUpdaterService.shared.setBetaEnabled(isBeta, in: folderURL)
+            }
+            let parsed = Self.parseUpdaterConfig(url: addon.configFileURL, type: .xUpdater, defaultName: addon.name)
+            if let version = parsed.version {
+                updatableAddons[index].currentVersion = version
+            }
+            if let remoteURL = parsed.remoteURL {
+                updatableAddons[index].remoteManifestURL = remoteURL
             }
         }
 
         updatableAddons[index].isChecking = false
         updatableAddons[index].latestVersion = nil
         updatableAddons[index].isUpdateAvailable = false
-        updatableAddons[index].statusMessage = "Channel: \(enabled ? "Beta" : "Release")"
+        updatableAddons[index].statusMessage = "Channel: \(normalized.capitalized)"
 
-        log("[Updates] \(addon.name): Switched to \(enabled ? "Beta" : "Release") channel")
+        log("[Updates] \(addon.name): Switched to \(normalized.capitalized) channel")
 
         // Trigger immediate check on the newly selected channel
         checkForUpdates(for: updatableAddons[index])
+    }
+
+    func setBetaUpdatesEnabled(_ enabled: Bool, for addon: UpdatableAddon) {
+        setChannel(enabled ? "beta" : "stable", for: addon)
     }
 }
 

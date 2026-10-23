@@ -886,6 +886,11 @@ actor XUpdaterService {
         updateLocalSettings(in: addonFolder, newSnapshotNum: nil, newVersion: nil, betaEnabled: betaEnabled)
     }
 
+    func setChannel(_ channelName: String, in addonFolder: URL) {
+        let isBeta = (channelName.lowercased() == "beta")
+        setBetaEnabled(isBeta, in: addonFolder)
+    }
+
     func updateLocalSettings(
         in addonFolder: URL,
         newSnapshotNum: Int?,
@@ -1104,12 +1109,13 @@ extension XUpdaterService: AddonUpdater {
         for addon: UpdateManager.UpdatableAddon,
         logHandler: @Sendable @escaping @MainActor (String) -> Void = { _ in }
     ) async throws -> AddonUpdateCheckResult {
+        let isBeta = addon.isBetaEnabled || (addon.activeChannel.lowercased() == "beta")
         let config = XUpdaterConfig(
             name: addon.name,
             version: addon.currentVersion,
             remoteURL: addon.remoteManifestURL,
-            releaseType: addon.isBetaEnabled ? "beta" : "release",
-            betaEnabled: addon.isBetaEnabled
+            releaseType: isBeta ? "beta" : "release",
+            betaEnabled: isBeta
         )
         let result = try await checkAddonStatus(folderURL: addon.folderURL, config: config, logHandler: logHandler)
         return AddonUpdateCheckResult(
@@ -1124,12 +1130,13 @@ extension XUpdaterService: AddonUpdater {
         logHandler: @Sendable @escaping @MainActor (String) -> Void = { _ in },
         progressHandler: @Sendable @escaping @MainActor (String, Double) -> Void
     ) async throws {
+        let isBeta = addon.isBetaEnabled || (addon.activeChannel.lowercased() == "beta")
         let config = XUpdaterConfig(
             name: addon.name,
             version: addon.currentVersion,
             remoteURL: addon.remoteManifestURL,
-            releaseType: addon.isBetaEnabled ? "beta" : "release",
-            betaEnabled: addon.isBetaEnabled
+            releaseType: isBeta ? "beta" : "release",
+            betaEnabled: isBeta
         )
         try await downloadAndApplyUpdates(
             for: addon.folderURL,
@@ -1143,12 +1150,13 @@ extension XUpdaterService: AddonUpdater {
         for addon: UpdateManager.UpdatableAddon,
         logHandler: @Sendable @escaping @MainActor (String) -> Void = { _ in }
     ) async throws -> String? {
+        let isBeta = addon.isBetaEnabled || (addon.activeChannel.lowercased() == "beta")
         let config = XUpdaterConfig(
             name: addon.name,
             version: addon.latestVersion ?? addon.currentVersion,
             remoteURL: addon.remoteManifestURL,
-            releaseType: addon.isBetaEnabled ? "beta" : "release",
-            betaEnabled: addon.isBetaEnabled
+            releaseType: isBeta ? "beta" : "release",
+            betaEnabled: isBeta
         )
         return try await fetchReleaseNotes(for: addon.folderURL, config: config, logHandler: logHandler)
     }
