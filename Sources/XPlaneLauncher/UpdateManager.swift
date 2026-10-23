@@ -463,6 +463,7 @@ class UpdateManager {
                     updatableAddons[index].remoteManifestURL = remoteURL
                 }
             }
+            SkunkCraftsUpdaterService.shared.setChannel(enabled ? "beta" : "stable", in: addon.folderURL)
         } else if addon.updaterType == .xUpdater {
             // Update settings.ini / x-updater.json on disk asynchronously
             let folderURL = addon.folderURL

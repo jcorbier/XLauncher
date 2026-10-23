@@ -167,6 +167,170 @@ final class UpdaterConfigParserTests: XCTestCase {
         XCTAssertEqual(service.parseCRC32("0"), 0)
     }
 
+    // MARK: - SkunkCrafts Updater v4 Tests
+
+    func testParseSkunkCraftsV4Config() throws {
+        let configFile = tempDir.appendingPathComponent("skunkcrafts_updater.cfg")
+        let content = """
+        name|ToLiss A320 NEO
+        version|2.0.0
+        module|aircraft/a320_neo/
+        zone|toliss
+        protocol|2
+        manifest|custom_manifest.txt
+        channel|stable
+        channel.beta.module|aircraft/a320_neo_beta/
+        channel.beta.zone|custom
+        changelog|documentation/changelog.txt
+        readme|README.txt
+        disabled|false
+        """
+        try content.write(to: configFile, atomically: true, encoding: .utf8)
+
+        let service = SkunkCraftsUpdaterService.shared
+        let config = service.parseConfig(at: configFile, defaultName: "DefaultName")
+
+        XCTAssertNotNil(config)
+        XCTAssertEqual(config?.name, "ToLiss A320 NEO")
+        XCTAssertEqual(config?.version, "2.0.0")
+        XCTAssertEqual(config?.protocolLevel, 2)
+        XCTAssertEqual(config?.zone, "toliss")
+        XCTAssertEqual(config?.manifestFileName, "custom_manifest.txt")
+        XCTAssertEqual(config?.changelogPath, "documentation/changelog.txt")
+        XCTAssertEqual(config?.readmePath, "README.txt")
+        XCTAssertEqual(config?.activeChannel, "stable")
+        XCTAssertTrue(config?.availableChannels.contains("beta") ?? false)
+        XCTAssertEqual(config?.baseURL, "http://toliss-ccd.kxcdn.com/aircraft/a320_neo/")
+    }
+
+    func testParseSkunkCraftsV4Manifest() {
+        let manifestContent = """
+        # Metadata comments
+        name|ToLiss A320 NEO
+        version|2.0.0
+
+        # Unified 3-column items: relativePath|crc32|size
+        objects/fuselage.obj|3421780262|1048576
+        plugins/systems.xpl|12345678|524288
+        settings/user_prefs.ini|-1|1024
+        sounds/engine.wav|0xABCD1234|2097152
+
+        # Insecure or protected paths that must be rejected
+        ../secret.txt|1234|10
+        skunkcrafts/crc_cache.txt|9999|200
+        /rooted/path.obj|1111|50
+        """
+
+        let service = SkunkCraftsUpdaterService.shared
+        let items = service.parseManifest(content: manifestContent)
+
+        XCTAssertEqual(items.count, 4)
+
+        XCTAssertEqual(items[0].relativePath, "objects/fuselage.obj")
+        XCTAssertEqual(items[0].expectedCRC, "3421780262")
+        XCTAssertEqual(items[0].expectedSize, 1048576)
+
+        XCTAssertEqual(items[1].relativePath, "plugins/systems.xpl")
+        XCTAssertEqual(items[1].expectedCRC, "12345678")
+        XCTAssertEqual(items[1].expectedSize, 524288)
+
+        XCTAssertEqual(items[2].relativePath, "settings/user_prefs.ini")
+        XCTAssertNil(items[2].expectedCRC) // -1 sentinel should be converted to nil for CRC check
+        XCTAssertEqual(items[2].expectedSize, 1024)
+
+        XCTAssertEqual(items[3].relativePath, "sounds/engine.wav")
+        XCTAssertEqual(items[3].expectedCRC, "0xABCD1234")
+        XCTAssertEqual(items[3].expectedSize, 2097152)
+    }
+
+    func testParseSkunkCraftsV4SizesList() {
+        let content = """
+        # Auxiliary sizes
+        objects/cabin.obj|204800
+        plugins/lin.xpl|65536
+        sounds/alert.wav:14280
+        """
+
+        let service = SkunkCraftsUpdaterService.shared
+        let sizes = service.parseSizesList(content: content)
+
+        XCTAssertEqual(sizes["objects/cabin.obj"], 204800)
+        XCTAssertEqual(sizes["plugins/lin.xpl"], 65536)
+        XCTAssertEqual(sizes["sounds/alert.wav"], 14280)
+    }
+
+    func testSkunkCraftsV4ResolveBaseURLWithZone() {
+        let service = SkunkCraftsUpdaterService.shared
+
+        // Custom zone / direct URL
+        let directURL = service.resolveBaseURL(module: "https://updates.example.com/aircraft/a320/", zone: "custom")
+        XCTAssertEqual(directURL?.absoluteString, "https://updates.example.com/aircraft/a320/")
+
+        // KeyCDN zone template
+        let zoneURL = service.resolveBaseURL(module: "aircraft/a320/", zone: "toliss")
+        XCTAssertEqual(zoneURL?.absoluteString, "http://toliss-ccd.kxcdn.com/aircraft/a320/")
+
+        // Zone with full scheme in module should strip scheme
+        let zoneFullURL = service.resolveBaseURL(module: "http://updates.com/aircraft/a320", zone: "toliss")
+        XCTAssertEqual(zoneFullURL?.absoluteString, "http://toliss-ccd.kxcdn.com/updates.com/aircraft/a320/")
+
+        // Nil module
+        XCTAssertNil(service.resolveBaseURL(module: nil))
+        XCTAssertNil(service.resolveBaseURL(module: ""))
+    }
+
+    func testSkunkCraftsV4LegacyIPAddressRewrite() {
+        let service = SkunkCraftsUpdaterService.shared
+
+        let url1 = service.resolveBaseURL(module: "http://72.2.11.3:8080/c208/skunkcrafts_updater.cfg")
+        XCTAssertEqual(url1?.absoluteString, "http://updates.thranda.org/c208/")
+
+        let url2 = service.resolveBaseURL(module: "http://72.2.11.34:8080/pc6/")
+        XCTAssertEqual(url2?.absoluteString, "http://updates.thranda.org/pc6/")
+    }
+
+    func testSkunkCraftsV4ProtectedFilesExclusion() {
+        let service = SkunkCraftsUpdaterService.shared
+
+        XCTAssertTrue(service.isProtectedClientFile("skunkcrafts_updater.cfg"))
+        XCTAssertTrue(service.isProtectedClientFile("skunkcrafts_updater_ignore.txt"))
+        XCTAssertTrue(service.isProtectedClientFile("skunkcrafts_updater_beta.cfg"))
+        XCTAssertTrue(service.isProtectedClientFile("skunkcrafts_updater_beta_exp.cfg"))
+        XCTAssertTrue(service.isProtectedClientFile("skunkcrafts/channels/beta.cfg"))
+        XCTAssertTrue(service.isProtectedClientFile("skunkcrafts/channel.cfg"))
+        XCTAssertTrue(service.isProtectedClientFile("skunkcrafts/crc_cache.txt"))
+
+        XCTAssertFalse(service.isProtectedClientFile("objects/fuselage.obj"))
+        XCTAssertFalse(service.isProtectedClientFile("plugins/systems.xpl"))
+        XCTAssertFalse(service.isProtectedClientFile("liveries/custom/texture.png"))
+    }
+
+    func testSkunkCraftsV4EarlyBetaMigration() throws {
+        let service = SkunkCraftsUpdaterService.shared
+        let addonDir = tempDir.appendingPathComponent("MigrationTestAddon")
+        let skunkDir = addonDir.appendingPathComponent("skunkcrafts")
+        try fm.createDirectory(at: skunkDir, withIntermediateDirectories: true)
+
+        let beta4Cfg = skunkDir.appendingPathComponent("updater.cfg")
+        try "name|MigratedAddon\nversion|1.0.0\nmodule|https://example.com/addon/\n".write(to: beta4Cfg, atomically: true, encoding: .utf8)
+
+        let beta4Ignore = skunkDir.appendingPathComponent("ignore.txt")
+        try "liveries/custom\n".write(to: beta4Ignore, atomically: true, encoding: .utf8)
+
+        // findConfig should trigger migration
+        let found = service.findConfig(in: addonDir)
+        XCTAssertNotNil(found)
+        XCTAssertEqual(found?.lastPathComponent, "skunkcrafts_updater.cfg")
+
+        let standardCfg = addonDir.appendingPathComponent("skunkcrafts_updater.cfg")
+        XCTAssertTrue(fm.fileExists(atPath: standardCfg.path))
+        XCTAssertFalse(fm.fileExists(atPath: beta4Cfg.path))
+
+        let standardIgnore = addonDir.appendingPathComponent("skunkcrafts_updater_ignore.txt")
+        XCTAssertTrue(fm.fileExists(atPath: standardIgnore.path))
+        XCTAssertFalse(fm.fileExists(atPath: beta4Ignore.path))
+    }
+
     // MARK: - X-Updater Tests
 
     func testParseXUpdaterSettingsIni() throws {
@@ -534,6 +698,59 @@ final class UpdaterConfigParserTests: XCTestCase {
         let parsedBeta = service.parseConfig(at: foundBeta!, defaultName: "A321")
         XCTAssertEqual(parsedBeta?.version, "1.5.0-beta.1")
         XCTAssertTrue(parsedBeta?.isBetaEnabled ?? false)
+    }
+
+    func testSkunkCraftsV4ChannelManagement() throws {
+        let addonDir = tempDir.appendingPathComponent("ToLissA320V4")
+        try fm.createDirectory(at: addonDir, withIntermediateDirectories: true)
+
+        let service = SkunkCraftsUpdaterService.shared
+
+        let mainCfg = addonDir.appendingPathComponent("skunkcrafts_updater.cfg")
+        let mainContent = """
+        name|ToLiss A320
+        version|2.0.0
+        module|aircraft/a320/
+        protocol|2
+        """
+        try mainContent.write(to: mainCfg, atomically: true, encoding: .utf8)
+
+        // Initially no beta channel
+        XCTAssertFalse(service.hasBetaChannel(in: addonDir))
+
+        // Create skunkcrafts/channels/beta.cfg
+        let channelsDir = addonDir.appendingPathComponent("skunkcrafts/channels")
+        try fm.createDirectory(at: channelsDir, withIntermediateDirectories: true)
+        let betaChannelCfg = channelsDir.appendingPathComponent("beta.cfg")
+        let betaChannelContent = """
+        channel|beta
+        module|aircraft/a320_beta/
+        zone|custom
+        """
+        try betaChannelContent.write(to: betaChannelCfg, atomically: true, encoding: .utf8)
+
+        // Now hasBetaChannel should be true
+        XCTAssertTrue(service.hasBetaChannel(in: addonDir))
+
+        let parsedDefault = service.parseConfig(at: mainCfg, defaultName: "A320")
+        XCTAssertEqual(parsedDefault?.activeChannel, "stable")
+        XCTAssertFalse(parsedDefault?.isBetaEnabled ?? true)
+        XCTAssertTrue(parsedDefault?.availableChannels.contains("beta") ?? false)
+
+        // Switch channel to beta
+        service.setChannel("beta", in: addonDir)
+
+        let parsedSwitched = service.parseConfig(at: mainCfg, defaultName: "A320")
+        XCTAssertEqual(parsedSwitched?.activeChannel, "beta")
+        XCTAssertTrue(parsedSwitched?.isBetaEnabled ?? false)
+        XCTAssertEqual(parsedSwitched?.baseURL, "aircraft/a320_beta/")
+
+        // Switch channel back to stable
+        service.setChannel("stable", in: addonDir)
+        let parsedBack = service.parseConfig(at: mainCfg, defaultName: "A320")
+        XCTAssertEqual(parsedBack?.activeChannel, "stable")
+        XCTAssertFalse(parsedBack?.isBetaEnabled ?? true)
+        XCTAssertEqual(parsedBack?.baseURL, "aircraft/a320/")
     }
 
     func testXUpdaterSetBetaEnabledIni() async throws {

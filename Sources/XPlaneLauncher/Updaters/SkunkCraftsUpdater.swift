@@ -30,6 +30,16 @@ struct SkunkCraftsConfig: Sendable {
     var baseURL: String?
     var configFileName: String? = nil
     var isBetaEnabled: Bool = false
+    var protocolLevel: Int = 1
+    var zone: String? = nil
+    var manifestFileName: String? = nil
+    var activeChannel: String = "stable"
+    var availableChannels: [String] = []
+    var changelogPath: String? = nil
+    var readmePath: String? = nil
+    var isDisabled: Bool = false
+    var isLocked: Bool = false
+    var liveriesEnabled: Bool = true
 }
 
 struct SkunkCraftsFileItem: Sendable {
@@ -50,14 +60,149 @@ actor SkunkCraftsUpdaterService {
         return URLSession(configuration: config)
     }()
 
-    // MARK: - Config Detection & Parsing
+    // MARK: - URL & CDN Zone Resolution
 
-    nonisolated func hasBetaChannel(in folderURL: URL) -> Bool {
-        let betaURL = folderURL.appendingPathComponent("skunkcrafts_updater_beta.cfg")
-        return FileManager.default.fileExists(atPath: betaURL.path)
+    nonisolated func resolveBaseURL(module: String?, zone: String? = nil) -> URL? {
+        guard var raw = module?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+            return nil
+        }
+
+        // 1. IP address replacements (e.g. legacy Thranda server addresses)
+        raw = raw.replacingOccurrences(of: "72.2.11.3:8080", with: "updates.thranda.org")
+        raw = raw.replacingOccurrences(of: "72.2.11.34:8080", with: "updates.thranda.org")
+
+        // 2. Remove common config / manifest suffixes if mistakenly appended to the base module
+        let knownSuffixes = [
+            "skunkcrafts_updater.cfg",
+            "skunkcrafts_updater_beta.cfg",
+            "skunkcrafts_updater_manifest.txt",
+            "skunkcrafts_updater_whitelist.txt"
+        ]
+        for suffix in knownSuffixes {
+            if raw.lowercased().hasSuffix(suffix) {
+                raw = String(raw.dropLast(suffix.count))
+                break
+            }
+        }
+
+        // 3. CDN Zone Resolution
+        var baseString: String
+        let cleanZone = zone?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let cleanZone, !cleanZone.isEmpty, cleanZone.lowercased() != "custom" {
+            var pathPart = raw
+            if let schemeRange = pathPart.range(of: "://") {
+                pathPart = String(pathPart[schemeRange.upperBound...])
+            }
+            while pathPart.hasPrefix("/") {
+                pathPart.removeFirst()
+            }
+            baseString = "http://\(cleanZone)-ccd.kxcdn.com/\(pathPart)"
+        } else {
+            baseString = raw
+        }
+
+        while baseString.hasSuffix("/") {
+            baseString.removeLast()
+        }
+        baseString += "/"
+
+        return URL(string: baseString)
     }
 
+    // MARK: - Protected Client Files
+
+    nonisolated func isProtectedClientFile(_ relativePath: String) -> Bool {
+        var normalized = relativePath.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: "\\", with: "/")
+        while normalized.hasPrefix("/") {
+            normalized.removeFirst()
+        }
+        let lower = normalized.lowercased()
+        if lower == "skunkcrafts_updater.cfg" ||
+           lower == "skunkcrafts_updater_ignore.txt" ||
+           lower == "skunkcrafts" ||
+           lower.hasPrefix("skunkcrafts/") {
+            return true
+        }
+        if lower.hasPrefix("skunkcrafts_updater_beta") && lower.hasSuffix(".cfg") {
+            return true
+        }
+        return false
+    }
+
+    // MARK: - Channel Management
+
+    nonisolated func hasBetaChannel(in folderURL: URL) -> Bool {
+        // 1. Legacy v3 beta file in root
+        let betaURL = folderURL.appendingPathComponent("skunkcrafts_updater_beta.cfg")
+        if FileManager.default.fileExists(atPath: betaURL.path) {
+            return true
+        }
+
+        // 2. Any root file matching skunkcrafts_updater_beta*.cfg
+        if let files = try? FileManager.default.contentsOfDirectory(atPath: folderURL.path) {
+            if files.contains(where: { $0.lowercased().hasPrefix("skunkcrafts_updater_beta") && $0.lowercased().hasSuffix(".cfg") }) {
+                return true
+            }
+        }
+
+        // 3. Modern v4 channel files in skunkcrafts/channels/
+        let channelsDir = folderURL.appendingPathComponent("skunkcrafts/channels")
+        if let channelFiles = try? FileManager.default.contentsOfDirectory(atPath: channelsDir.path) {
+            if channelFiles.contains(where: { $0.lowercased().hasSuffix(".cfg") }) {
+                return true
+            }
+        }
+
+        // 4. Declared in skunkcrafts_updater.cfg directly
+        let cfgURL = folderURL.appendingPathComponent("skunkcrafts_updater.cfg")
+        if let parsed = parseConfig(at: cfgURL, defaultName: folderURL.lastPathComponent) {
+            if parsed.availableChannels.contains(where: { $0.lowercased() != "stable" }) {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    nonisolated func setChannel(_ channelName: String, in folderURL: URL) {
+        let skunkDir = folderURL.appendingPathComponent("skunkcrafts")
+        try? FileManager.default.createDirectory(at: skunkDir, withIntermediateDirectories: true)
+        let channelCfgURL = skunkDir.appendingPathComponent("channel.cfg")
+        let content = "channel|\(channelName)\n"
+        try? content.write(to: channelCfgURL, atomically: true, encoding: .utf8)
+    }
+
+    // MARK: - Config Detection & Parsing
+
     nonisolated func findConfig(in folderURL: URL, preferBeta: Bool = false) -> URL? {
+        // Migrate early 4.0-beta layout if present
+        let legacyBeta4URL = folderURL.appendingPathComponent("skunkcrafts/updater.cfg")
+        let standardURL = folderURL.appendingPathComponent("skunkcrafts_updater.cfg")
+        if FileManager.default.fileExists(atPath: legacyBeta4URL.path) {
+            if !FileManager.default.fileExists(atPath: standardURL.path) {
+                try? FileManager.default.moveItem(at: legacyBeta4URL, to: standardURL)
+            } else {
+                try? FileManager.default.removeItem(at: legacyBeta4URL)
+            }
+        }
+        let legacyIgnoreURL = folderURL.appendingPathComponent("skunkcrafts/ignore.txt")
+        let standardIgnoreURL = folderURL.appendingPathComponent("skunkcrafts_updater_ignore.txt")
+        if FileManager.default.fileExists(atPath: legacyIgnoreURL.path) {
+            if FileManager.default.fileExists(atPath: standardIgnoreURL.path) {
+                if let oldIgnore = try? String(contentsOf: legacyIgnoreURL, encoding: .utf8),
+                   let fileHandle = try? FileHandle(forWritingTo: standardIgnoreURL) {
+                    fileHandle.seekToEndOfFile()
+                    if let data = ("\n" + oldIgnore).data(using: .utf8) {
+                        fileHandle.write(data)
+                    }
+                    try? fileHandle.close()
+                }
+            } else {
+                try? FileManager.default.moveItem(at: legacyIgnoreURL, to: standardIgnoreURL)
+            }
+            try? FileManager.default.removeItem(at: legacyIgnoreURL)
+        }
+
         if preferBeta {
             let betaURL = folderURL.appendingPathComponent("skunkcrafts_updater_beta.cfg")
             if FileManager.default.fileExists(atPath: betaURL.path) {
@@ -88,45 +233,175 @@ actor SkunkCraftsUpdaterService {
         var version: String? = nil
         var remoteURL: String? = nil
         var baseURL: String? = nil
+        var zone: String? = nil
+        var protocolLevel: Int = 1
+        var manifestFileName: String? = nil
+        var activeChannel: String = "stable"
+        var changelogPath: String? = nil
+        var readmePath: String? = nil
+        var isDisabled: Bool = false
+        var isLocked: Bool = false
+        var liveriesEnabled: Bool = true
+        var channelModules: [String: String] = [:]
+        var channelZones: [String: String] = [:]
 
         let lines = content.components(separatedBy: .newlines)
         for line in lines {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.isEmpty || trimmed.hasPrefix("#") { continue }
+            if trimmed.isEmpty || trimmed.hasPrefix("#") || trimmed.hasPrefix(";") { continue }
 
-            let parts = trimmed.components(separatedBy: "|")
-            if parts.count >= 2 {
-                let key = parts[0].trimmingCharacters(in: .whitespaces).lowercased()
-                let val = parts[1].trimmingCharacters(in: .whitespaces)
-                if key == "name" { name = val }
-                else if key == "version" || key == "build" { version = val }
-                else if key == "url" || key == "manifest_url" || key == "base_url" || key == "module" {
-                    if key == "base_url" || key == "module" { baseURL = val; remoteURL = val }
-                    else { remoteURL = val }
-                }
+            let parts: [String]
+            if trimmed.contains("|") {
+                parts = trimmed.components(separatedBy: "|")
+            } else if trimmed.contains("=") {
+                parts = trimmed.components(separatedBy: "=")
             } else {
-                let eqParts = trimmed.components(separatedBy: "=")
-                if eqParts.count >= 2 {
-                    let key = eqParts[0].trimmingCharacters(in: .whitespaces).lowercased()
-                    let val = eqParts[1].trimmingCharacters(in: .whitespaces)
-                    if key == "name" { name = val }
-                    else if key == "version" || key == "build" { version = val }
-                    else if key == "url" || key == "manifest_url" || key == "base_url" || key == "module" {
-                        if key == "base_url" || key == "module" { baseURL = val; remoteURL = val }
-                        else { remoteURL = val }
+                continue
+            }
+
+            guard parts.count >= 2 else { continue }
+            let key = parts[0].trimmingCharacters(in: .whitespaces).lowercased()
+            let val = parts[1].trimmingCharacters(in: .whitespaces)
+
+            if key == "name" {
+                name = val
+            } else if key == "version" || key == "build" {
+                version = val
+            } else if key == "url" || key == "manifest_url" || key == "base_url" || key == "module" {
+                if key == "base_url" || key == "module" { baseURL = val; remoteURL = val }
+                else { remoteURL = val }
+            } else if key == "zone" {
+                zone = val
+            } else if key == "protocol" {
+                if let proto = Int(val), proto >= 1 {
+                    protocolLevel = proto
+                }
+            } else if key == "manifest" {
+                manifestFileName = val
+            } else if key == "channel" {
+                activeChannel = val.lowercased()
+            } else if key == "changelog" {
+                changelogPath = val
+            } else if key == "readme" {
+                readmePath = val
+            } else if key == "disabled" {
+                isDisabled = (val.lowercased() == "true" || val == "1")
+            } else if key == "locked" {
+                isLocked = (val.lowercased() == "true" || val == "1")
+            } else if key == "liveries" {
+                liveriesEnabled = (val.lowercased() != "false" && val != "0")
+            } else if key.hasPrefix("channel.") {
+                let sub = String(key.dropFirst("channel.".count))
+                let subParts = sub.components(separatedBy: ".")
+                if subParts.count == 1 {
+                    channelModules[subParts[0]] = val
+                } else if subParts.count >= 2 {
+                    let chName = subParts[0]
+                    let prop = subParts[1]
+                    if prop == "module" || prop == "url" {
+                        channelModules[chName] = val
+                    } else if prop == "zone" {
+                        channelZones[chName] = val
                     }
                 }
             }
         }
 
-        let isBeta = url.lastPathComponent.lowercased().contains("beta")
+        // Folder where config is located
+        let folderURL = url.deletingLastPathComponent()
+
+        // Discover available channels
+        var availableChannels = Set<String>(["stable"])
+        for ch in channelModules.keys {
+            availableChannels.insert(ch)
+        }
+
+        // Check skunkcrafts/channels/
+        let channelsDir = folderURL.appendingPathComponent("skunkcrafts/channels")
+        if let channelFiles = try? FileManager.default.contentsOfDirectory(atPath: channelsDir.path) {
+            for file in channelFiles where file.lowercased().hasSuffix(".cfg") {
+                let chName = String(file.dropLast(".cfg".count)).lowercased()
+                availableChannels.insert(chName)
+                let chFileURL = channelsDir.appendingPathComponent(file)
+                if let chContent = try? String(contentsOf: chFileURL, encoding: .utf8) {
+                    for chLine in chContent.components(separatedBy: .newlines) {
+                        let chParts = chLine.components(separatedBy: "|")
+                        if chParts.count >= 2 {
+                            let k = chParts[0].trimmingCharacters(in: .whitespaces).lowercased()
+                            let v = chParts[1].trimmingCharacters(in: .whitespaces)
+                            if k == "module" || k == "url" {
+                                channelModules[chName] = v
+                            } else if k == "zone" {
+                                channelZones[chName] = v
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Check for legacy beta files at the root
+        let betaCfgURL = folderURL.appendingPathComponent("skunkcrafts_updater_beta.cfg")
+        if FileManager.default.fileExists(atPath: betaCfgURL.path) {
+            availableChannels.insert("beta")
+            if channelModules["beta"] == nil, let betaContent = try? String(contentsOf: betaCfgURL, encoding: .utf8) {
+                for bLine in betaContent.components(separatedBy: .newlines) {
+                    let bParts = bLine.components(separatedBy: "|")
+                    if bParts.count >= 2 {
+                        let k = bParts[0].trimmingCharacters(in: .whitespaces).lowercased()
+                        let v = bParts[1].trimmingCharacters(in: .whitespaces)
+                        if k == "url" || k == "module" || k == "base_url" {
+                            channelModules["beta"] = v
+                        }
+                    }
+                }
+            }
+        }
+
+        // Check skunkcrafts/channel.cfg for active channel override
+        let activeChannelCfg = folderURL.appendingPathComponent("skunkcrafts/channel.cfg")
+        if let chData = try? String(contentsOf: activeChannelCfg, encoding: .utf8) {
+            for chLine in chData.components(separatedBy: .newlines) {
+                let chParts = chLine.components(separatedBy: "|")
+                if chParts.count >= 2 && chParts[0].trimmingCharacters(in: .whitespaces).lowercased() == "channel" {
+                    activeChannel = chParts[1].trimmingCharacters(in: .whitespaces).lowercased()
+                    break
+                }
+            }
+        }
+
+        let isBeta = url.lastPathComponent.lowercased().contains("beta") || activeChannel.contains("beta")
+
+        // If non-stable active channel is selected and has custom module/zone, override
+        if activeChannel != "stable" {
+            if let chModule = channelModules[activeChannel] {
+                remoteURL = chModule
+                baseURL = chModule
+            }
+            if let chZone = channelZones[activeChannel] {
+                zone = chZone
+            }
+        }
+
+        let resolvedBase = resolveBaseURL(module: baseURL ?? remoteURL, zone: zone)
+
         return SkunkCraftsConfig(
             name: name,
             version: version,
             remoteManifestURL: remoteURL,
-            baseURL: baseURL,
+            baseURL: resolvedBase?.absoluteString ?? baseURL ?? remoteURL,
             configFileName: url.lastPathComponent,
-            isBetaEnabled: isBeta
+            isBetaEnabled: isBeta,
+            protocolLevel: protocolLevel,
+            zone: zone,
+            manifestFileName: manifestFileName,
+            activeChannel: activeChannel,
+            availableChannels: Array(availableChannels).sorted(),
+            changelogPath: changelogPath,
+            readmePath: readmePath,
+            isDisabled: isDisabled,
+            isLocked: isLocked,
+            liveriesEnabled: liveriesEnabled
         )
     }
 
@@ -153,7 +428,9 @@ actor SkunkCraftsUpdaterService {
             while normalized.hasSuffix("/") {
                 normalized.removeLast()
             }
-            paths.insert(normalized)
+            if !normalized.isEmpty {
+                paths.insert(normalized)
+            }
         }
         return paths
     }
@@ -178,7 +455,11 @@ actor SkunkCraftsUpdaterService {
 
     nonisolated func parseWhitelist(content: String) -> [SkunkCraftsFileItem] {
         var items: [SkunkCraftsFileItem] = []
-        let metadataKeys: Set<String> = ["name", "version", "build", "url", "manifest_url", "base_url", "module", "disabled", "locked", "zone", "liveries"]
+        let metadataKeys: Set<String> = [
+            "name", "version", "build", "url", "manifest_url", "base_url", "module",
+            "disabled", "locked", "zone", "liveries", "protocol", "manifest", "channel",
+            "changelog", "readme", "pack", "pack_name", "pack_members", "member"
+        ]
         let lines = content.components(separatedBy: .newlines)
         for line in lines {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -195,7 +476,8 @@ actor SkunkCraftsUpdaterService {
 
             guard !parts.isEmpty else { continue }
             let firstPart = parts[0].trimmingCharacters(in: .whitespaces)
-            if metadataKeys.contains(firstPart.lowercased()) {
+            let lowerFirst = firstPart.lowercased()
+            if metadataKeys.contains(lowerFirst) || lowerFirst.hasPrefix("channel.") {
                 continue
             }
 
@@ -204,6 +486,11 @@ actor SkunkCraftsUpdaterService {
                 rawPath.removeFirst()
             }
             guard !rawPath.isEmpty else { continue }
+
+            // Security check: reject path traversal and protected skunkcrafts internal directory
+            if rawPath.contains("..") || rawPath.contains(":") || rawPath.lowercased().hasPrefix("skunkcrafts/") {
+                continue
+            }
 
             var expectedCRC: String? = nil
             var expectedSize: Int64? = nil
@@ -222,6 +509,86 @@ actor SkunkCraftsUpdaterService {
             items.append(SkunkCraftsFileItem(relativePath: rawPath, expectedCRC: expectedCRC, expectedSize: expectedSize))
         }
         return items
+    }
+
+    nonisolated func parseManifest(content: String) -> [SkunkCraftsFileItem] {
+        var items: [SkunkCraftsFileItem] = []
+        let metadataKeys: Set<String> = [
+            "name", "version", "build", "url", "manifest_url", "base_url", "module",
+            "disabled", "locked", "zone", "liveries", "protocol", "manifest", "channel",
+            "changelog", "readme", "pack", "pack_name", "pack_members", "member"
+        ]
+        let lines = content.components(separatedBy: .newlines)
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty || trimmed.hasPrefix("#") || trimmed.hasPrefix(";") { continue }
+
+            let parts: [String]
+            if trimmed.contains("|") {
+                parts = trimmed.components(separatedBy: "|")
+            } else if trimmed.contains(":") {
+                parts = trimmed.components(separatedBy: ":")
+            } else {
+                continue
+            }
+
+            guard parts.count >= 2 else { continue }
+            let firstPart = parts[0].trimmingCharacters(in: .whitespaces)
+            let lowerFirst = firstPart.lowercased()
+            if metadataKeys.contains(lowerFirst) || lowerFirst.hasPrefix("channel.") {
+                continue
+            }
+
+            if firstPart.hasPrefix("/") || firstPart.hasPrefix("\\") {
+                continue
+            }
+
+            let rawPath = firstPart.replacingOccurrences(of: "\\", with: "/")
+            guard !rawPath.isEmpty else { continue }
+
+            // Security check: reject directory traversal and paths in internal skunkcrafts/ folder
+            if rawPath.contains("..") || rawPath.contains(":") || rawPath.lowercased().hasPrefix("skunkcrafts/") {
+                continue
+            }
+
+            var expectedCRC: String? = nil
+            var expectedSize: Int64? = nil
+
+            let secondPart = parts[1].trimmingCharacters(in: .whitespaces)
+            if !secondPart.isEmpty && secondPart != "-1" {
+                expectedCRC = secondPart
+            }
+
+            if parts.count >= 3 {
+                let thirdPart = parts[2].trimmingCharacters(in: .whitespaces)
+                if let size = Int64(thirdPart), size >= 0 {
+                    expectedSize = size
+                }
+            }
+
+            items.append(SkunkCraftsFileItem(relativePath: rawPath, expectedCRC: expectedCRC, expectedSize: expectedSize))
+        }
+        return items
+    }
+
+    nonisolated func parseSizesList(content: String) -> [String: Int64] {
+        var sizes: [String: Int64] = [:]
+        let lines = content.components(separatedBy: .newlines)
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty || trimmed.hasPrefix("#") || trimmed.hasPrefix(";") { continue }
+            let parts = trimmed.contains("|") ? trimmed.components(separatedBy: "|") : trimmed.components(separatedBy: ":")
+            guard parts.count >= 2 else { continue }
+            var rawPath = parts[0].trimmingCharacters(in: .whitespaces).replacingOccurrences(of: "\\", with: "/")
+            while rawPath.hasPrefix("/") {
+                rawPath.removeFirst()
+            }
+            guard !rawPath.isEmpty, let size = Int64(parts[1].trimmingCharacters(in: .whitespaces)), size >= 0 else {
+                continue
+            }
+            sizes[rawPath] = size
+        }
+        return sizes
     }
 
     // MARK: - Remote Data Fetching & CRC Verification
@@ -297,25 +664,12 @@ actor SkunkCraftsUpdaterService {
         config: SkunkCraftsConfig,
         logHandler: @Sendable @escaping @MainActor (String) -> Void = { _ in }
     ) async throws -> (latestVersion: String?, isUpdateAvailable: Bool, statusMessage: String) {
-        guard let baseURLString = config.baseURL ?? config.remoteManifestURL else {
-            await logHandler("[SkunkCrafts] No remote URL configured for \(config.name)")
+        guard let baseURL = resolveBaseURL(module: config.baseURL ?? config.remoteManifestURL, zone: config.zone) else {
+            await logHandler("[SkunkCrafts] No valid remote URL configured for \(config.name)")
             throw URLError(.badURL)
         }
 
-        var base = baseURLString
-        if base.hasSuffix("skunkcrafts_updater.cfg") {
-            base = String(base.dropLast("skunkcrafts_updater.cfg".count))
-        } else if base.hasSuffix("skunkcrafts_updater_beta.cfg") {
-            base = String(base.dropLast("skunkcrafts_updater_beta.cfg".count))
-        }
-        if !base.hasSuffix("/") {
-            base += "/"
-        }
-        guard let baseURL = URL(string: base) else {
-            throw URLError(.badURL)
-        }
-
-        let channelLabel = config.isBetaEnabled ? " (Beta Channel)" : ""
+        let channelLabel = (config.isBetaEnabled || config.activeChannel.lowercased() != "stable") ? " (\(config.activeChannel.capitalized) Channel)" : ""
         await logHandler("[SkunkCrafts] Checking \(config.name)\(channelLabel) from \(baseURL.absoluteString)...")
 
         let configFileName = config.configFileName ?? (config.isBetaEnabled ? "skunkcrafts_updater_beta.cfg" : "skunkcrafts_updater.cfg")
@@ -330,8 +684,12 @@ actor SkunkCraftsUpdaterService {
             }
         }
 
-        // 1. Fetch remote skunkcrafts_updater.cfg
+        // 1. Fetch remote config
         var remoteVersion: String? = nil
+        var remoteProtocol: Int? = nil
+        var remoteManifestName: String? = nil
+        var remoteLocked: Bool = false
+
         let remoteConfigURL = baseURL.appendingPathComponent(configFileName)
         var configContent: String? = try? await fetchTextContent(from: remoteConfigURL)
         if configContent == nil && configFileName != "skunkcrafts_updater.cfg" {
@@ -342,32 +700,70 @@ actor SkunkCraftsUpdaterService {
             for line in lines {
                 let trimmed = line.trimmingCharacters(in: .whitespaces)
                 let parts = trimmed.components(separatedBy: "|")
-                if parts.count >= 2 && parts[0].trimmingCharacters(in: .whitespaces).lowercased() == "version" {
-                    remoteVersion = parts[1].trimmingCharacters(in: .whitespaces)
-                    break
+                if parts.count >= 2 {
+                    let k = parts[0].trimmingCharacters(in: .whitespaces).lowercased()
+                    let v = parts[1].trimmingCharacters(in: .whitespaces)
+                    if k == "version" || k == "build" {
+                        remoteVersion = v
+                    } else if k == "protocol" {
+                        if let p = Int(v) { remoteProtocol = p }
+                    } else if k == "manifest" {
+                        remoteManifestName = v
+                    } else if k == "locked" {
+                        remoteLocked = (v.lowercased() == "true" || v == "1")
+                    }
                 }
             }
         }
-        await logHandler("[SkunkCrafts] Remote version: \(remoteVersion ?? "unknown")")
 
-        // 2. Fetch remote whitelist (skunkcrafts_updater_whitelist.txt)
-        var whitelistItems: [SkunkCraftsFileItem] = []
-        let whitelistURL = baseURL.appendingPathComponent("skunkcrafts_updater_whitelist.txt")
-        if let whitelistText = try? await fetchTextContent(from: whitelistURL) {
-            whitelistItems = parseWhitelist(content: whitelistText)
-            await logHandler("[SkunkCrafts] Fetched skunkcrafts_updater_whitelist.txt (\(whitelistItems.count) entries)")
+        if remoteLocked {
+            await logHandler("[SkunkCrafts] Remote repository is locked for maintenance.")
+            return (remoteVersion ?? localVersion, false, "Repository locked for maintenance")
         }
 
-        if !whitelistItems.contains(where: { $0.relativePath.lowercased() == configFileName.lowercased() }) {
-            whitelistItems.append(SkunkCraftsFileItem(relativePath: configFileName, expectedCRC: nil, expectedSize: nil))
+        let effectiveProtocol = remoteProtocol ?? config.protocolLevel
+        await logHandler("[SkunkCrafts] Remote version: \(remoteVersion ?? "unknown") (protocol \(effectiveProtocol))")
+
+        // 2. Fetch remote manifest
+        var manifestItems: [SkunkCraftsFileItem] = []
+        if effectiveProtocol >= 2 {
+            let manifestName = remoteManifestName ?? config.manifestFileName ?? "skunkcrafts_updater_manifest.txt"
+            let manifestURL = baseURL.appendingPathComponent(manifestName)
+            if let manifestText = try? await fetchTextContent(from: manifestURL) {
+                manifestItems = parseManifest(content: manifestText)
+                await logHandler("[SkunkCrafts] Fetched \(manifestName) (\(manifestItems.count) entries, protocol 2)")
+            }
+        } else {
+            let whitelistURL = baseURL.appendingPathComponent("skunkcrafts_updater_whitelist.txt")
+            if let whitelistText = try? await fetchTextContent(from: whitelistURL) {
+                manifestItems = parseWhitelist(content: whitelistText)
+                await logHandler("[SkunkCrafts] Fetched skunkcrafts_updater_whitelist.txt (\(manifestItems.count) entries, protocol 1)")
+            }
+            let sizesURL = baseURL.appendingPathComponent("skunkcrafts_updater_sizeslist.txt")
+            if let sizesText = try? await fetchTextContent(from: sizesURL) {
+                let sizes = parseSizesList(content: sizesText)
+                manifestItems = manifestItems.map { item in
+                    if let s = sizes[item.relativePath] {
+                        return SkunkCraftsFileItem(relativePath: item.relativePath, expectedCRC: item.expectedCRC, expectedSize: s)
+                    }
+                    return item
+                }
+                await logHandler("[SkunkCrafts] Applied auxiliary file sizes (\(sizes.count) entries)")
+            }
+        }
+
+        if !manifestItems.contains(where: { $0.relativePath.lowercased() == configFileName.lowercased() }) {
+            manifestItems.append(SkunkCraftsFileItem(relativePath: configFileName, expectedCRC: nil, expectedSize: nil))
         }
 
         // 3. Fetch remote blacklist & read local ignore
         var ignoredSet = parseIgnoreFile(in: folderURL)
+        var blacklistedPaths: Set<String> = []
         let blacklistURL = baseURL.appendingPathComponent("skunkcrafts_updater_blacklist.txt")
         if let blacklistText = try? await fetchTextContent(from: blacklistURL) {
-            ignoredSet.formUnion(parseBlacklist(content: blacklistText))
-            await logHandler("[SkunkCrafts] Fetched skunkcrafts_updater_blacklist.txt")
+            blacklistedPaths = parseBlacklist(content: blacklistText)
+            ignoredSet.formUnion(blacklistedPaths)
+            await logHandler("[SkunkCrafts] Fetched skunkcrafts_updater_blacklist.txt (\(blacklistedPaths.count) entries)")
         }
 
         let latestVersion = remoteVersion ?? localVersion
@@ -377,16 +773,14 @@ actor SkunkCraftsUpdaterService {
                 await logHandler("[SkunkCrafts] Newer remote version found: Local '\(localVersion)' vs Remote '\(remoteVersion)'. Marking addon for update.")
                 return (remoteVersion, true, "Update available (\(remoteVersion))")
             } else if VersionComparator.isNewer(localVersion, than: remoteVersion) {
-                // Local version is ahead of remote (e.g. user manually installed newer build, or running a pre-release).
-                // Do not downgrade or run CRC check against an older manifest!
                 await logHandler("[SkunkCrafts] Local version '\(localVersion)' is newer than remote '\(remoteVersion)'. Addon is up to date.")
                 return (localVersion, false, "Up to date")
             }
         }
 
-        // 4. Compare local CRC vs distant CRC for all whitelist files (early exit on first mismatch)
+        // 4. Compare local files against manifest
         var count = 0
-        for item in whitelistItems {
+        for item in manifestItems {
             count += 1
             if count % 50 == 0 {
                 await Task.yield()
@@ -401,7 +795,7 @@ actor SkunkCraftsUpdaterService {
             do {
                 localFileURL = try PathSecurity.validateSubpath(relativePath: item.relativePath, within: folderURL)
             } catch {
-                await logHandler("[SkunkCrafts] Insecure path rejected in whitelist: \(item.relativePath)")
+                await logHandler("[SkunkCrafts] Insecure path rejected in manifest: \(item.relativePath)")
                 continue
             }
 
@@ -410,7 +804,6 @@ actor SkunkCraftsUpdaterService {
                 return (latestVersion, true, "Update available (modified files)")
             } else if let expectedCRCStr = item.expectedCRC, let distantCRC = parseCRC32(expectedCRCStr) {
                 // 0xFFFFFFFF (4294967295) and 0 are sentinel values in SkunkCrafts manifests for install-only / user config / cache files.
-                // If they already exist on disk, their contents should not be checked or overwritten.
                 if distantCRC != 0xFFFFFFFF && distantCRC != 0 {
                     if let localCRC = calculateCRC32UInt32(for: localFileURL) {
                         if localCRC != distantCRC {
@@ -422,7 +815,7 @@ actor SkunkCraftsUpdaterService {
                         return (latestVersion, true, "Update available (modified files)")
                     }
                 }
-            } else if let expectedSize = item.expectedSize {
+            } else if let expectedSize = item.expectedSize, expectedSize >= 0 {
                 if let attrs = try? fileManager.attributesOfItem(atPath: localFileURL.path),
                    let localSize = attrs[.size] as? Int64 {
                     if localSize != expectedSize {
@@ -430,6 +823,16 @@ actor SkunkCraftsUpdaterService {
                         return (latestVersion, true, "Update available (modified files)")
                     }
                 }
+            }
+        }
+
+        // 5. Check if any local file is in the remote blacklist (needing deletion)
+        for blacklisted in blacklistedPaths {
+            if isProtectedClientFile(blacklisted) { continue }
+            if let localURL = try? PathSecurity.validateSubpath(relativePath: blacklisted, within: folderURL),
+               fileManager.fileExists(atPath: localURL.path) {
+                await logHandler("[SkunkCrafts] Blacklisted file present locally: \(blacklisted). Marking addon for update.")
+                return (latestVersion, true, "Update available (blacklisted files)")
             }
         }
 
@@ -443,19 +846,9 @@ actor SkunkCraftsUpdaterService {
         logHandler: @Sendable @escaping @MainActor (String) -> Void = { _ in },
         progressHandler: @Sendable @escaping @MainActor (String, Double) -> Void
     ) async throws {
-        guard let baseURLString = config.baseURL ?? config.remoteManifestURL else { return }
-        var base = baseURLString
-        if base.hasSuffix("skunkcrafts_updater.cfg") {
-            base = String(base.dropLast("skunkcrafts_updater.cfg".count))
-        } else if base.hasSuffix("skunkcrafts_updater_beta.cfg") {
-            base = String(base.dropLast("skunkcrafts_updater_beta.cfg".count))
-        }
-        if !base.hasSuffix("/") {
-            base += "/"
-        }
-        guard let baseURL = URL(string: base) else { return }
+        guard let baseURL = resolveBaseURL(module: config.baseURL ?? config.remoteManifestURL, zone: config.zone) else { return }
 
-        let channelLabel = config.isBetaEnabled ? " (Beta Channel)" : ""
+        let channelLabel = (config.isBetaEnabled || config.activeChannel.lowercased() != "stable") ? " (\(config.activeChannel.capitalized) Channel)" : ""
         await logHandler("[SkunkCrafts] Starting update check for \(config.name)\(channelLabel)...")
 
         let configFileName = config.configFileName ?? (config.isBetaEnabled ? "skunkcrafts_updater_beta.cfg" : "skunkcrafts_updater.cfg")
@@ -470,8 +863,11 @@ actor SkunkCraftsUpdaterService {
             }
         }
 
-        // 1. Fetch remote skunkcrafts_updater.cfg for version comparison
+        // 1. Fetch remote config
         var remoteVersion: String? = nil
+        var remoteProtocol: Int? = nil
+        var remoteManifestName: String? = nil
+
         let remoteConfigURL = baseURL.appendingPathComponent(configFileName)
         var configContent: String? = try? await fetchTextContent(from: remoteConfigURL)
         if configContent == nil && configFileName != "skunkcrafts_updater.cfg" {
@@ -482,34 +878,63 @@ actor SkunkCraftsUpdaterService {
             for line in lines {
                 let trimmed = line.trimmingCharacters(in: .whitespaces)
                 let parts = trimmed.components(separatedBy: "|")
-                if parts.count >= 2 && parts[0].trimmingCharacters(in: .whitespaces).lowercased() == "version" {
-                    remoteVersion = parts[1].trimmingCharacters(in: .whitespaces)
-                    break
+                if parts.count >= 2 {
+                    let k = parts[0].trimmingCharacters(in: .whitespaces).lowercased()
+                    let v = parts[1].trimmingCharacters(in: .whitespaces)
+                    if k == "version" || k == "build" {
+                        remoteVersion = v
+                    } else if k == "protocol" {
+                        if let p = Int(v) { remoteProtocol = p }
+                    } else if k == "manifest" {
+                        remoteManifestName = v
+                    }
                 }
             }
         }
 
-        // 2. Fetch remote whitelist
-        var whitelistItems: [SkunkCraftsFileItem] = []
-        let whitelistURL = baseURL.appendingPathComponent("skunkcrafts_updater_whitelist.txt")
-        if let whitelistText = try? await fetchTextContent(from: whitelistURL) {
-            whitelistItems = parseWhitelist(content: whitelistText)
+        let effectiveProtocol = remoteProtocol ?? config.protocolLevel
+
+        // 2. Fetch remote manifest
+        var manifestItems: [SkunkCraftsFileItem] = []
+        if effectiveProtocol >= 2 {
+            let manifestName = remoteManifestName ?? config.manifestFileName ?? "skunkcrafts_updater_manifest.txt"
+            let manifestURL = baseURL.appendingPathComponent(manifestName)
+            if let manifestText = try? await fetchTextContent(from: manifestURL) {
+                manifestItems = parseManifest(content: manifestText)
+            }
+        } else {
+            let whitelistURL = baseURL.appendingPathComponent("skunkcrafts_updater_whitelist.txt")
+            if let whitelistText = try? await fetchTextContent(from: whitelistURL) {
+                manifestItems = parseWhitelist(content: whitelistText)
+            }
+            let sizesURL = baseURL.appendingPathComponent("skunkcrafts_updater_sizeslist.txt")
+            if let sizesText = try? await fetchTextContent(from: sizesURL) {
+                let sizes = parseSizesList(content: sizesText)
+                manifestItems = manifestItems.map { item in
+                    if let s = sizes[item.relativePath] {
+                        return SkunkCraftsFileItem(relativePath: item.relativePath, expectedCRC: item.expectedCRC, expectedSize: s)
+                    }
+                    return item
+                }
+            }
         }
 
-        if !whitelistItems.contains(where: { $0.relativePath.lowercased() == configFileName.lowercased() }) {
-            whitelistItems.append(SkunkCraftsFileItem(relativePath: configFileName, expectedCRC: nil, expectedSize: nil))
+        if !manifestItems.contains(where: { $0.relativePath.lowercased() == configFileName.lowercased() }) {
+            manifestItems.append(SkunkCraftsFileItem(relativePath: configFileName, expectedCRC: nil, expectedSize: nil))
         }
 
         // 3. Fetch remote blacklist & read local ignore
         var ignoredSet = parseIgnoreFile(in: addonFolder)
+        var blacklistedPaths: Set<String> = []
         if let blacklistText = try? await fetchTextContent(from: baseURL.appendingPathComponent("skunkcrafts_updater_blacklist.txt")) {
-            ignoredSet.formUnion(parseBlacklist(content: blacklistText))
+            blacklistedPaths = parseBlacklist(content: blacklistText)
+            ignoredSet.formUnion(blacklistedPaths)
         }
 
         // 4. Filter files needing download
         var filesToDownload: [SkunkCraftsFileItem] = []
         var checkCount = 0
-        for item in whitelistItems {
+        for item in manifestItems {
             checkCount += 1
             if checkCount % 50 == 0 {
                 await Task.yield()
@@ -524,7 +949,7 @@ actor SkunkCraftsUpdaterService {
             do {
                 localFileURL = try PathSecurity.validateSubpath(relativePath: item.relativePath, within: addonFolder)
             } catch {
-                await logHandler("[SkunkCrafts] Insecure path rejected in whitelist: \(item.relativePath)")
+                await logHandler("[SkunkCrafts] Insecure path rejected in manifest: \(item.relativePath)")
                 continue
             }
 
@@ -533,7 +958,6 @@ actor SkunkCraftsUpdaterService {
                 await logHandler("[SkunkCrafts] Missing file: \(item.relativePath). Queuing for download.")
                 filesToDownload.append(item)
             } else if let expectedCRCStr = item.expectedCRC, let distantCRC = parseCRC32(expectedCRCStr) {
-                // 0xFFFFFFFF (4294967295) and 0 are sentinel values in SkunkCrafts manifests for install-only / user config / cache files.
                 if distantCRC != 0xFFFFFFFF && distantCRC != 0 {
                     if let localCRC = calculateCRC32UInt32(for: localFileURL) {
                         if localCRC != distantCRC {
@@ -545,7 +969,7 @@ actor SkunkCraftsUpdaterService {
                         filesToDownload.append(item)
                     }
                 }
-            } else if let expectedSize = item.expectedSize {
+            } else if let expectedSize = item.expectedSize, expectedSize >= 0 {
                 if let attrs = try? fileManager.attributesOfItem(atPath: localFileURL.path),
                    let localSize = attrs[.size] as? Int64 {
                     if localSize != expectedSize {
@@ -564,22 +988,33 @@ actor SkunkCraftsUpdaterService {
             }
         }
 
-        guard !filesToDownload.isEmpty else {
-            await logHandler("[SkunkCrafts] All whitelist files are already up to date.")
+        // 5. Filter blacklisted files needing deletion
+        var filesToDelete: [String] = []
+        for blacklisted in blacklistedPaths {
+            if isProtectedClientFile(blacklisted) { continue }
+            if let localURL = try? PathSecurity.validateSubpath(relativePath: blacklisted, within: addonFolder),
+               fileManager.fileExists(atPath: localURL.path) {
+                filesToDelete.append(blacklisted)
+            }
+        }
+
+        guard !filesToDownload.isEmpty || !filesToDelete.isEmpty else {
+            await logHandler("[SkunkCrafts] All files are already up to date.")
             await progressHandler("Up to date", 1.0)
             return
         }
 
-        await logHandler("[SkunkCrafts] Downloading \(filesToDownload.count) file(s) needing update/repair out of \(whitelistItems.count) total files...")
+        if !filesToDownload.isEmpty {
+            await logHandler("[SkunkCrafts] Downloading \(filesToDownload.count) file(s) needing update/repair out of \(manifestItems.count) total files...")
+        }
 
-        // 5. Download and write each file
+        // 6. Download each file
         let totalFiles = filesToDownload.count
         for (index, item) in filesToDownload.enumerated() {
-            let progress = Double(index) / Double(totalFiles)
+            let progress = totalFiles > 0 ? Double(index) / Double(totalFiles) : 1.0
             let filename = (item.relativePath as NSString).lastPathComponent
             await progressHandler("Downloading \(filename)...", progress)
 
-            // Construct relative encoded URL
             let relativeEncoded = item.relativePath
                 .split(separator: "/")
                 .map { $0.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? String($0) }
@@ -621,6 +1056,24 @@ actor SkunkCraftsUpdaterService {
             try fileManager.moveItem(at: tempDownloadedURL, to: localDestination)
         }
 
+        // 7. Delete blacklisted files
+        for file in filesToDelete {
+            if let localURL = try? PathSecurity.validateSubpath(relativePath: file, within: addonFolder) {
+                try? fileManager.removeItem(at: localURL)
+                await logHandler("[SkunkCrafts] Deleted blacklisted file: \(file)")
+            }
+        }
+
+        // 8. Clean up early 4.0-beta leftover files if present
+        let legacyBeta4URL = addonFolder.appendingPathComponent("skunkcrafts/updater.cfg")
+        if fileManager.fileExists(atPath: legacyBeta4URL.path) {
+            try? fileManager.removeItem(at: legacyBeta4URL)
+        }
+        let legacyIgnoreURL = addonFolder.appendingPathComponent("skunkcrafts/ignore.txt")
+        if fileManager.fileExists(atPath: legacyIgnoreURL.path) {
+            try? fileManager.removeItem(at: legacyIgnoreURL)
+        }
+
         await logHandler("[SkunkCrafts] Update completed successfully.")
         await progressHandler("Up to date", 1.0)
     }
@@ -630,40 +1083,70 @@ actor SkunkCraftsUpdaterService {
         config: SkunkCraftsConfig,
         logHandler: @Sendable @escaping @MainActor (String) -> Void = { _ in }
     ) async throws -> String? {
-        if let baseURLString = config.baseURL ?? config.remoteManifestURL {
-            var base = baseURLString
-            if base.hasSuffix("skunkcrafts_updater.cfg") {
-                base = String(base.dropLast("skunkcrafts_updater.cfg".count))
-            } else if base.hasSuffix("skunkcrafts_updater_beta.cfg") {
-                base = String(base.dropLast("skunkcrafts_updater_beta.cfg".count))
-            }
-            if !base.hasSuffix("/") {
-                base += "/"
-            }
-            if let baseURL = URL(string: base) {
-                await logHandler("[SkunkCrafts] Searching for changelog / release notes in remote manifest for \(config.name)...")
+        let baseURL = resolveBaseURL(module: config.baseURL ?? config.remoteManifestURL, zone: config.zone)
 
-                let whitelistURL = baseURL.appendingPathComponent("skunkcrafts_updater_whitelist.txt")
-                if let whitelistText = try? await fetchTextContent(from: whitelistURL) {
-                    let whitelistItems = parseWhitelist(content: whitelistText)
-                    let candidatePaths = whitelistItems.map(\.relativePath)
-                    if let bestMatch = ChangelogFinder.bestChangelogMatch(in: candidatePaths) {
-                        await logHandler("[SkunkCrafts] Found release notes candidate: \(bestMatch)")
-                        let relativeEncoded = bestMatch
-                            .split(separator: "/")
-                            .map { $0.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? String($0) }
-                            .joined(separator: "/")
-                        if let fileURL = URL(string: relativeEncoded, relativeTo: baseURL),
-                           let content = try? await fetchTextContent(from: fileURL),
-                           !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            return content
-                        }
-                    }
+        // 1. Explicit changelog or readme configured
+        if let changelog = config.changelogPath, !changelog.isEmpty {
+            if let baseURL,
+               let encoded = changelog.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+               let remoteURL = URL(string: encoded, relativeTo: baseURL),
+               let content = try? await fetchTextContent(from: remoteURL),
+               !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return content
+            }
+            let localURL = addonFolder.appendingPathComponent(changelog)
+            if let content = try? String(contentsOf: localURL, encoding: .utf8),
+               !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return content
+            }
+        }
+
+        if let readme = config.readmePath, !readme.isEmpty {
+            if let baseURL,
+               let encoded = readme.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+               let remoteURL = URL(string: encoded, relativeTo: baseURL),
+               let content = try? await fetchTextContent(from: remoteURL),
+               !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return content
+            }
+            let localURL = addonFolder.appendingPathComponent(readme)
+            if let content = try? String(contentsOf: localURL, encoding: .utf8),
+               !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return content
+            }
+        }
+
+        // 2. Discover changelog in remote manifest
+        if let baseURL {
+            await logHandler("[SkunkCrafts] Searching for changelog / release notes in remote manifest for \(config.name)...")
+
+            var candidatePaths: [String] = []
+            if config.protocolLevel >= 2 {
+                let manifestName = config.manifestFileName ?? "skunkcrafts_updater_manifest.txt"
+                if let manifestText = try? await fetchTextContent(from: baseURL.appendingPathComponent(manifestName)) {
+                    candidatePaths = parseManifest(content: manifestText).map(\.relativePath)
+                }
+            } else {
+                if let whitelistText = try? await fetchTextContent(from: baseURL.appendingPathComponent("skunkcrafts_updater_whitelist.txt")) {
+                    candidatePaths = parseWhitelist(content: whitelistText).map(\.relativePath)
+                }
+            }
+
+            if let bestMatch = ChangelogFinder.bestChangelogMatch(in: candidatePaths) {
+                await logHandler("[SkunkCrafts] Found release notes candidate: \(bestMatch)")
+                let relativeEncoded = bestMatch
+                    .split(separator: "/")
+                    .map { $0.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? String($0) }
+                    .joined(separator: "/")
+                if let fileURL = URL(string: relativeEncoded, relativeTo: baseURL),
+                   let content = try? await fetchTextContent(from: fileURL),
+                   !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    return content
                 }
             }
         }
 
-        // Fallback to local file in addon folder
+        // 3. Fallback to local file in addon folder
         if let localURL = ChangelogFinder.findLocalChangelog(in: addonFolder),
            let content = try? String(contentsOf: localURL, encoding: .utf8),
            !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -682,7 +1165,7 @@ extension SkunkCraftsUpdaterService: AddonUpdater {
         for addon: UpdateManager.UpdatableAddon,
         logHandler: @Sendable @escaping @MainActor (String) -> Void = { _ in }
     ) async throws -> AddonUpdateCheckResult {
-        let config = SkunkCraftsConfig(
+        var config = parseConfig(at: addon.configFileURL, defaultName: addon.name) ?? SkunkCraftsConfig(
             name: addon.name,
             version: addon.currentVersion,
             remoteManifestURL: addon.remoteManifestURL,
@@ -690,6 +1173,10 @@ extension SkunkCraftsUpdaterService: AddonUpdater {
             configFileName: addon.configFileURL.lastPathComponent,
             isBetaEnabled: addon.isBetaEnabled
         )
+        config.isBetaEnabled = addon.isBetaEnabled
+        if addon.isBetaEnabled && config.activeChannel == "stable" {
+            config.activeChannel = "beta"
+        }
         let result = try await checkAddonStatus(folderURL: addon.folderURL, config: config, logHandler: logHandler)
         return AddonUpdateCheckResult(
             latestVersion: result.latestVersion,
@@ -703,7 +1190,7 @@ extension SkunkCraftsUpdaterService: AddonUpdater {
         logHandler: @Sendable @escaping @MainActor (String) -> Void = { _ in },
         progressHandler: @Sendable @escaping @MainActor (String, Double) -> Void
     ) async throws {
-        let config = SkunkCraftsConfig(
+        var config = parseConfig(at: addon.configFileURL, defaultName: addon.name) ?? SkunkCraftsConfig(
             name: addon.name,
             version: addon.currentVersion,
             remoteManifestURL: addon.remoteManifestURL,
@@ -711,6 +1198,10 @@ extension SkunkCraftsUpdaterService: AddonUpdater {
             configFileName: addon.configFileURL.lastPathComponent,
             isBetaEnabled: addon.isBetaEnabled
         )
+        config.isBetaEnabled = addon.isBetaEnabled
+        if addon.isBetaEnabled && config.activeChannel == "stable" {
+            config.activeChannel = "beta"
+        }
         try await downloadAndApplyUpdates(
             for: addon.folderURL,
             config: config,
@@ -723,7 +1214,7 @@ extension SkunkCraftsUpdaterService: AddonUpdater {
         for addon: UpdateManager.UpdatableAddon,
         logHandler: @Sendable @escaping @MainActor (String) -> Void = { _ in }
     ) async throws -> String? {
-        let config = SkunkCraftsConfig(
+        var config = parseConfig(at: addon.configFileURL, defaultName: addon.name) ?? SkunkCraftsConfig(
             name: addon.name,
             version: addon.currentVersion,
             remoteManifestURL: addon.remoteManifestURL,
@@ -731,7 +1222,7 @@ extension SkunkCraftsUpdaterService: AddonUpdater {
             configFileName: addon.configFileURL.lastPathComponent,
             isBetaEnabled: addon.isBetaEnabled
         )
+        config.isBetaEnabled = addon.isBetaEnabled
         return try await fetchReleaseNotes(for: addon.folderURL, config: config, logHandler: logHandler)
     }
 }
-
