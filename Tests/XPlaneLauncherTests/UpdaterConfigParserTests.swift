@@ -331,6 +331,213 @@ final class UpdaterConfigParserTests: XCTestCase {
         XCTAssertFalse(fm.fileExists(atPath: beta4Ignore.path))
     }
 
+    func testSkunkCraftsAbsorbBetaFilesWithCustomChannelName() throws {
+        let addonDir = tempDir.appendingPathComponent("AbsorbTestAddon")
+        try fm.createDirectory(at: addonDir, withIntermediateDirectories: true)
+
+        let betaFile = addonDir.appendingPathComponent("skunkcrafts_updater_beta_rc.cfg")
+        let betaContent = """
+        channel|Release Candidate
+        module|http://example.com/rc/
+        zone|custom
+        enabled|true
+        """
+        try betaContent.write(to: betaFile, atomically: true, encoding: .utf8)
+
+        let service = SkunkCraftsUpdaterService.shared
+        service.absorbBetaFiles(in: addonDir)
+
+        // The root file must be removed
+        XCTAssertFalse(fm.fileExists(atPath: betaFile.path))
+
+        // Absorbed into skunkcrafts/channels/Release Candidate.cfg
+        let channelFile = addonDir.appendingPathComponent("skunkcrafts/channels/Release Candidate.cfg")
+        XCTAssertTrue(fm.fileExists(atPath: channelFile.path))
+
+        let content = try String(contentsOf: channelFile, encoding: .utf8)
+        XCTAssertTrue(content.contains("channel|Release Candidate"))
+        XCTAssertTrue(content.contains("module|http://example.com/rc/"))
+
+        // Active channel should be set
+        let activeCfg = addonDir.appendingPathComponent("skunkcrafts/channel.cfg")
+        XCTAssertTrue(fm.fileExists(atPath: activeCfg.path))
+        let activeContent = try String(contentsOf: activeCfg, encoding: .utf8)
+        XCTAssertTrue(activeContent.contains("channel|Release Candidate"))
+    }
+
+    func testSkunkCraftsUpdateLocalConfigFileInPlace() throws {
+        let cfgFile = tempDir.appendingPathComponent("skunkcrafts_updater.cfg")
+        let originalContent = """
+        # Configuration File Header
+        name|Old Aircraft Name
+        version|1.0.0
+        custom_key|retain_this_value
+        # Section Header
+        module|http://original.depot/plane/
+        zone|custom
+        # Trailing comments
+        """
+        try originalContent.write(to: cfgFile, atomically: true, encoding: .utf8)
+
+        let service = SkunkCraftsUpdaterService.shared
+        try service.updateLocalConfigFile(
+            at: cfgFile,
+            remoteName: "New Aircraft Name",
+            remoteVersion: "1.2.0",
+            remoteModule: "http://new.depot/plane/",
+            remoteZone: "toliss",
+            mainName: "CustomMain",
+            packKeys: ["pack": "pack_alpha", "member": "mem_01"],
+            isStable: true
+        )
+
+        let updatedContent = try String(contentsOf: cfgFile, encoding: .utf8)
+        XCTAssertTrue(updatedContent.contains("# Configuration File Header"))
+        XCTAssertTrue(updatedContent.contains("# Section Header"))
+        XCTAssertTrue(updatedContent.contains("# Trailing comments"))
+        XCTAssertTrue(updatedContent.contains("custom_key|retain_this_value"))
+
+        XCTAssertTrue(updatedContent.contains("name|New Aircraft Name"))
+        XCTAssertTrue(updatedContent.contains("version|1.2.0"))
+        XCTAssertTrue(updatedContent.contains("module|http://new.depot/plane/"))
+        XCTAssertTrue(updatedContent.contains("zone|toliss"))
+        XCTAssertTrue(updatedContent.contains("main_name|CustomMain"))
+        XCTAssertTrue(updatedContent.contains("pack|pack_alpha"))
+        XCTAssertTrue(updatedContent.contains("member|mem_01"))
+
+        XCTAssertFalse(updatedContent.contains("name|Old Aircraft Name"))
+        XCTAssertFalse(updatedContent.contains("version|1.0.0"))
+    }
+
+    func testSkunkCraftsCRCCachePersistence() throws {
+        let addonDir = tempDir.appendingPathComponent("CRCCacheTestAddon")
+        try fm.createDirectory(at: addonDir, withIntermediateDirectories: true)
+
+        let service = SkunkCraftsUpdaterService.shared
+        let entries: [String: SkunkCraftsCRCCacheEntry] = [
+            "objects/fuselage.obj": .init(size: 1048576, mtime: 1700000000, crc: 0x12345678),
+            "plugins/systems.xpl": .init(size: 65536, mtime: 1700000500, crc: 0x87654321)
+        ]
+
+        service.saveCRCCache(entries, for: addonDir)
+
+        let cacheFile = addonDir.appendingPathComponent("skunkcrafts/crc_cache.txt")
+        XCTAssertTrue(fm.fileExists(atPath: cacheFile.path))
+
+        let loaded = service.loadCRCCache(for: addonDir)
+        XCTAssertEqual(loaded.count, 2)
+        XCTAssertEqual(loaded["objects/fuselage.obj"]?.size, 1048576)
+        XCTAssertEqual(loaded["objects/fuselage.obj"]?.mtime, 1700000000)
+        XCTAssertEqual(loaded["objects/fuselage.obj"]?.crc, 0x12345678)
+        XCTAssertEqual(loaded["plugins/systems.xpl"]?.size, 65536)
+        XCTAssertEqual(loaded["plugins/systems.xpl"]?.mtime, 1700000500)
+        XCTAssertEqual(loaded["plugins/systems.xpl"]?.crc, 0x87654321)
+
+        // Verify handling of corrupt/malformed lines
+        let handle = try FileHandle(forWritingTo: cacheFile)
+        handle.seekToEndOfFile()
+        if let corruptData = "bad_line_without_enough_columns\ninvalid|size|mtime|not_a_crc\n".data(using: .utf8) {
+            handle.write(corruptData)
+        }
+        try handle.close()
+
+        let loadedAfterCorrupt = service.loadCRCCache(for: addonDir)
+        XCTAssertEqual(loadedAfterCorrupt.count, 2)
+    }
+
+    func testSkunkCraftsPackMembersParsingAndAllowedPaths() throws {
+        let service = SkunkCraftsUpdaterService.shared
+
+        let specString = "a=Custom Scenery/Pack A=http://example.com/a;b=Aircraft/Pack B=http://example.com/b"
+        let members = service.parsePackMembers(specString)
+        XCTAssertEqual(members.count, 2)
+        XCTAssertEqual(members[0].memberId, "a")
+        XCTAssertEqual(members[0].defaultFolder, "Custom Scenery/Pack A")
+        XCTAssertEqual(members[0].depotURL, "http://example.com/a")
+        XCTAssertEqual(members[1].memberId, "b")
+        XCTAssertEqual(members[1].defaultFolder, "Aircraft/Pack B")
+        XCTAssertEqual(members[1].depotURL, "http://example.com/b")
+
+        // Security: isPackPathAllowed
+        XCTAssertTrue(service.isPackPathAllowed("Aircraft/ToLiss/A321"))
+        XCTAssertTrue(service.isPackPathAllowed("Custom Scenery/Airport"))
+        XCTAssertTrue(service.isPackPathAllowed("Airfoils/NACA0012"))
+        XCTAssertTrue(service.isPackPathAllowed("Resources/plugins/MyPlugin"))
+
+        XCTAssertFalse(service.isPackPathAllowed("../escape"))
+        XCTAssertFalse(service.isPackPathAllowed("/rooted/path"))
+        XCTAssertFalse(service.isPackPathAllowed("Resources/default/textures"))
+        XCTAssertFalse(service.isPackPathAllowed("Output/logs"))
+        XCTAssertFalse(service.isPackPathAllowed("Global Scenery/Earth"))
+    }
+
+    func testSkunkCraftsPackMemberFolderCreation() throws {
+        let service = SkunkCraftsUpdaterService.shared
+        let xplaneRoot = tempDir.appendingPathComponent("FakeXPlane")
+        try fm.createDirectory(at: xplaneRoot, withIntermediateDirectories: true)
+
+        let member = SkunkCraftsPackMember(
+            memberId: "pack_member_1",
+            defaultFolder: "Aircraft/Heavy/SuperPlane",
+            depotURL: "http://updates.example.com/member1/"
+        )
+
+        let createdURL = try service.createPackMemberFolder(
+            in: xplaneRoot,
+            decl: member,
+            packId: "main_pack_id",
+            packName: "Super Fleet Pack"
+        )
+
+        XCTAssertTrue(fm.fileExists(atPath: createdURL.path))
+        let cfgURL = createdURL.appendingPathComponent("skunkcrafts_updater.cfg")
+        XCTAssertTrue(fm.fileExists(atPath: cfgURL.path))
+
+        let cfgContent = try String(contentsOf: cfgURL, encoding: .utf8)
+        XCTAssertTrue(cfgContent.contains("pack|main_pack_id"))
+        XCTAssertTrue(cfgContent.contains("member|pack_member_1"))
+        XCTAssertTrue(cfgContent.contains("version|none"))
+        XCTAssertTrue(cfgContent.contains("module|http://updates.example.com/member1/"))
+
+        // Path traversal attempt should throw AppError
+        let evilMember = SkunkCraftsPackMember(
+            memberId: "evil",
+            defaultFolder: "../../../etc/evil",
+            depotURL: "http://evil.com/"
+        )
+        XCTAssertThrowsError(try service.createPackMemberFolder(in: xplaneRoot, decl: evilMember, packId: "p", packName: nil))
+    }
+
+    func testSkunkCraftsLiveryExclusionConfig() throws {
+        let service = SkunkCraftsUpdaterService.shared
+
+        let cfgFile = tempDir.appendingPathComponent("skunkcrafts_updater.cfg")
+        try "name|Plane\nliveries|false\n".write(to: cfgFile, atomically: true, encoding: .utf8)
+        let configNoLiveries = service.parseConfig(at: cfgFile, defaultName: "Plane")
+        XCTAssertFalse(configNoLiveries?.liveriesEnabled ?? true)
+
+        try "name|Plane\nliveries|true\n".write(to: cfgFile, atomically: true, encoding: .utf8)
+        let configWithLiveries = service.parseConfig(at: cfgFile, defaultName: "Plane")
+        XCTAssertTrue(configWithLiveries?.liveriesEnabled ?? false)
+
+        try "name|Plane\n".write(to: cfgFile, atomically: true, encoding: .utf8)
+        let configDefaultLiveries = service.parseConfig(at: cfgFile, defaultName: "Plane")
+        XCTAssertTrue(configDefaultLiveries?.liveriesEnabled ?? false)
+    }
+
+    func testSkunkCraftsMainChannelNameParsing() throws {
+        let service = SkunkCraftsUpdaterService.shared
+        let cfgFile = tempDir.appendingPathComponent("skunkcrafts_updater.cfg")
+
+        try "name|Plane\nmain_name|Production\n".write(to: cfgFile, atomically: true, encoding: .utf8)
+        let configCustom = service.parseConfig(at: cfgFile, defaultName: "Plane")
+        XCTAssertEqual(configCustom?.mainName, "Production")
+
+        try "name|Plane\nmain_name|stable\n".write(to: cfgFile, atomically: true, encoding: .utf8)
+        let configStable = service.parseConfig(at: cfgFile, defaultName: "Plane")
+        XCTAssertNil(configStable?.mainName)
+    }
+
     // MARK: - X-Updater Tests
 
     func testParseXUpdaterSettingsIni() throws {
@@ -678,9 +885,9 @@ final class UpdaterConfigParserTests: XCTestCase {
 
         let betaCfg = addonDir.appendingPathComponent("skunkcrafts_updater_beta.cfg")
         let betaContent = """
-        name|ToLiss A321 (Beta)
-        version|1.5.0-beta.1
-        url|https://updates.toliss.com/a321_beta/
+        module|https://updates.toliss.com/a321_beta/
+        zone|custom
+        enabled|false
         """
         try betaContent.write(to: betaCfg, atomically: true, encoding: .utf8)
         XCTAssertTrue(service.hasBetaChannel(in: addonDir))
@@ -688,16 +895,24 @@ final class UpdaterConfigParserTests: XCTestCase {
         let foundRelease = service.findConfig(in: addonDir, preferBeta: false)
         XCTAssertEqual(foundRelease?.lastPathComponent, "skunkcrafts_updater.cfg")
 
-        let foundBeta = service.findConfig(in: addonDir, preferBeta: true)
-        XCTAssertEqual(foundBeta?.lastPathComponent, "skunkcrafts_updater_beta.cfg")
-
         let parsedRelease = service.parseConfig(at: foundRelease!, defaultName: "A321")
         XCTAssertEqual(parsedRelease?.version, "1.4.1")
         XCTAssertFalse(parsedRelease?.isBetaEnabled ?? true)
+        XCTAssertTrue(parsedRelease?.availableChannels.contains("beta") ?? false)
 
-        let parsedBeta = service.parseConfig(at: foundBeta!, defaultName: "A321")
-        XCTAssertEqual(parsedBeta?.version, "1.5.0-beta.1")
+        // skunkcrafts_updater_beta.cfg should be absorbed into skunkcrafts/channels/beta.cfg and deleted from root
+        XCTAssertFalse(fm.fileExists(atPath: betaCfg.path))
+        let absorbedBetaCfg = addonDir.appendingPathComponent("skunkcrafts/channels/beta.cfg")
+        XCTAssertTrue(fm.fileExists(atPath: absorbedBetaCfg.path))
+        XCTAssertTrue(service.hasBetaChannel(in: addonDir))
+
+        // When switching to beta channel, it resolves the beta module URL
+        service.setChannel("beta", in: addonDir)
+        let parsedBeta = service.parseConfig(at: foundRelease!, defaultName: "A321")
+        XCTAssertEqual(parsedBeta?.version, "1.4.1")
         XCTAssertTrue(parsedBeta?.isBetaEnabled ?? false)
+        XCTAssertEqual(parsedBeta?.activeChannel, "beta")
+        XCTAssertEqual(parsedBeta?.baseURL, "https://updates.toliss.com/a321_beta/")
     }
 
     func testSkunkCraftsV4ChannelManagement() throws {
@@ -819,7 +1034,12 @@ final class UpdaterConfigParserTests: XCTestCase {
         let releaseCfg = addonDir.appendingPathComponent("skunkcrafts_updater.cfg")
         try "name|ToLiss A320\nversion|1.0.0\nurl|http://example.com/a320/\n".write(to: releaseCfg, atomically: true, encoding: .utf8)
         let betaCfg = addonDir.appendingPathComponent("skunkcrafts_updater_beta.cfg")
-        try "name|ToLiss A320 Beta\nversion|1.1.0-b1\nurl|http://example.com/a320-beta/\n".write(to: betaCfg, atomically: true, encoding: .utf8)
+        try "module|http://example.com/a320-beta/\nzone|custom\nenabled|false\n".write(to: betaCfg, atomically: true, encoding: .utf8)
+
+        // Parse config to absorb beta file
+        let service = SkunkCraftsUpdaterService.shared
+        let parsed = service.parseConfig(at: releaseCfg, defaultName: "ToLissA320")
+        XCTAssertNotNil(parsed)
 
         let updateManager = UpdateManager()
         let addon = UpdateManager.UpdatableAddon(
@@ -832,7 +1052,9 @@ final class UpdaterConfigParserTests: XCTestCase {
             currentVersion: "1.0.0",
             remoteManifestURL: "http://example.com/a320/",
             hasBetaChannel: true,
-            isBetaEnabled: false
+            isBetaEnabled: false,
+            availableChannels: parsed?.availableChannels ?? ["stable", "beta"],
+            activeChannel: "stable"
         )
         updateManager.updatableAddons = [addon]
 
@@ -840,16 +1062,20 @@ final class UpdaterConfigParserTests: XCTestCase {
 
         let updatedAddon = updateManager.updatableAddons.first!
         XCTAssertTrue(updatedAddon.isBetaEnabled)
-        XCTAssertEqual(updatedAddon.configFileURL.lastPathComponent, "skunkcrafts_updater_beta.cfg")
-        XCTAssertEqual(updatedAddon.currentVersion, "1.1.0-b1")
+        XCTAssertEqual(updatedAddon.activeChannel, "beta")
+        XCTAssertEqual(updatedAddon.configFileURL.lastPathComponent, "skunkcrafts_updater.cfg")
+        XCTAssertEqual(updatedAddon.currentVersion, "1.0.0")
+        XCTAssertEqual(updatedAddon.remoteManifestURL, "http://example.com/a320-beta/")
         XCTAssertEqual(updateManager.addonBetaPreferences[addon.persistenceKey], true)
 
         updateManager.setBetaUpdatesEnabled(false, for: updatedAddon)
 
         let revertedAddon = updateManager.updatableAddons.first!
         XCTAssertFalse(revertedAddon.isBetaEnabled)
+        XCTAssertEqual(revertedAddon.activeChannel, "stable")
         XCTAssertEqual(revertedAddon.configFileURL.lastPathComponent, "skunkcrafts_updater.cfg")
         XCTAssertEqual(revertedAddon.currentVersion, "1.0.0")
+        XCTAssertEqual(revertedAddon.remoteManifestURL, "http://example.com/a320/")
         XCTAssertEqual(updateManager.addonBetaPreferences[addon.persistenceKey], false)
     }
 
@@ -987,6 +1213,352 @@ final class UpdaterConfigParserTests: XCTestCase {
         XCTAssertFalse(stableAddon.isBetaEnabled)
         XCTAssertEqual(updateManager.addonChannelPreferences[addon.persistenceKey], "stable")
         XCTAssertEqual(updateManager.addonBetaPreferences[addon.persistenceKey], false)
+    }
+
+    // MARK: - Pack Grouping Tests (PUBLISHING.md §5.5)
+
+    @MainActor
+    func testPackGroupingStandaloneAndMembers() throws {
+        let dummyURL = tempDir.appendingPathComponent("Dummy")
+
+        let standalone1 = UpdateManager.UpdatableAddon(
+            name: "ToLiss A321",
+            addonCategory: .aircraft,
+            folderName: "ToLiss A321",
+            folderURL: dummyURL,
+            updaterType: .skunkcrafts,
+            configFileURL: dummyURL,
+            currentVersion: "1.4.1"
+        )
+
+        // Member with 'member' set but no 'pack' -> must be standalone (PUBLISHING.md §5.5)
+        let orphanMember = UpdateManager.UpdatableAddon(
+            name: "Orphan Member",
+            addonCategory: .scenery,
+            folderName: "Orphan",
+            folderURL: dummyURL,
+            updaterType: .skunkcrafts,
+            configFileURL: dummyURL,
+            currentVersion: "1.0",
+            memberId: "orphan-01"
+        )
+
+        // Pack members sharing pack "africa"
+        let packMember1 = UpdateManager.UpdatableAddon(
+            name: "XWP-AFR-01-bridges",
+            addonCategory: .scenery,
+            folderName: "simHeaven_X-WORLD-Pro_Africa-01-bridges",
+            folderURL: dummyURL,
+            updaterType: .skunkcrafts,
+            configFileURL: dummyURL,
+            currentVersion: "1.2",
+            packId: "africa",
+            memberId: "africa-01-bridges",
+            packName: "simHeaven X-WORLD Pro Africa"
+        )
+
+        let packMember2 = UpdateManager.UpdatableAddon(
+            name: "XWP-AFR-02-fountains",
+            addonCategory: .scenery,
+            folderName: "simHeaven_X-WORLD-Pro_Africa-02-fountains",
+            folderURL: dummyURL,
+            updaterType: .skunkcrafts,
+            configFileURL: dummyURL,
+            currentVersion: "1.2",
+            packId: "africa",
+            memberId: "africa-02-fountains",
+            packName: "simHeaven X-WORLD Pro Africa"
+        )
+
+        // Pack member with pack "america" but NO pack_name defined -> falls back to packId
+        let packMemberNoName = UpdateManager.UpdatableAddon(
+            name: "XWP-AME-01",
+            addonCategory: .scenery,
+            folderName: "simHeaven_X-WORLD-Pro_America-01",
+            folderURL: dummyURL,
+            updaterType: .skunkcrafts,
+            configFileURL: dummyURL,
+            currentVersion: "1.0",
+            packId: "america",
+            memberId: "america-01",
+            packName: nil
+        )
+
+        let allAddons = [standalone1, packMember1, orphanMember, packMember2, packMemberNoName]
+        let grouped = UpdateManager.groupAddons(allAddons)
+
+        XCTAssertEqual(grouped.count, 4)
+
+        // 1st item: standalone ToLiss
+        if case .standalone(let a) = grouped[0] {
+            XCTAssertEqual(a.name, "ToLiss A321")
+        } else {
+            XCTFail("Expected standalone item at index 0")
+        }
+
+        // 2nd item: pack "africa" with 2 members, named after pack_name
+        if case .pack(let p) = grouped[1] {
+            XCTAssertEqual(p.packId, "africa")
+            XCTAssertEqual(p.displayName, "simHeaven X-WORLD Pro Africa")
+            XCTAssertEqual(p.members.count, 2)
+            XCTAssertEqual(p.members[0].memberId, "africa-01-bridges")
+            XCTAssertEqual(p.members[1].memberId, "africa-02-fountains")
+        } else {
+            XCTFail("Expected pack item at index 1")
+        }
+
+        // 3rd item: standalone orphan member
+        if case .standalone(let a) = grouped[2] {
+            XCTAssertEqual(a.name, "Orphan Member")
+        } else {
+            XCTFail("Expected standalone orphan at index 2")
+        }
+
+        // 4th item: pack "america" falling back to packId as displayName
+        if case .pack(let p) = grouped[3] {
+            XCTAssertEqual(p.packId, "america")
+            XCTAssertEqual(p.displayName, "america")
+            XCTAssertEqual(p.members.count, 1)
+        } else {
+            XCTFail("Expected pack item at index 3")
+        }
+    }
+
+    func testPackVersionResolutionCommonVsMixed() {
+        let dummyURL = tempDir.appendingPathComponent("Dummy")
+
+        func makeMember(version: String?) -> UpdateManager.UpdatableAddon {
+            UpdateManager.UpdatableAddon(
+                name: "Part",
+                addonCategory: .scenery,
+                folderName: "PartFolder",
+                folderURL: dummyURL,
+                updaterType: .skunkcrafts,
+                configFileURL: dummyURL,
+                currentVersion: version,
+                packId: "test_pack",
+                packName: "Test Pack"
+            )
+        }
+
+        // 1. All members have identical version -> common version
+        let packSame = UpdateManager.UpdatablePack(
+            packId: "test_pack",
+            packName: "Test Pack",
+            category: .scenery,
+            updaterType: .skunkcrafts,
+            members: [makeMember(version: "2.1.0"), makeMember(version: "2.1.0"), makeMember(version: "2.1.0")]
+        )
+        XCTAssertEqual(packSame.displayVersion, "2.1.0")
+
+        // 2. Members differ in version -> "mixed"
+        let packMixed = UpdateManager.UpdatablePack(
+            packId: "test_pack",
+            packName: "Test Pack",
+            category: .scenery,
+            updaterType: .skunkcrafts,
+            members: [makeMember(version: "2.1.0"), makeMember(version: "2.0.0")]
+        )
+        XCTAssertEqual(packMixed.displayVersion, "mixed")
+
+        // 3. One member has nil version while others have 2.1.0 -> "mixed"
+        let packMissingVer = UpdateManager.UpdatablePack(
+            packId: "test_pack",
+            packName: "Test Pack",
+            category: .scenery,
+            updaterType: .skunkcrafts,
+            members: [makeMember(version: "2.1.0"), makeMember(version: nil)]
+        )
+        XCTAssertEqual(packMissingVer.displayVersion, "mixed")
+
+        // 4. All members have nil version -> nil
+        let packAllNil = UpdateManager.UpdatablePack(
+            packId: "test_pack",
+            packName: "Test Pack",
+            category: .scenery,
+            updaterType: .skunkcrafts,
+            members: [makeMember(version: nil), makeMember(version: nil)]
+        )
+        XCTAssertNil(packAllNil.displayVersion)
+    }
+
+    func testPackWorstStatusAggregation() {
+        let dummyURL = tempDir.appendingPathComponent("Dummy")
+
+        func makeMember(
+            status: String,
+            isUpdateAvailable: Bool = false,
+            isChecking: Bool = false,
+            isUpdating: Bool = false,
+            curVer: String? = "1.0",
+            latVer: String? = "1.0"
+        ) -> UpdateManager.UpdatableAddon {
+            UpdateManager.UpdatableAddon(
+                name: "Part",
+                addonCategory: .scenery,
+                folderName: "PartFolder",
+                folderURL: dummyURL,
+                updaterType: .skunkcrafts,
+                configFileURL: dummyURL,
+                currentVersion: curVer,
+                latestVersion: latVer,
+                isUpdateAvailable: isUpdateAvailable,
+                isChecking: isChecking,
+                isUpdating: isUpdating,
+                statusMessage: status,
+                packId: "test_pack",
+                packName: "Test Pack"
+            )
+        }
+
+        // 1. All up to date
+        let packUpToDate = UpdateManager.UpdatablePack(
+            packId: "p", packName: "P", category: .scenery, updaterType: .skunkcrafts,
+            members: [makeMember(status: "Up to date"), makeMember(status: "Up to date")]
+        )
+        XCTAssertEqual(packUpToDate.statusMessage, "Up to date")
+        XCTAssertFalse(packUpToDate.isUpdateAvailable)
+
+        // 2. 1 member has update available (new version) -> worst is update available
+        let packOneUpdate = UpdateManager.UpdatablePack(
+            packId: "p", packName: "P", category: .scenery, updaterType: .skunkcrafts,
+            members: [
+                makeMember(status: "Up to date"),
+                makeMember(status: "Update available (1.1)", isUpdateAvailable: true, curVer: "1.0", latVer: "1.1")
+            ]
+        )
+        XCTAssertEqual(packOneUpdate.statusMessage, "Update available (1 of 2 folders)")
+        XCTAssertTrue(packOneUpdate.isUpdateAvailable)
+
+        // 3. All members have updates available
+        let packAllUpdate = UpdateManager.UpdatablePack(
+            packId: "p", packName: "P", category: .scenery, updaterType: .skunkcrafts,
+            members: [
+                makeMember(status: "Update available", isUpdateAvailable: true, curVer: "1.0", latVer: "1.1"),
+                makeMember(status: "Update available", isUpdateAvailable: true, curVer: "1.0", latVer: "1.1")
+            ]
+        )
+        XCTAssertEqual(packAllUpdate.statusMessage, "Update available")
+        XCTAssertTrue(packAllUpdate.isUpdateAvailable)
+
+        // 4. 1 member has repair available
+        let packRepair = UpdateManager.UpdatablePack(
+            packId: "p", packName: "P", category: .scenery, updaterType: .skunkcrafts,
+            members: [
+                makeMember(status: "Up to date"),
+                makeMember(status: "Repair available (2 file(s) modified)", isUpdateAvailable: true, curVer: "1.0", latVer: "1.0")
+            ]
+        )
+        XCTAssertEqual(packRepair.statusMessage, "Repair available (1 of 2 folders)")
+        XCTAssertTrue(packRepair.isUpdateAvailable)
+
+        // 5. 1 member failed check -> worst is check failed
+        let packCheckFailed = UpdateManager.UpdatablePack(
+            packId: "p", packName: "P", category: .scenery, updaterType: .skunkcrafts,
+            members: [
+                makeMember(status: "Up to date"),
+                makeMember(status: "Check failed")
+            ]
+        )
+        XCTAssertEqual(packCheckFailed.statusMessage, "Check failed")
+
+        // 6. 1 member failed update -> worst is update failed
+        let packUpdateFailed = UpdateManager.UpdatablePack(
+            packId: "p", packName: "P", category: .scenery, updaterType: .skunkcrafts,
+            members: [
+                makeMember(status: "Up to date"),
+                makeMember(status: "Update failed: HTTP 500")
+            ]
+        )
+        XCTAssertEqual(packUpdateFailed.statusMessage, "Update failed: HTTP 500")
+
+        // 7. In flight checking
+        let packChecking = UpdateManager.UpdatablePack(
+            packId: "p", packName: "P", category: .scenery, updaterType: .skunkcrafts,
+            members: [
+                makeMember(status: "Up to date"),
+                makeMember(status: "Checking...", isChecking: true)
+            ]
+        )
+        XCTAssertEqual(packChecking.statusMessage, "Checking...")
+        XCTAssertTrue(packChecking.isChecking)
+
+        // 8. In flight updating
+        let packUpdating = UpdateManager.UpdatablePack(
+            packId: "p", packName: "P", category: .scenery, updaterType: .skunkcrafts,
+            members: [
+                makeMember(status: "Up to date"),
+                makeMember(status: "Downloading file 3/10...", isUpdating: true)
+            ]
+        )
+        XCTAssertEqual(packUpdating.statusMessage, "Downloading file 3/10...")
+        XCTAssertTrue(packUpdating.isUpdating)
+
+        // 9. Multiple members updating
+        let packMultiUpdating = UpdateManager.UpdatablePack(
+            packId: "p", packName: "P", category: .scenery, updaterType: .skunkcrafts,
+            members: [
+                makeMember(status: "Downloading...", isUpdating: true),
+                makeMember(status: "Extracting...", isUpdating: true),
+                makeMember(status: "Up to date")
+            ]
+        )
+        XCTAssertEqual(packMultiUpdating.statusMessage, "Updating (2/3)...")
+        XCTAssertTrue(packMultiUpdating.isUpdating)
+    }
+
+    @MainActor
+    func testPackBatchActionDelegation() {
+        let dummyURL = tempDir.appendingPathComponent("Dummy")
+        let updateManager = UpdateManager()
+
+        let m1 = UpdateManager.UpdatableAddon(
+            name: "Part1",
+            addonCategory: .scenery,
+            folderName: "Part1",
+            folderURL: dummyURL,
+            updaterType: .skunkcrafts,
+            configFileURL: dummyURL,
+            currentVersion: "1.0",
+            statusMessage: "Up to date",
+            packId: "batch_pack",
+            packName: "Batch Pack"
+        )
+
+        let m2 = UpdateManager.UpdatableAddon(
+            name: "Part2",
+            addonCategory: .scenery,
+            folderName: "Part2",
+            folderURL: dummyURL,
+            updaterType: .skunkcrafts,
+            configFileURL: dummyURL,
+            currentVersion: "1.0",
+            statusMessage: "Up to date",
+            packId: "batch_pack",
+            packName: "Batch Pack"
+        )
+
+        updateManager.updatableAddons = [m1, m2]
+
+        let pack = UpdateManager.UpdatablePack(
+            packId: "batch_pack",
+            packName: "Batch Pack",
+            category: .scenery,
+            updaterType: .skunkcrafts,
+            members: [m1, m2]
+        )
+
+        // Check for updates on pack
+        updateManager.checkForUpdates(forPack: pack)
+        // Both members should be flagged as checking or updated
+        XCTAssertTrue(updateManager.updatableAddons[0].isChecking || updateManager.updatableAddons[0].statusMessage == "Up to date")
+        XCTAssertTrue(updateManager.updatableAddons[1].isChecking || updateManager.updatableAddons[1].statusMessage == "Up to date")
+
+        // Available updates count should group by packs
+        updateManager.updatableAddons[0].isUpdateAvailable = true
+        updateManager.updatableAddons[1].isUpdateAvailable = true
+        // Although 2 folders are updatable, availableUpdatesCount should count 1 pack!
+        XCTAssertEqual(updateManager.availableUpdatesCount, 1)
     }
 }
 

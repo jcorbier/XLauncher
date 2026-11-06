@@ -73,9 +73,16 @@ class UpdateManager {
         get { storagePools.first(where: { $0.isPrimary })?.url ?? storagePools.first?.url }
         set {
             if let newURL = newValue {
-                storagePools = [StoragePool(name: "Primary Storage", url: newURL, isPrimary: true)]
+                if let idx = storagePools.firstIndex(where: { $0.isPrimary }) {
+                    storagePools[idx].url = newURL
+                } else if !storagePools.isEmpty {
+                    storagePools[0].url = newURL
+                    storagePools[0].isPrimary = true
+                } else {
+                    storagePools = [StoragePool(name: "Primary Storage", url: newURL, isPrimary: true)]
+                }
             } else {
-                storagePools = []
+                storagePools.removeAll(where: { $0.isPrimary })
             }
         }
     }
@@ -94,6 +101,10 @@ class UpdateManager {
 
     var isProcessing: Bool {
         isScanning || updatableAddons.contains { $0.isChecking || $0.isUpdating }
+    }
+
+    var availableUpdatesCount: Int {
+        Self.groupAddons(updatableAddons).filter { $0.isUpdateAvailable }.count
     }
 
     func log(_ message: String, level: LogLevel = .info) {
@@ -156,6 +167,10 @@ class UpdateManager {
         var isBetaEnabled: Bool = false
         var availableChannels: [String] = ["stable"]
         var activeChannel: String = "stable"
+        var mainChannelName: String? = nil
+        var packId: String? = nil
+        var memberId: String? = nil
+        var packName: String? = nil
 
         var persistenceKey: String {
             "\(addonCategory.rawValue.lowercased()):\(folderName)"
@@ -178,7 +193,11 @@ class UpdateManager {
             hasBetaChannel: Bool = false,
             isBetaEnabled: Bool = false,
             availableChannels: [String] = ["stable"],
-            activeChannel: String = "stable"
+            activeChannel: String = "stable",
+            mainChannelName: String? = nil,
+            packId: String? = nil,
+            memberId: String? = nil,
+            packName: String? = nil
         ) {
             self.name = name
             self.addonCategory = addonCategory
@@ -197,10 +216,236 @@ class UpdateManager {
             self.isBetaEnabled = isBetaEnabled
             self.availableChannels = availableChannels
             self.activeChannel = activeChannel
+            self.mainChannelName = mainChannelName
+            self.packId = packId
+            self.memberId = memberId
+            self.packName = packName
         }
     }
 
-    init(storagePools: [StoragePool] = []) {
+    struct UpdatablePack: Identifiable, Equatable, Hashable, Sendable {
+        var id: String { "\(category.rawValue):\(packId)" }
+        let packId: String
+        var packName: String
+        let category: AddonCategory
+        let updaterType: UpdaterType
+        var members: [UpdatableAddon]
+
+        /// The display name for the pack, using packName or falling back to packId (PUBLISHING.md §5.5).
+        var displayName: String {
+            let trimmed = packName.trimmingCharacters(in: .whitespaces)
+            return trimmed.isEmpty ? packId : trimmed
+        }
+
+        /// The version shown is the members' common version, or "mixed" when they differ (PUBLISHING.md §5.5).
+        var displayVersion: String? {
+            let nonNilVersions = members.compactMap { $0.currentVersion?.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+            guard !nonNilVersions.isEmpty else { return nil }
+            guard nonNilVersions.count == members.count else {
+                return "mixed"
+            }
+            let unique = Set(nonNilVersions)
+            return unique.count == 1 ? nonNilVersions.first : "mixed"
+        }
+
+        /// Latest version across members, or "mixed" if they differ.
+        var displayLatestVersion: String? {
+            let nonNilVersions = members.compactMap { $0.latestVersion?.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+            guard !nonNilVersions.isEmpty else { return nil }
+            guard nonNilVersions.count == members.count else {
+                return "mixed"
+            }
+            let unique = Set(nonNilVersions)
+            return unique.count == 1 ? nonNilVersions.first : "mixed"
+        }
+
+        var isUpdateAvailable: Bool {
+            members.contains { $0.isUpdateAvailable }
+        }
+
+        var isChecking: Bool {
+            members.contains { $0.isChecking }
+        }
+
+        var isUpdating: Bool {
+            members.contains { $0.isUpdating }
+        }
+
+        /// The status is the worst of the members' (PUBLISHING.md §5.5).
+        var statusMessage: String {
+            guard !members.isEmpty else { return "Unknown" }
+
+            // 1. Errors / Failures take highest precedence
+            if let failedMember = members.first(where: {
+                let msg = $0.statusMessage.lowercased()
+                return msg.contains("fail") || msg.contains("error")
+            }) {
+                return failedMember.statusMessage
+            }
+
+            // 2. In-flight update operations
+            let updatingMembers = members.filter { $0.isUpdating }
+            if !updatingMembers.isEmpty {
+                if updatingMembers.count == 1, let first = updatingMembers.first {
+                    return first.statusMessage
+                }
+                return "Updating (\(updatingMembers.count)/\(members.count))..."
+            }
+
+            // 3. In-flight checking operations
+            let checkingMembers = members.filter { $0.isChecking }
+            if !checkingMembers.isEmpty {
+                return "Checking..."
+            }
+
+            // 4. Update / Repair available
+            let updatableMembers = members.filter { $0.isUpdateAvailable }
+            if !updatableMembers.isEmpty {
+                let hasActualUpdate = updatableMembers.contains { member in
+                    let msg = member.statusMessage.lowercased()
+                    if msg.contains("repair") { return false }
+                    if let cur = member.currentVersion, let lat = member.latestVersion, cur == lat {
+                        return false
+                    }
+                    return true
+                }
+
+                if hasActualUpdate {
+                    if updatableMembers.count == members.count {
+                        return "Update available"
+                    } else {
+                        return "Update available (\(updatableMembers.count) of \(members.count) folders)"
+                    }
+                } else {
+                    if updatableMembers.count == members.count {
+                        return "Repair available"
+                    } else {
+                        return "Repair available (\(updatableMembers.count) of \(members.count) folders)"
+                    }
+                }
+            }
+
+            // 5. If all members are "Up to date"
+            let allUpToDate = members.allSatisfy { $0.statusMessage.lowercased() == "up to date" }
+            if allUpToDate {
+                return "Up to date"
+            }
+
+            // 6. If any member is "Unknown" or "Idle"
+            if members.contains(where: {
+                let msg = $0.statusMessage.lowercased()
+                return msg == "unknown" || msg == "idle"
+            }) {
+                return "Unknown"
+            }
+
+            // 7. Otherwise, return the first non-trivial status message
+            return members.first?.statusMessage ?? "Unknown"
+        }
+
+        var activeChannel: String {
+            let channels = members.map { $0.activeChannel.lowercased() }
+            let unique = Set(channels)
+            return unique.count == 1 ? (unique.first ?? "stable") : "mixed"
+        }
+
+        var availableChannels: [String] {
+            var allChannels: [String] = []
+            for member in members {
+                for ch in member.availableChannels {
+                    if !allChannels.contains(where: { $0.lowercased() == ch.lowercased() }) {
+                        allChannels.append(ch)
+                    }
+                }
+            }
+            return allChannels.isEmpty ? ["stable"] : allChannels
+        }
+
+        var mainChannelName: String? {
+            members.compactMap(\.mainChannelName).first(where: { !$0.isEmpty })
+        }
+    }
+
+    enum UpdatableItem: Identifiable, Equatable, Hashable, Sendable {
+        case standalone(UpdatableAddon)
+        case pack(UpdatablePack)
+
+        var id: String {
+            switch self {
+            case .standalone(let addon):
+                return "addon:\(addon.id.uuidString)"
+            case .pack(let pack):
+                return "pack:\(pack.id)"
+            }
+        }
+
+        var category: AddonCategory {
+            switch self {
+            case .standalone(let addon): return addon.addonCategory
+            case .pack(let pack): return pack.category
+            }
+        }
+
+        var isUpdateAvailable: Bool {
+            switch self {
+            case .standalone(let addon): return addon.isUpdateAvailable
+            case .pack(let pack): return pack.isUpdateAvailable
+            }
+        }
+
+        var isChecking: Bool {
+            switch self {
+            case .standalone(let addon): return addon.isChecking
+            case .pack(let pack): return pack.isChecking
+            }
+        }
+
+        var isUpdating: Bool {
+            switch self {
+            case .standalone(let addon): return addon.isUpdating
+            case .pack(let pack): return pack.isUpdating
+            }
+        }
+    }
+
+    /// Groups addons sharing the same pack identifier into composite pack entries (PUBLISHING.md §5.5).
+    /// Standalone add-ons (without a pack identifier) remain individual items.
+    static func groupAddons(_ addons: [UpdatableAddon]) -> [UpdatableItem] {
+        var items: [UpdatableItem] = []
+        var packIndices: [String: Int] = [:]
+
+        for addon in addons {
+            if let packId = addon.packId?.trimmingCharacters(in: .whitespaces), !packId.isEmpty {
+                let key = "\(addon.addonCategory.rawValue):\(packId)"
+                if let existingIndex = packIndices[key] {
+                    if case .pack(var pack) = items[existingIndex] {
+                        pack.members.append(addon)
+                        if pack.packName.isEmpty, let pName = addon.packName?.trimmingCharacters(in: .whitespaces), !pName.isEmpty {
+                            pack.packName = pName
+                        }
+                        items[existingIndex] = .pack(pack)
+                    }
+                } else {
+                    let packName = addon.packName?.trimmingCharacters(in: .whitespaces) ?? ""
+                    let newPack = UpdatablePack(
+                        packId: packId,
+                        packName: packName,
+                        category: addon.addonCategory,
+                        updaterType: addon.updaterType,
+                        members: [addon]
+                    )
+                    packIndices[key] = items.count
+                    items.append(.pack(newPack))
+                }
+            } else {
+                items.append(.standalone(addon))
+            }
+        }
+
+        return items
+    }
+
+    init(storagePools: [StoragePool]? = nil) {
         URLCache.shared.removeAllCachedResponses()
 
         if defaults.object(forKey: .autoCheckSkunkCraftsUpdates) == nil {
@@ -215,8 +460,9 @@ class UpdateManager {
             self.automaticallyCheckXUpdaterUpdates = defaults.bool(forKey: .autoCheckXUpdaterUpdates)
         }
 
-        self.storagePools = storagePools
-        if !storagePools.isEmpty && updatableAddons.isEmpty {
+        let pools = storagePools ?? StoragePoolService.shared.loadStoragePools()
+        self.storagePools = pools
+        if !pools.isEmpty && updatableAddons.isEmpty {
             scanUpdatableAddons { [weak self] in
                 self?.checkAutoUpdates()
             }
@@ -243,24 +489,33 @@ class UpdateManager {
     private nonisolated static func parseUpdaterConfig(
         url: URL,
         type: UpdaterType,
-        defaultName: String
+        defaultName: String,
+        overrideChannel: String? = nil
     ) -> (
         name: String,
         version: String?,
         remoteURL: String?,
         availableChannels: [String],
         defaultChannel: String,
-        activeChannel: String
+        activeChannel: String,
+        mainChannelName: String?,
+        packId: String?,
+        memberId: String?,
+        packName: String?
     ) {
         if type == .skunkcrafts {
-            if let config = SkunkCraftsUpdaterService.shared.parseConfig(at: url, defaultName: defaultName) {
+            if let config = SkunkCraftsUpdaterService.shared.parseConfig(at: url, defaultName: defaultName, overrideChannel: overrideChannel) {
                 return (
                     config.name,
                     config.version,
                     config.remoteManifestURL,
                     config.availableChannels.isEmpty ? ["stable"] : config.availableChannels,
                     config.activeChannel,
-                    config.activeChannel
+                    config.activeChannel,
+                    config.mainName,
+                    config.packId,
+                    config.memberId,
+                    config.packName
                 )
             }
         } else if type == .xUpdater {
@@ -272,11 +527,15 @@ class UpdateManager {
                     config.remoteURL,
                     ["stable", "beta"],
                     "stable",
-                    active
+                    active,
+                    nil,
+                    nil,
+                    nil,
+                    nil
                 )
             }
         }
-        return (defaultName, nil, nil, ["stable"], "stable", "stable")
+        return (defaultName, nil, nil, ["stable"], "stable", "stable", nil, nil, nil, nil)
     }
 
     private nonisolated static func scanDirectoryForAddons(
@@ -302,8 +561,12 @@ class UpdateManager {
                     let pathKey = itemURL.path
 
                     var activeConfigFileURL = updaterInfo.fileURL
+                    if updaterInfo.type == .skunkcrafts {
+                        SkunkCraftsUpdaterService.shared.absorbBetaFiles(in: itemURL)
+                        activeConfigFileURL = itemURL.appendingPathComponent("skunkcrafts_updater.cfg")
+                    }
 
-                    var (parsedName, version, remoteURL, availableChannels, _, configActiveChannel) = parseUpdaterConfig(
+                    var (parsedName, version, remoteURL, availableChannels, _, configActiveChannel, mainChannelName, packId, memberId, packName) = parseUpdaterConfig(
                         url: activeConfigFileURL,
                         type: updaterInfo.type,
                         defaultName: folderName
@@ -325,13 +588,15 @@ class UpdateManager {
 
                     let isBeta = (selectedChannel.lowercased() == "beta")
 
-                    if updaterInfo.type == .skunkcrafts {
-                        if isBeta, let betaURL = SkunkCraftsUpdaterService.shared.findConfig(in: itemURL, preferBeta: true), betaURL != activeConfigFileURL {
-                            activeConfigFileURL = betaURL
-                            let betaParsed = parseUpdaterConfig(url: betaURL, type: .skunkcrafts, defaultName: folderName)
-                            if let v = betaParsed.version { version = v }
-                            if let u = betaParsed.remoteURL { remoteURL = u }
-                        }
+                    if updaterInfo.type == .skunkcrafts && selectedChannel.lowercased() != configActiveChannel.lowercased() {
+                        let reParsed = parseUpdaterConfig(
+                            url: activeConfigFileURL,
+                            type: updaterInfo.type,
+                            defaultName: folderName,
+                            overrideChannel: selectedChannel
+                        )
+                        if let v = reParsed.version { version = v }
+                        if let u = reParsed.remoteURL { remoteURL = u }
                     }
 
                     let hasBeta = availableChannels.count > 1 || availableChannels.contains(where: { $0.lowercased() != "stable" })
@@ -348,7 +613,11 @@ class UpdateManager {
                         hasBetaChannel: hasBeta,
                         isBetaEnabled: isBeta,
                         availableChannels: availableChannels,
-                        activeChannel: selectedChannel
+                        activeChannel: selectedChannel,
+                        mainChannelName: mainChannelName,
+                        packId: packId,
+                        memberId: memberId,
+                        packName: packName
                     ))
                 } else {
                     let subResults = scanDirectoryForAddons(
@@ -384,15 +653,39 @@ class UpdateManager {
                 var results: [UpdatableAddon] = []
                 for pool in activePools {
                     for category in AddonCategory.allCases {
-                        let folderURL = PathService.shared.dataFolder(category.dataSubfolder, in: pool.url)
-                        if FileManager.default.fileExists(atPath: folderURL.path) {
+                        var scannedRoots: Set<String> = []
+
+                        // 1. Standard subfolder: <pool>/Scenery (or Aircraft, Plugins, LuaScripts)
+                        let subfolderURL = PathService.shared.dataFolder(category.dataSubfolder, in: pool.url)
+                        if FileManager.default.fileExists(atPath: subfolderURL.path) {
+                            scannedRoots.insert(subfolderURL.path)
                             let addons = Self.scanDirectoryForAddons(
-                                subFolderURL: folderURL,
+                                subFolderURL: subfolderURL,
                                 category: category,
                                 channelPreferences: currentChannelPrefs,
                                 betaPreferences: currentBetaPrefs
                             )
                             results.append(contentsOf: addons)
+                        }
+
+                        // 2. Direct pool root: if the pool is dedicated to this category or matches its name
+                        let poolNameLower = pool.url.lastPathComponent.lowercased()
+                        let isDedicatedToCategory = poolNameLower == category.rawValue.lowercased() ||
+                                                    poolNameLower == category.dataSubfolder.rawValue.lowercased() ||
+                                                    (pool.defaultCategories.count == 1 && pool.defaultCategories.first?.rawValue.lowercased().contains(category.rawValue.lowercased()) == true)
+                        if isDedicatedToCategory && !scannedRoots.contains(pool.url.path) && FileManager.default.fileExists(atPath: pool.url.path) {
+                            scannedRoots.insert(pool.url.path)
+                            let addons = Self.scanDirectoryForAddons(
+                                subFolderURL: pool.url,
+                                category: category,
+                                channelPreferences: currentChannelPrefs,
+                                betaPreferences: currentBetaPrefs
+                            )
+                            for addon in addons {
+                                if !results.contains(where: { $0.configFileURL == addon.configFileURL }) {
+                                    results.append(addon)
+                                }
+                            }
                         }
                     }
                 }
@@ -550,25 +843,14 @@ class UpdateManager {
         updatableAddons[index].activeChannel = normalized
         updatableAddons[index].isBetaEnabled = isBeta
 
-        // If SkunkCrafts, swap active config file if legacy beta and update pointer
+        // If SkunkCrafts, set channel in skunkcrafts/channel.cfg and resolve remote manifest
         if addon.updaterType == .skunkcrafts {
             SkunkCraftsUpdaterService.shared.setChannel(normalized, in: addon.folderURL)
 
-            let activeConfigFileURL: URL
-            if isBeta {
-                let betaURL = addon.folderURL.appendingPathComponent("skunkcrafts_updater_beta.cfg")
-                if FileManager.default.fileExists(atPath: betaURL.path) {
-                    activeConfigFileURL = betaURL
-                } else {
-                    activeConfigFileURL = addon.folderURL.appendingPathComponent("skunkcrafts_updater.cfg")
-                }
-            } else {
-                activeConfigFileURL = addon.folderURL.appendingPathComponent("skunkcrafts_updater.cfg")
-            }
-
+            let activeConfigFileURL = addon.folderURL.appendingPathComponent("skunkcrafts_updater.cfg")
             if FileManager.default.fileExists(atPath: activeConfigFileURL.path) {
                 updatableAddons[index].configFileURL = activeConfigFileURL
-                let parsed = Self.parseUpdaterConfig(url: activeConfigFileURL, type: .skunkcrafts, defaultName: addon.name)
+                let parsed = Self.parseUpdaterConfig(url: activeConfigFileURL, type: .skunkcrafts, defaultName: addon.name, overrideChannel: normalized)
                 if let version = parsed.version {
                     updatableAddons[index].currentVersion = version
                 }
@@ -604,6 +886,34 @@ class UpdateManager {
 
     func setBetaUpdatesEnabled(_ enabled: Bool, for addon: UpdatableAddon) {
         setChannel(enabled ? "beta" : "stable", for: addon)
+    }
+
+    // MARK: - Pack Batch Operations (PUBLISHING.md §5.5)
+
+    func checkForUpdates(forPack pack: UpdatablePack) {
+        for member in pack.members {
+            checkForUpdates(for: member)
+        }
+    }
+
+    func updatePack(_ pack: UpdatablePack) {
+        let toUpdate = pack.members.filter { $0.isUpdateAvailable }
+        let targets = toUpdate.isEmpty ? pack.members : toUpdate
+        for member in targets {
+            updateAddon(member)
+        }
+    }
+
+    func repairPack(_ pack: UpdatablePack) {
+        for member in pack.members {
+            updateAddon(member)
+        }
+    }
+
+    func setChannel(_ channel: String, forPack pack: UpdatablePack) {
+        for member in pack.members {
+            setChannel(channel, for: member)
+        }
     }
 }
 

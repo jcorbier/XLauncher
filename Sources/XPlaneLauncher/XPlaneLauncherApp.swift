@@ -75,7 +75,7 @@ struct XPlaneLauncherApp: App {
                 .onAppear {
                     MenuBarCompanionManager.shared.xPlanePath = pluginManager.xPlanePath
                     licenseManager.initialize()
-                    updateManager.launcherDataFolder = pluginManager.launcherDataFolder
+                    updateManager.storagePools = pluginManager.storagePools
                     cslManager.cslFolderURL = pluginManager.cslPath
                     cslManager.xPlaneFolderURL = pluginManager.xPlanePath
                     cslManager.launcherDataFolder = pluginManager.launcherDataFolder

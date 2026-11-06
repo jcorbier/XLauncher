@@ -118,7 +118,7 @@ struct ContentView: View {
     }
 
     var availableUpdatesCount: Int {
-        updateManager.updatableAddons.filter { $0.isUpdateAvailable }.count
+        updateManager.availableUpdatesCount
     }
 
     var availableNavdataUpdatesCount: Int {
